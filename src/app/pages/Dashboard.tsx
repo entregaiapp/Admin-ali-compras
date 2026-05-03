@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 import {
   ShoppingCart, TrendingUp, Truck, XCircle, DollarSign, Users,
-  Package, AlertTriangle, ArrowRight, Clock, CheckCircle2, Activity
+  Package, AlertTriangle, ArrowRight, Clock, CheckCircle2, Activity, Calendar
 } from 'lucide-react';
 import api from '../services/api';
 
@@ -27,10 +27,16 @@ export function Dashboard() {
   const [metrics, setMetrics] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
+  // Filtro de data, padrão: hoje
+  const today = new Date().toISOString().split('T')[0];
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate] = useState(today);
+
   useEffect(() => {
     const fetchMetrics = async () => {
+      setLoading(true);
       try {
-        const response = await api.get('/metricas');
+        const response = await api.get(`/metricas?dataInicio=${startDate}&dataFim=${endDate}`);
         setMetrics(response.data.data);
       } catch (error) {
         console.error('Error fetching metrics', error);
@@ -44,9 +50,9 @@ export function Dashboard() {
     };
 
     fetchMetrics();
-  }, [navigate]);
+  }, [navigate, startDate, endDate]);
 
-  if (loading) {
+  if (loading && !metrics) {
     return (
       <div className="p-5 flex-1 h-full flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-gray-200 border-t-primary rounded-full animate-spin" style={{ borderColor: `${PRIMARY}40`, borderTopColor: PRIMARY }}></div>
@@ -56,14 +62,14 @@ export function Dashboard() {
 
   // Fallbacks if data is not present
   const statCards = [
-    { label: 'Pedidos Hoje', value: metrics?.pedidosHoje?.total || '0', sub: 'Hoje', icon: ShoppingCart, color: '#2563eb', bg: '#eff6ff' },
-    { label: 'Em Andamento', value: metrics?.pedidosAndamento || '0', sub: 'Aguardando', icon: Activity, color: '#d97706', bg: '#fffbeb' },
-    { label: 'Entregues', value: metrics?.pedidosEntregues || '0', sub: 'Total', icon: CheckCircle2, color: '#16a34a', bg: '#f0fdf4' },
-    { label: 'Cancelados', value: metrics?.pedidosCancelados || '0', sub: 'Total', icon: XCircle, color: '#dc2626', bg: '#fef2f2' },
-    { label: 'Faturamento', value: `R$ ${metrics?.faturamentoDiario?.total?.toFixed(2) || '0.00'}`, sub: 'Hoje', icon: DollarSign, color: PRIMARY, bg: '#eef2f9' },
-    { label: 'Ticket Médio', value: `R$ ${metrics?.ticketMedio?.toFixed(2) || '0.00'}`, sub: 'Por pedido', icon: TrendingUp, color: '#7c3aed', bg: '#f5f3ff' },
-    { label: 'Clientes Novos', value: metrics?.novosClientes || '0', sub: 'Hoje', icon: Users, color: '#0891b2', bg: '#ecfeff' },
-    { label: 'Em Rota', value: metrics?.pedidosEmRota || '0', sub: 'Em rota de entrega', icon: Truck, color: '#ea580c', bg: '#fff7ed' },
+    { label: 'Pedidos', value: metrics?.pedidosHoje?.total || '0', sub: 'No período', icon: ShoppingCart, color: '#2563eb', bg: '#eff6ff' },
+    { label: 'Em Andamento', value: metrics?.pedidosAndamento || '0', sub: 'Atuais', icon: Activity, color: '#d97706', bg: '#fffbeb' },
+    { label: 'Entregues', value: metrics?.pedidosEntregues || '0', sub: 'Concluídos', icon: CheckCircle2, color: '#16a34a', bg: '#f0fdf4' },
+    { label: 'Cancelados', value: metrics?.pedidosCancelados || '0', sub: 'Cancelados', icon: XCircle, color: '#dc2626', bg: '#fef2f2' },
+    { label: 'Faturamento', value: `R$ ${parseFloat(metrics?.faturamentoDiario?.total || '0').toFixed(2)}`, sub: 'No período', icon: DollarSign, color: PRIMARY, bg: '#eef2f9' },
+    { label: 'Ticket Médio', value: `R$ ${parseFloat(metrics?.ticketMedio || '0').toFixed(2)}`, sub: 'Por pedido', icon: TrendingUp, color: '#7c3aed', bg: '#f5f3ff' },
+    { label: 'Clientes Novos', value: metrics?.novosClientes || '0', sub: 'No período', icon: Users, color: '#0891b2', bg: '#ecfeff' },
+    { label: 'Em Rota', value: metrics?.pedidosEmRota || '0', sub: 'Atuais', icon: Truck, color: '#ea580c', bg: '#fff7ed' },
   ];
 
   const salesData = metrics?.vendasSemana || [];
@@ -76,18 +82,32 @@ export function Dashboard() {
     <div className="p-5 max-w-screen-xl mx-auto overflow-y-auto flex-1 h-full m-[0px]">
       {/* Welcome bar */}
       <div
-        className="rounded-xl p-4 flex items-center justify-between text-white"
+        className="rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between text-white gap-4"
         style={{ backgroundColor: PRIMARY }}
       >
         <div>
           <div className="text-white/70 text-xs mb-0.5">
             {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
           </div>
-          <h2 className="text-white font-semibold">Bom dia, Admin! Aqui está o resumo da operação de hoje.</h2>
+          <h2 className="text-white font-semibold">Bom dia, Admin! Aqui está o resumo da sua operação.</h2>
         </div>
-        <div className="hidden sm:flex items-center gap-2 px-4 py-2 rounded-lg bg-white/15 text-sm">
-          <Clock className="w-4 h-4" />
-          <span>Operação em tempo real</span>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center bg-white/10 rounded-lg p-1 text-sm">
+            <Calendar className="w-4 h-4 ml-2 mr-1 text-white/70" />
+            <input 
+              type="date" 
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="bg-transparent border-none text-white outline-none cursor-pointer p-1 [&::-webkit-calendar-picker-indicator]:filter-[invert(1)]"
+            />
+            <span className="text-white/50 px-1">até</span>
+            <input 
+              type="date" 
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="bg-transparent border-none text-white outline-none cursor-pointer p-1 [&::-webkit-calendar-picker-indicator]:filter-[invert(1)]"
+            />
+          </div>
         </div>
       </div>
 

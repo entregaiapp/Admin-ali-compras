@@ -14,14 +14,65 @@ const roleColors: Record<string, { bg: string; text: string }> = {
   'Financeiro': { bg: '#ecfeff', text: '#0891b2' }
 };
 
-const permissions = ['Ver Dashboard', 'Gerenciar Pedidos', 'Gerenciar Produtos', 'Gerenciar Preços', 'Ver Clientes', 'Gerenciar Promoções', 'Gerenciar Banners', 'Ver Relatórios', 'Gerenciar Usuários', 'Configurações'];
+interface Permission {
+  id: string;
+  nome: string;
+  slug: string;
+  descricao: string;
+}
+
+const rolePermissions: Record<string, string[]> = {
+  'Administrador': ['dashboard', 'pedidos', 'produtos', 'categorias', 'clientes', 'cupons', 'entregadores', 'usuarios', 'configuracoes', 'financeiro', 'estoque'],
+  'Operador': ['dashboard', 'pedidos', 'produtos', 'categorias', 'clientes', 'estoque'],
+  'Separador': ['pedidos', 'estoque'],
+  'Entregador': ['pedidos', 'entregadores'],
+  'Financeiro': ['dashboard', 'financeiro', 'relatorios']
+};
 
 function UserForm({ user, onClose, onSuccess }: { user?: any; onClose: () => void; onSuccess: () => void }) {
   const [name, setName] = useState(user?.name || '');
   const [email, setEmail] = useState(user?.email || '');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState(user?.role || 'Operador de Pedidos');
+  const [role, setRole] = useState(user?.role || 'Operador');
+  const [availablePermissions, setAvailablePermissions] = useState<Permission[]>([]);
+  const [selectedPermissions, setSelectedPermissions] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchAllPermissions = async () => {
+      try {
+        const res = await api.get('/usuarios/permissoes/todas');
+        setAvailablePermissions(res.data.data || []);
+      } catch (err) {
+        console.error('Error fetching permissions', err);
+      }
+    };
+    fetchAllPermissions();
+  }, []);
+
+  useEffect(() => {
+    if (user?.id) {
+      const fetchUserPermissions = async () => {
+        try {
+          const res = await api.get(`/usuarios/${user.id}/permissoes`);
+          const slugs = (res.data.data || []).map((p: any) => p.slug);
+          setSelectedPermissions(slugs);
+        } catch (err) {
+          console.error('Error fetching user permissions', err);
+        }
+      };
+      fetchUserPermissions();
+    } else {
+      // Pre-select based on role for new users
+      setSelectedPermissions(rolePermissions[role] || []);
+    }
+  }, [user?.id, role]);
+
+  const togglePermission = (slug: string) => {
+    setSelectedPermissions(prev => 
+      prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug]
+    );
+  };
 
   const handleSubmit = async () => {
     try {
@@ -46,10 +97,18 @@ function UserForm({ user, onClose, onSuccess }: { user?: any; onClose: () => voi
         payload.senha = password;
       }
 
+      let userId = user?.id;
+
       if (user?.id) {
         await api.patch(`/usuarios/${user.id}`, payload);
       } else {
-        await api.post('/usuarios', payload);
+        const res = await api.post('/usuarios', payload);
+        userId = res.data.data.id;
+      }
+
+      // Update permissions
+      if (userId) {
+        await api.put(`/usuarios/${userId}/permissoes`, { permissionSlugs: selectedPermissions });
       }
 
       onSuccess();
@@ -105,19 +164,31 @@ function UserForm({ user, onClose, onSuccess }: { user?: any; onClose: () => voi
             </div>
           </div>
           <div>
-            <label className="block text-sm text-gray-600 mb-2">Permissões (Visualização apenas)</label>
-            <div className="grid grid-cols-2 gap-1.5">
-              {permissions.map(perm => (
-                <label key={perm} className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" className="rounded" disabled checked={
-                    role === 'Administrador' ||
-                    (role === 'Operador' && ['Ver Dashboard', 'Gerenciar Pedidos', 'Ver Clientes'].includes(perm)) ||
-                    (role === 'Financeiro' && ['Ver Relatórios', 'Pagamentos'].includes(perm))
-                  } />
-                  <span className="text-xs text-gray-500">{perm}</span>
+            <label className="block text-sm text-gray-600 mb-2 font-medium">Permissões de Acesso</label>
+            <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1">
+              {availablePermissions.map(perm => (
+                <label 
+                  key={perm.slug} 
+                  className={`flex items-center gap-2 p-2 rounded-lg border transition-all cursor-pointer ${
+                    selectedPermissions.includes(perm.slug) 
+                      ? 'bg-indigo-50 border-indigo-200 text-indigo-700' 
+                      : 'bg-white border-gray-100 text-gray-500 hover:border-gray-200'
+                  }`}
+                >
+                  <input 
+                    type="checkbox" 
+                    className="rounded text-indigo-600 focus:ring-indigo-500" 
+                    checked={selectedPermissions.includes(perm.slug)}
+                    onChange={() => togglePermission(perm.slug)}
+                  />
+                  <div>
+                    <div className="text-[11px] font-semibold leading-none">{perm.nome}</div>
+                    <div className="text-[9px] opacity-70 mt-0.5 line-clamp-1">{perm.descricao}</div>
+                  </div>
                 </label>
               ))}
             </div>
+            {availablePermissions.length === 0 && <p className="text-xs text-gray-400 italic">Carregando permissões...</p>}
           </div>
         </div>
         <div className="flex gap-3 mt-5">
@@ -140,7 +211,8 @@ export function Users() {
     try {
       setLoading(true);
       const res = await api.get('/usuarios');
-      const data = res.data.data || [];
+      const rawData = res.data.data;
+      const data = Array.isArray(rawData) ? rawData : rawData?.data || [];
 
       const mapped = data.map((u: any) => {
         const perfis: Record<string, string> = {

@@ -6,7 +6,7 @@ import { Orders } from './pages/Orders';
 import { Products } from './pages/Products';
 import { Categories } from './pages/Categories';
 import { Promotions } from './pages/Promotions';
-import { Banners } from './pages/Banners';
+// import { Banners } from './pages/Banners';
 import { Customers } from './pages/Customers';
 import { Deliveries } from './pages/Deliveries';
 import { Coupons } from './pages/Coupons';
@@ -32,7 +32,7 @@ export const router = createBrowserRouter([
       { path: 'products', Component: Products },
       { path: 'categories', Component: Categories },
       { path: 'promotions', Component: Promotions },
-      { path: 'banners', Component: Banners },
+      // { path: 'banners', Component: Banners },
       { path: 'customers', Component: Customers },
       { path: 'deliveries', Component: Deliveries },
       { path: 'coupons', Component: Coupons },

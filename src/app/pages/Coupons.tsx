@@ -149,7 +149,8 @@ export function Coupons() {
     try {
       setLoading(true);
       const res = await api.get('/cupons');
-      const data = res.data.data || [];
+      const rawData = res.data.data;
+      const data = Array.isArray(rawData) ? rawData : rawData?.data || [];
       
       const mapped = data.map((c: any) => {
         const typeMapping: Record<string, string> = {

@@ -207,21 +207,56 @@ export function Orders() {
   const [selectedItems, setSelectedItems] = useState<any[]>([]);
   const [viewMode, setViewMode] = useState<'lista' | 'bairros'>('lista');
   const [expandedBairros, setExpandedBairros] = useState<Record<string, boolean>>({});
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const PER_PAGE = 20;
 
   useEffect(() => {
-    fetchOrders();
-  }, []);
+    setOrders([]);
+    setPage(1);
+    fetchOrders(1, true);
+  }, [statusFilter, typeFilter]);
 
-  const fetchOrders = async () => {
+  // Debounced search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setOrders([]);
+      setPage(1);
+      fetchOrders(1, true);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const fetchOrders = async (pageNum = 1, reset = false) => {
     try {
       setLoading(true);
-      const response = await api.get('/pedidos');
-      setOrders(response.data.data || []);
+      const params: any = { 
+        page: pageNum, 
+        per_page: PER_PAGE + 1, // Pesquisa 21 para saber se tem mais
+        status: statusFilter === 'Todos' ? undefined : Object.keys(statusLabels).find(k => statusLabels[k] === statusFilter),
+        tipo_pedido: typeFilter === 'Todos' ? undefined : typeFilter.toLowerCase(),
+        busca: search || undefined
+      };
+      
+      const response = await api.get('/pedidos', { params });
+      const rawData = response.data.data;
+      const data = Array.isArray(rawData) ? rawData : rawData?.data || [];
+      
+      const more = data.length > PER_PAGE;
+      const displayData = more ? data.slice(0, PER_PAGE) : data;
+      
+      setHasMore(more);
+      setOrders(prev => reset ? displayData : [...prev, ...displayData]);
+      setPage(pageNum);
     } catch (error) {
       console.error('Error fetching orders:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleLoadMore = () => {
+    fetchOrders(page + 1);
   };
 
   const fetchOrderItems = async (orderId: string) => {
@@ -292,13 +327,8 @@ export function Orders() {
     const orderId = (o.numero_pedido || o.id || '').toLowerCase();
     const matchSearch = customerName.includes(search.toLowerCase()) || orderId.includes(search.toLowerCase());
     
-    const displayStatus = getStatusLabel(o.status);
-    const matchStatus = statusFilter === 'Todos' || displayStatus === statusFilter;
-    
-    const typeLabel = (o.tipo_pedido || o.type || '').toLowerCase() === 'entrega' ? 'Entrega' : 'Retirada';
-    const matchType = typeFilter === 'Todos' || typeLabel === typeFilter;
-    
-    return matchSearch && matchStatus && matchType;
+    // No longer filtering by status/type in memory as we do it in API
+    return matchSearch;
   });
 
   const deliveryOrders = filtered.filter(o => (o.tipo_pedido || o.type || '').toLowerCase() === 'entrega');
@@ -463,7 +493,25 @@ export function Orders() {
                 </div>
               );
             })}
-            {filtered.length === 0 && (
+            
+            {hasMore && (
+              <div className="p-4 flex justify-center border-t border-gray-100">
+                <button
+                  onClick={handleLoadMore}
+                  disabled={loading}
+                  className="px-6 py-2 rounded-full border text-sm font-medium transition-colors hover:bg-gray-50 flex items-center gap-2"
+                  style={{ borderColor: PRIMARY, color: PRIMARY }}
+                >
+                  {loading ? (
+                    <div className="w-4 h-4 border-2 border-gray-200 border-t-primary rounded-full animate-spin" style={{ borderTopColor: PRIMARY }}></div>
+                  ) : (
+                    'Carregar mais pedidos'
+                  )}
+                </button>
+              </div>
+            )}
+
+            {filtered.length === 0 && !loading && (
               <div className="flex flex-col items-center justify-center py-16 text-gray-400">
                 <Package className="w-10 h-10 mb-3 opacity-40" />
                 <p className="text-sm">Nenhum pedido encontrado</p>

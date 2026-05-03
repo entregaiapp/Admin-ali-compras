@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Edit2, Power, GripVertical, X } from 'lucide-react';
+import { Plus, Edit2, Power, X } from 'lucide-react';
 import api from '../services/api';
 
 const PRIMARY = '#122a4c';
@@ -104,7 +104,8 @@ export function Categories() {
     try {
       setLoading(true);
       const response = await api.get('/categorias');
-      setCategories(response.data.data || []);
+      const data = response.data.data;
+      setCategories(Array.isArray(data) ? data : data?.data || []);
     } catch (error) {
       console.error('Error fetching categories:', error);
     } finally {
@@ -147,9 +148,7 @@ export function Categories() {
               key={cat.id}
               className="bg-white border border-gray-200 rounded-xl p-4 flex items-center gap-4 hover:shadow-sm transition-shadow"
             >
-              <div className="cursor-grab text-gray-300 flex-shrink-0">
-                <GripVertical className="w-4 h-4" />
-              </div>
+
               <div
                 className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0"
                 style={{ backgroundColor: '#eef2f9' }}

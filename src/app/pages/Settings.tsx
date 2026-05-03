@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Store, Clock, Truck, CreditCard, Save, Bell, Link as LinkIcon, CheckCircle, XCircle } from 'lucide-react';
 import api from '../services/api';
+import LoadingModal from '../components/ui/LoadingModal';
 
 const PRIMARY = '#122a4c';
 
@@ -13,6 +14,8 @@ export function Settings() {
   const [loadingMp, setLoadingMp] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
 
   const [formData, setFormData] = useState<any>({
     nome: '',
@@ -21,7 +24,6 @@ export function Settings() {
     telefone: '',
     email: '',
     descricao: '',
-    logo_url: '',
     horario_abertura: '',
     horario_fechamento: '',
     valor_minimo_pedido: 0,
@@ -31,7 +33,10 @@ export function Settings() {
     permite_retirada: true,
     tempo_medio_entrega_minutos: 30,
     whatsapp_suporte: '',
-    configId: null
+    configId: null,
+    horarios: [],
+    formas_pagamento: ['PIX', 'Cartão de Crédito', 'Cartão de Débito', 'Dinheiro'],
+    preferencias_notificacao: ['Novo pedido recebido', 'Status do pedido alterado', 'Entrega concluída']
   });
 
   const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -56,38 +61,58 @@ export function Settings() {
       setLoading(true);
       setError('');
 
-      const [storeRes, configRes] = await Promise.allSettled([
+      const [storeRes, configRes, horariosRes] = await Promise.allSettled([
         api.get(`/lojas/${lojaId}`),
-        api.get(`/lojas/${lojaId}/configuracoes`)
+        api.get(`/lojas/${lojaId}/configuracoes`),
+        api.get(`/horarios_funcionamento/${lojaId}`)
       ]);
 
-      let store = {};
+      let store: any = {};
       if (storeRes.status === 'fulfilled') {
         store = storeRes.value.data?.data || storeRes.value.data;
       } else {
         throw new Error('Falha ao carregar dados da loja');
       }
 
-      let config = {};
+      let config: any = {};
       if (configRes.status === 'fulfilled') {
-        config = (configRes.value.data?.data || configRes.value.data)?.[0] || {};
+        const rawData = configRes.value.data?.data || configRes.value.data;
+        config = Array.isArray(rawData) ? rawData[0] || {} : rawData || {};
       } else {
         console.warn('Configurações não encontradas ou erro no servidor, usando padrões');
       }
 
-      setFormData({
+      let horarios = [];
+      if (horariosRes.status === 'fulfilled') {
+        horarios = horariosRes.value.data?.data || [];
+      } else {
+        console.warn('Horários não encontrados, usando padrões');
+      }
+
+      setFormData((prev: any) => ({
+        ...prev,
         ...store,
         ...config,
-        configId: config.id || null, // Armazena explicitamente o ID da configuração
+        configId: config.id || null,
         razao_social: store.razao_social || '',
         telefone: store.telefone || '',
         email: store.email || '',
         descricao: store.descricao || '',
-        logo_url: store.logo_url || '',
         horario_abertura: store.horario_abertura || '',
         horario_fechamento: store.horario_fechamento || '',
-        whatsapp_suporte: config.whatsapp_suporte || ''
-      });
+        whatsapp_suporte: config.whatsapp_suporte || '',
+        tempo_medio_entrega_minutos: config.tempo_medio_entrega_minutos ?? prev.tempo_medio_entrega_minutos ?? 30,
+        valor_minimo_pedido: store.valor_minimo_pedido ?? prev.valor_minimo_pedido ?? 0,
+        taxa_entrega_padrao: store.taxa_entrega_padrao ?? prev.taxa_entrega_padrao ?? 0,
+        formas_pagamento: config.formas_pagamento || prev.formas_pagamento,
+        preferencias_notificacao: config.preferencias_notificacao || prev.preferencias_notificacao,
+        horarios: horarios.length > 0 ? horarios : Array.from({ length: 7 }, (_, i) => ({
+          dia_semana: i,
+          aberto: true,
+          horario_abertura: store.horario_abertura || '08:00',
+          horario_fechamento: store.horario_fechamento || '22:00'
+        }))
+      }));
     } catch (err: any) {
       console.error('Erro ao carregar dados:', err);
       setError(err.message || 'Falha ao carregar configurações');
@@ -103,6 +128,8 @@ export function Settings() {
 
   const save = async () => {
     try {
+      setIsSaving(true);
+      setShowSuccess(false);
       setError('');
       const storeData = {
         nome: formData.nome,
@@ -111,7 +138,6 @@ export function Settings() {
         telefone: formData.telefone,
         email: formData.email,
         descricao: formData.descricao,
-        logo_url: formData.logo_url,
         horario_abertura: formData.horario_abertura,
         horario_fechamento: formData.horario_fechamento,
         valor_minimo_pedido: Number(formData.valor_minimo_pedido),
@@ -122,7 +148,9 @@ export function Settings() {
         permite_entrega: formData.permite_entrega,
         permite_retirada: formData.permite_retirada,
         tempo_medio_entrega_minutos: Number(formData.tempo_medio_entrega_minutos),
-        whatsapp_suporte: formData.whatsapp_suporte
+        whatsapp_suporte: formData.whatsapp_suporte,
+        formas_pagamento: formData.formas_pagamento,
+        preferencias_notificacao: formData.preferencias_notificacao
       };
 
       await api.put(`/lojas/${lojaId}`, storeData);
@@ -135,11 +163,20 @@ export function Settings() {
         setFormData((prev: any) => ({ ...prev, configId: res.data?.data?.id || res.data?.id }));
       }
 
+      await api.post('/horarios_funcionamento', { horarios: formData.horarios });
+
+      setShowSuccess(true);
+      setTimeout(() => {
+        setIsSaving(false);
+        setShowSuccess(false);
+      }, 1500);
+      
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (err: any) {
       console.error('Erro ao salvar:', err);
       setError('Erro ao salvar as configurações');
+      setIsSaving(false);
     }
   };
 
@@ -151,15 +188,38 @@ export function Settings() {
     }));
   };
 
+  const handleScheduleChange = (index: number, field: string, value: any) => {
+    setFormData((prev: any) => {
+      const newHorarios = [...prev.horarios];
+      newHorarios[index] = { ...newHorarios[index], [field]: value };
+      return { ...prev, horarios: newHorarios };
+    });
+  };
+
+  const daysOfWeek = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+
   const handleConnectMp = () => {
     window.location.href = `${api.defaults.baseURL}/mercadopago/oauth/authorize/${lojaId}`;
   };
 
   const paymentMethods = ['PIX', 'Cartão de Crédito', 'Cartão de Débito', 'Dinheiro', 'Vale Refeição', 'Vale Alimentação'];
-  const [enabledPayments, setEnabledPayments] = useState(['PIX', 'Cartão de Crédito', 'Cartão de Débito', 'Dinheiro']);
 
   const togglePayment = (method: string) => {
-    setEnabledPayments(ps => ps.includes(method) ? ps.filter(p => p !== method) : [...ps, method]);
+    setFormData((prev: any) => ({
+      ...prev,
+      formas_pagamento: prev.formas_pagamento.includes(method) 
+        ? prev.formas_pagamento.filter((p: string) => p !== method) 
+        : [...prev.formas_pagamento, method]
+    }));
+  };
+
+  const toggleNotification = (type: string) => {
+    setFormData((prev: any) => ({
+      ...prev,
+      preferencias_notificacao: prev.preferencias_notificacao.includes(type)
+        ? prev.preferencias_notificacao.filter((t: string) => t !== type)
+        : [...prev.preferencias_notificacao, type]
+    }));
   };
 
   if (loading) {
@@ -172,6 +232,10 @@ export function Settings() {
 
   return (
     <div className="p-5 overflow-y-auto flex-1 h-full">
+      <LoadingModal 
+        isOpen={isSaving} 
+        success={showSuccess} 
+      />
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 rounded-lg text-sm">
           {error}
@@ -219,60 +283,89 @@ export function Settings() {
                 <Store className="w-4 h-4" style={{ color: PRIMARY }} />
                 <h3 className="font-semibold text-gray-800">Informações Gerais</h3>
               </div>
-              <div className="w-20 h-20 rounded-xl border-2 border-dashed border-gray-200 flex items-center justify-center bg-gray-50 cursor-pointer hover:border-gray-300 transition-colors">
+              <div className="w-20 h-20 rounded-xl border-2 border-dashed border-gray-200 flex items-center justify-center bg-gray-50 mb-4">
                 <Store className="w-8 h-8 text-gray-300" />
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
                 <div>
-                  <label className="block text-sm text-gray-600 mb-1.5">Nome do mercado</label>
-                  <input name="nome" value={formData.nome} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none" />
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Nome do mercado</label>
+                  <div className="text-sm font-medium text-gray-800">{formData.nome || 'Não informado'}</div>
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-600 mb-1.5">CNPJ</label>
-                  <input name="cnpj" value={formData.cnpj} readOnly className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:outline-none" />
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">CNPJ</label>
+                  <div className="text-sm font-medium text-gray-800">{formData.cnpj || 'Não informado'}</div>
                 </div>
                 <div className="sm:col-span-2">
-                  <label className="block text-sm text-gray-600 mb-1.5">Razão Social</label>
-                  <input name="razao_social" value={formData.razao_social} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none" />
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Razão Social</label>
+                  <div className="text-sm font-medium text-gray-800">{formData.razao_social || 'Não informado'}</div>
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-600 mb-1.5">Telefone / WhatsApp</label>
-                  <input name="telefone" value={formData.telefone} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none" />
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Telefone Principal</label>
+                  <div className="text-sm font-medium text-gray-800">{formData.telefone || 'Não informado'}</div>
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-600 mb-1.5">E-mail de contato</label>
-                  <input name="email" value={formData.email} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none" />
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">E-mail Administrativo</label>
+                  <div className="text-sm font-medium text-gray-800">{formData.email || 'Não informado'}</div>
                 </div>
                 <div className="sm:col-span-2">
-                  <label className="block text-sm text-gray-600 mb-1.5">Descrição do Mercado</label>
-                  <textarea name="descricao" value={formData.descricao} onChange={handleInputChange} rows={3} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none resize-none" />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="block text-sm text-gray-600 mb-1.5">URL do Logo</label>
-                  <input name="logo_url" value={formData.logo_url} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none" />
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Sobre o Mercado</label>
+                  <div className="text-sm text-gray-600 leading-relaxed bg-gray-50 p-3 rounded-lg border border-gray-100">{formData.descricao || 'Nenhuma descrição informada'}</div>
                 </div>
               </div>
             </div>
           )}
 
           {activeSection === 'Horário de Funcionamento' && (
-            <div className="bg-white border border-gray-200 rounded-xl p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <Clock className="w-4 h-4" style={{ color: PRIMARY }} />
-                <h3 className="font-semibold text-gray-800">Horário de Funcionamento</h3>
+            <div className="bg-white border border-gray-200 rounded-xl p-6 space-y-6">
+              <div className="flex items-center gap-2">
+                <Clock className="w-5 h-5" style={{ color: PRIMARY }} />
+                <h3 className="font-semibold text-gray-800">Horário de Funcionamento Semanal</h3>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1.5">Horário de Abertura</label>
-                  <input type="time" name="horario_abertura" value={formData.horario_abertura} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none" />
-                </div>
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1.5">Horário de Fechamento</label>
-                  <input type="time" name="horario_fechamento" value={formData.horario_fechamento} onChange={handleInputChange} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none" />
-                </div>
+              
+              <div className="space-y-3">
+                {formData.horarios.map((h: any, idx: number) => (
+                  <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border border-gray-100 rounded-xl bg-gray-50/50 hover:bg-white hover:border-gray-200 transition-all gap-4">
+                    <div className="flex items-center gap-3 min-w-[120px]">
+                      <div className={`w-2 h-2 rounded-full ${h.aberto ? 'bg-green-500' : 'bg-gray-300'}`} />
+                      <span className="font-medium text-gray-700">{daysOfWeek[h.dia_semana]}</span>
+                    </div>
+
+                    <div className="flex items-center gap-6">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="time"
+                          disabled={!h.aberto}
+                          value={h.horario_abertura || '08:00'}
+                          onChange={(e) => handleScheduleChange(idx, 'horario_abertura', e.target.value)}
+                          className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm bg-white disabled:opacity-50 focus:outline-none focus:ring-1 focus:ring-primary/20"
+                        />
+                        <span className="text-gray-400">às</span>
+                        <input
+                          type="time"
+                          disabled={!h.aberto}
+                          value={h.horario_fechamento || '22:00'}
+                          onChange={(e) => handleScheduleChange(idx, 'horario_fechamento', e.target.value)}
+                          className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm bg-white disabled:opacity-50 focus:outline-none focus:ring-1 focus:ring-primary/20"
+                        />
+                      </div>
+
+                      <button
+                        onClick={() => handleScheduleChange(idx, 'aberto', !h.aberto)}
+                        className={`relative inline-flex h-5 w-9 rounded-full transition-colors flex-shrink-0`}
+                        style={{ backgroundColor: h.aberto ? PRIMARY : '#d1d5db' }}
+                      >
+                        <span
+                          className="inline-block w-4 h-4 bg-white rounded-full shadow transition-transform mt-0.5"
+                          style={{ transform: `translateX(${h.aberto ? 18 : 2}px)` }}
+                        />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
-              <p className="text-xs text-gray-500 mt-4">
-                * Estes horários são aplicados para todos os dias de funcionamento do mercado.
+
+              <p className="text-xs text-gray-500 italic">
+                * Os clientes não poderão realizar pedidos fora destes horários.
               </p>
             </div>
           )}
@@ -327,11 +420,11 @@ export function Settings() {
                     <button
                       onClick={() => togglePayment(method)}
                       className="relative inline-flex h-5 w-9 rounded-full transition-colors"
-                      style={{ backgroundColor: enabledPayments.includes(method) ? PRIMARY : '#d1d5db' }}
+                      style={{ backgroundColor: formData.formas_pagamento.includes(method) ? PRIMARY : '#d1d5db' }}
                     >
                       <span
                         className="inline-block w-4 h-4 bg-white rounded-full shadow transition-transform mt-0.5"
-                        style={{ transform: `translateX(${enabledPayments.includes(method) ? 18 : 2}px)` }}
+                        style={{ transform: `translateX(${formData.formas_pagamento.includes(method) ? 18 : 2}px)` }}
                       />
                     </button>
                   </div>
@@ -423,10 +516,14 @@ export function Settings() {
                   <div key={notif} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
                     <span className="text-sm text-gray-700">{notif}</span>
                     <button
+                      onClick={() => toggleNotification(notif)}
                       className="relative inline-flex h-5 w-9 rounded-full transition-colors"
-                      style={{ backgroundColor: PRIMARY }}
+                      style={{ backgroundColor: formData.preferencias_notificacao.includes(notif) ? PRIMARY : '#d1d5db' }}
                     >
-                      <span className="inline-block w-4 h-4 bg-white rounded-full shadow transition-transform mt-0.5" style={{ transform: 'translateX(18px)' }} />
+                      <span
+                        className="inline-block w-4 h-4 bg-white rounded-full shadow transition-transform mt-0.5"
+                        style={{ transform: `translateX(${formData.preferencias_notificacao.includes(notif) ? 18 : 2}px)` }}
+                      />
                     </button>
                   </div>
                 ))}

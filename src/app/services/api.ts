@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Create an Axios instance
 const api = axios.create({
-  baseURL: 'https://backend-node-with-ai-production.up.railway.app/api/', // Backend local URL
+  baseURL: 'http://localhost:3010/api/', // Backend local URL
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',

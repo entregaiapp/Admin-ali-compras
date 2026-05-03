@@ -33,10 +33,17 @@ export function Deliveries() {
         api.get('/clientes')
       ]);
 
-      const entregas = delRes.data.data || [];
-      const pedidos = pedRes.data.data || [];
-      const entregadores = entRes.data.data || [];
-      const clientes = cliRes.data.data || [];
+      const entregasRaw = delRes.data.data;
+      const entregas = Array.isArray(entregasRaw) ? entregasRaw : entregasRaw?.data || [];
+      
+      const pedidosRaw = pedRes.data.data;
+      const pedidos = Array.isArray(pedidosRaw) ? pedidosRaw : pedidosRaw?.data || [];
+      
+      const entregadoresRaw = entRes.data.data;
+      const entregadores = Array.isArray(entregadoresRaw) ? entregadoresRaw : entregadoresRaw?.data || [];
+      
+      const clientesRaw = cliRes.data.data;
+      const clientes = Array.isArray(clientesRaw) ? clientesRaw : clientesRaw?.data || [];
 
       const mapped = entregas.map((d: any) => {
         const pedido = pedidos.find((p: any) => p.id === d.pedido_id);

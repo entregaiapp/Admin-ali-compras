@@ -10,7 +10,9 @@ function CustomerDetail({ customer, onClose }: { customer: any; onClose: () => v
   useEffect(() => {
     // Optionally fetch recent orders for this customer
     api.get(`/pedidos?cliente_id=${customer.id}`).then(res => {
-       setCustOrders((res.data.data || []).slice(0, 4));
+       const data = res.data.data;
+       const orders = Array.isArray(data) ? data : data?.data || [];
+       setCustOrders(orders.slice(0, 4));
     }).catch(console.error);
   }, [customer.id]);
 
@@ -124,7 +126,8 @@ export function Customers() {
 
   useEffect(() => {
     api.get('/clientes').then(res => {
-      setCustomers(res.data.data || []);
+      const data = res.data.data;
+      setCustomers(Array.isArray(data) ? data : data?.data || []);
       setLoading(false);
     }).catch(err => {
       console.error('Error fetching customers', err);

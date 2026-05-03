@@ -33,9 +33,14 @@ export function Payments() {
         api.get('/clientes')
       ]);
 
-      const pagamentos = payRes.data.data || [];
-      const pedidos = pedRes.data.data || [];
-      const clientes = cliRes.data.data || [];
+      const pagamentosRaw = payRes.data.data;
+      const pagamentos = Array.isArray(pagamentosRaw) ? pagamentosRaw : pagamentosRaw?.data || [];
+      
+      const pedidosRaw = pedRes.data.data;
+      const pedidos = Array.isArray(pedidosRaw) ? pedidosRaw : pedidosRaw?.data || [];
+      
+      const clientesRaw = cliRes.data.data;
+      const clientes = Array.isArray(clientesRaw) ? clientesRaw : clientesRaw?.data || [];
 
       const mapped = pagamentos.map((p: any) => {
         const pedido = pedidos.find((ped: any) => ped.id === p.pedido_id);

@@ -13,22 +13,37 @@ function GlobalProductSelector({ existingProductIds, onSelect, onClose }: { exis
   const [search, setSearch] = useState('');
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const PER_PAGE = 50;
 
-  const fetchGlobalProducts = async (term: string) => {
+  const fetchGlobalProducts = async (pageNum = 1, reset = false) => {
     try {
       setLoading(true);
-      const response = await api.get('/produtos', { params: { busca_global: term, ativo: true } });
-      const results = response.data.data || [];
-      
-      // Sort: Not added first, added last
-      const sorted = [...results].sort((a, b) => {
-        const aExists = existingProductIds.includes(a.id);
-        const bExists = existingProductIds.includes(b.id);
-        if (aExists === bExists) return 0;
-        return aExists ? 1 : -1;
+      const response = await api.get('/produtos', { 
+        params: { 
+          busca_global: search || undefined, 
+          ativo: true,
+          page: pageNum,
+          per_page: PER_PAGE
+        } 
       });
       
-      setProducts(sorted);
+      const responseData = response.data.data;
+      const results = Array.isArray(responseData) ? responseData : responseData?.data || [];
+      const totalPages = responseData?.total_pages || 1;
+      
+      // Filter out products already in the store
+      const filtered = results.filter((p: any) => !existingProductIds.includes(p.id));
+      
+      if (reset) {
+        setProducts(filtered);
+      } else {
+        setProducts(prev => [...prev, ...filtered]);
+      }
+      
+      setHasMore(pageNum < totalPages);
+      setPage(pageNum);
     } catch (error) {
       console.error('Error fetching global products:', error);
     } finally {
@@ -37,9 +52,26 @@ function GlobalProductSelector({ existingProductIds, onSelect, onClose }: { exis
   };
 
   useEffect(() => {
+    // Carregamento imediato se a busca estiver vazia (estado inicial)
+    if (search === '') {
+      setProducts([]);
+      setPage(1);
+      fetchGlobalProducts(1, true);
+      return;
+    }
+
+    // Se tiver menos de 3 letras, não busca nada e limpa resultados anteriores
+    if (search.length < 3) {
+      setProducts([]);
+      setPage(1);
+      return;
+    }
+
     const timer = setTimeout(() => {
-      fetchGlobalProducts(search);
-    }, 300);
+      setProducts([]);
+      setPage(1);
+      fetchGlobalProducts(1, true);
+    }, 400);
     return () => clearTimeout(timer);
   }, [search]);
 
@@ -68,61 +100,108 @@ function GlobalProductSelector({ existingProductIds, onSelect, onClose }: { exis
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-3">
-          {loading ? (
+          {loading && page === 1 ? (
             <div className="flex flex-col items-center justify-center py-20 gap-3">
                <div className="w-8 h-8 border-3 border-gray-100 border-t-primary rounded-full animate-spin" style={{ borderTopColor: PRIMARY }}></div>
                <span className="text-sm text-gray-400 font-medium">Buscando produtos...</span>
             </div>
           ) : products.length > 0 ? (
-            <div className="grid grid-cols-1 gap-1.5">
-               {products.map(p => {
-                 const alreadyAdded = existingProductIds.includes(p.id);
-                 return (
-                   <button
-                     key={p.id}
-                     onClick={() => !alreadyAdded && onSelect(p)}
-                     disabled={alreadyAdded}
-                     className={`flex items-center gap-4 p-3.5 rounded-xl transition-all text-left group border border-transparent ${alreadyAdded ? 'opacity-60 cursor-default bg-gray-50/50' : 'hover:bg-gray-50 hover:border-gray-100'}`}
-                   >
-                     <div className="w-14 h-14 rounded-lg bg-gray-100 overflow-hidden flex-shrink-0 flex items-center justify-center border border-gray-100">
-                       {p.imagem_url ? (
-                         <img src={p.imagem_url} alt={p.nome} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" />
-                       ) : (
-                         <Package className="w-7 h-7 text-gray-300" />
+            <div className="flex flex-col gap-1.5 pb-4">
+               {products.map(p => (
+                 <button
+                   key={p.id}
+                   onClick={() => onSelect(p)}
+                   className="flex items-center gap-4 p-3.5 rounded-xl transition-all text-left group border border-transparent hover:bg-gray-50 hover:border-gray-100"
+                 >
+                   <div className="w-14 h-14 rounded-lg bg-gray-100 overflow-hidden flex-shrink-0 flex items-center justify-center border border-gray-100">
+                     {p.imagem_url ? (
+                       <img src={p.imagem_url} alt={p.nome} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" />
+                     ) : (
+                       <Package className="w-7 h-7 text-gray-300" />
+                     )}
+                   </div>
+                   <div className="flex-1 min-w-0">
+                     <div className="font-semibold text-gray-900 truncate group-hover:text-primary transition-colors">{p.nome}</div>
+                     <div className="text-xs text-gray-500 flex items-center gap-2 mt-0.5">
+                       <span className="font-medium px-1.5 py-0.5 bg-gray-100 rounded text-gray-600">{p.marca || 'Sem marca'}</span>
+                       {p.codigo_barras && (
+                         <>
+                           <span className="w-1 h-1 rounded-full bg-gray-300" />
+                           <span className="font-mono">{p.codigo_barras}</span>
+                         </>
                        )}
                      </div>
-                     <div className="flex-1 min-w-0">
-                       <div className="font-semibold text-gray-900 truncate group-hover:text-primary transition-colors">{p.nome}</div>
-                       <div className="text-xs text-gray-500 flex items-center gap-2 mt-0.5">
-                         <span className="font-medium px-1.5 py-0.5 bg-gray-100 rounded text-gray-600">{p.marca || 'Sem marca'}</span>
-                         {p.codigo_barras && (
-                           <>
-                             <span className="w-1 h-1 rounded-full bg-gray-300" />
-                             <span className="font-mono">{p.codigo_barras}</span>
-                           </>
-                         )}
-                       </div>
-                     </div>
-                     {alreadyAdded ? (
-                       <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-50 text-green-600 rounded-full border border-green-100">
-                          <CheckCircle2 className="w-4 h-4" />
-                          <span className="text-[10px] font-bold uppercase tracking-wider">Adicionado</span>
-                       </div>
-                     ) : (
-                       <div className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-50 text-gray-400 group-hover:bg-primary group-hover:text-white transition-all shadow-sm">
-                         <Plus className="w-5 h-5" />
-                       </div>
-                     )}
-                   </button>
-                 );
-               })}
+                   </div>
+                   <div className="w-10 h-10 rounded-full flex items-center justify-center bg-gray-50 text-gray-400 group-hover:bg-primary group-hover:text-white transition-all shadow-sm">
+                     <Plus className="w-5 h-5" />
+                   </div>
+                 </button>
+               ))}
+
+               {hasMore && (
+                 <button
+                   onClick={() => fetchGlobalProducts(page + 1)}
+                   disabled={loading}
+                   className="mt-4 w-full py-4 rounded-xl border-2 border-dashed border-gray-200 text-gray-500 text-sm font-semibold hover:border-primary/30 hover:bg-gray-50 hover:text-primary transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                 >
+                   {loading ? (
+                     <>
+                       <div className="w-4 h-4 border-2 border-gray-300 border-t-primary rounded-full animate-spin" />
+                       Carregando...
+                     </>
+                   ) : (
+                     'Carregar mais produtos'
+                   )}
+                 </button>
+               )}
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center py-20 text-gray-400 gap-3">
-              <div className="w-16 h-16 rounded-full bg-gray-50 flex items-center justify-center">
-                <Search className="w-8 h-8 opacity-20" />
+            <div className="flex flex-col items-center justify-center py-20 text-center px-6 animate-in fade-in slide-in-from-top-4 duration-500">
+              <div className="w-24 h-24 rounded-full bg-blue-50/50 flex items-center justify-center mb-6 relative">
+                <div className="absolute inset-0 rounded-full border-2 border-blue-100/50 animate-ping opacity-20" />
+                <Package className="w-12 h-12 text-blue-300" />
               </div>
-              <p className="text-sm font-medium">{search ? 'Nenhum produto encontrado' : 'Comece a digitar para buscar'}</p>
+              <h3 className="text-gray-900 font-bold text-xl mb-2">Ops! Produto não encontrado</h3>
+              <p className="text-sm text-gray-500 max-w-[340px] leading-relaxed mb-8">
+                {search.length > 0 && search.length < 3
+                  ? <>Digite pelo menos <span className="font-semibold text-gray-900">3 letras</span> para realizar a busca global.</>
+                  : search 
+                    ? <>Não encontramos resultados para <span className="font-semibold text-gray-900">"{search}"</span> na nossa base global. Tente simplificar a busca ou buscar pelo código de barras.</> 
+                    : 'Digite o que você procura para buscar na nossa base global de produtos.'}
+              </p>
+              
+              {search && (
+                <div className="flex flex-col gap-4 w-full max-w-sm">
+                  <div className="p-5 bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl border border-amber-100/50 text-left relative overflow-hidden shadow-sm">
+                    <div className="absolute top-0 right-0 p-4 opacity-5">
+                        <Tag className="w-16 h-16 rotate-12" />
+                    </div>
+                    <div className="flex items-start gap-3 relative z-10">
+                      <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <h4 className="font-bold text-amber-900 text-[14px] mb-1">Deseja cadastrar este produto?</h4>
+                        <p className="text-amber-800/80 text-[12px] leading-normal">
+                          Para manter o padrão de qualidade, novos produtos são cadastrados pela nossa equipe de catálogo.
+                        </p>
+                        <button 
+                          onClick={() => alert('Sua solicitação para o produto "' + search + '" foi enviada para nossa equipe de catálogo. Retornaremos em breve!')}
+                          className="mt-4 px-4 py-2 bg-amber-500 text-white text-[11px] font-bold rounded-lg uppercase tracking-wider hover:bg-amber-600 transition-colors shadow-sm active:scale-95"
+                        >
+                          Solicitar Cadastro
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <button 
+                    onClick={() => setSearch('')}
+                    className="text-xs font-semibold text-gray-400 hover:text-primary transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    <X className="w-3 h-3" />
+                    Limpar busca
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -141,7 +220,64 @@ function ProductForm({ product, isNew, categories, onClose, onSuccess }: { produ
     codigo_interno: product?.codigo_interno ?? '',
     categoria_id: product?.categoria_id ?? product?.produto_categoria_id ?? '',
   });
+  
+  const [variations, setVariations] = useState<any[]>([]);
+  const [selectedVariations, setSelectedVariations] = useState<string[]>([]);
+  const [variationsData, setVariationsData] = useState<Record<string, any>>({});
+  const [loadingVariations, setLoadingVariations] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchVariations = async () => {
+      const productId = isNew ? product.id : product.produto_id;
+      if (!productId) return;
+      
+      try {
+        setLoadingVariations(true);
+        const response = await api.get('/variacoes_produto', { params: { produto_id: productId } });
+        const data = response.data.data;
+        const list = Array.isArray(data) ? data : (data?.data || []);
+        setVariations(list);
+        
+        // Inicializa dados das variações
+        const initialData: Record<string, any> = {};
+        list.forEach((v: any) => {
+          initialData[v.id] = {
+            preco: form.preco || '',
+            preco_promocional: form.preco_promocional || '',
+            ativa: true
+          };
+        });
+        setVariationsData(initialData);
+
+        if (isNew) {
+          setSelectedVariations(list.filter((v: any) => v.ativa).map((v: any) => v.id));
+        }
+      } catch (err) {
+        console.error('Error fetching variations', err);
+      } finally {
+        setLoadingVariations(false);
+      }
+    };
+
+    fetchVariations();
+  }, [product.id, product.produto_id, isNew]);
+
+  // Atualiza preços das variações se o preço principal mudar e a variação ainda não tiver preço manual?
+  // Ou melhor deixar manual mesmo para evitar confusão.
+
+  const toggleVariation = (id: string) => {
+    setSelectedVariations(prev => 
+      prev.includes(id) ? prev.filter(v => v !== id) : [...prev, id]
+    );
+  };
+
+  const updateVariationData = (id: string, field: string, value: any) => {
+    setVariationsData(prev => ({
+      ...prev,
+      [id]: { ...prev[id], [field]: value }
+    }));
+  };
 
   const handleSubmit = async () => {
     try {
@@ -157,8 +293,25 @@ function ProductForm({ product, isNew, categories, onClose, onSuccess }: { produ
         codigo_interno: form.codigo_interno
       };
 
+      let produtoLojaId = product.id;
+
       if (isNew) {
-        await api.post('/produtos_loja', payload);
+        const response = await api.post('/produtos_loja', payload);
+        produtoLojaId = response.data.data.id;
+
+        // Vincula variações selecionadas com seus dados individuais
+        if (selectedVariations.length > 0) {
+          await Promise.all(selectedVariations.map(varId => {
+            const vData = variationsData[varId];
+            return api.post('/variacoes_produto_loja', {
+              variacao_produto_id: varId,
+              produto_loja_id: produtoLojaId,
+              preco: vData.preco ? parseFloat(vData.preco.toString().replace(',', '.')) : payload.preco,
+              preco_promocional: vData.preco_promocional ? parseFloat(vData.preco_promocional.toString().replace(',', '.')) : null,
+              ativa: vData.ativa ?? true
+            });
+          }));
+        }
       } else {
         await api.patch(`/produtos_loja/${product.id}`, payload);
       }
@@ -208,7 +361,85 @@ function ProductForm({ product, isNew, categories, onClose, onSuccess }: { produ
             </div>
           </div>
 
-          <div className="h-px bg-gray-100" />
+          {/* Section: Variations (New) */}
+          {variations.length > 0 && isNew && (
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <div className="text-xs font-bold text-gray-500 uppercase tracking-wider">Variações Disponíveis</div>
+                <div className="px-1.5 py-0.5 rounded-md bg-blue-50 text-[10px] font-bold text-blue-600 border border-blue-100">
+                  {variations.length} Opções
+                </div>
+              </div>
+              <div className="space-y-3">
+                {variations.map((v: any) => {
+                  const isSelected = selectedVariations.includes(v.id);
+                  const vData = variationsData[v.id] || {};
+                  return (
+                    <div
+                      key={v.id}
+                      className={`rounded-xl border transition-all overflow-hidden ${
+                        isSelected 
+                          ? 'border-blue-200 bg-blue-50/30 shadow-sm' 
+                          : 'border-gray-100 bg-white'
+                      }`}
+                    >
+                      <div 
+                        className={`flex items-center justify-between p-3 cursor-pointer ${isSelected ? '' : 'hover:bg-gray-50'}`}
+                        onClick={() => toggleVariation(v.id)}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${isSelected ? 'bg-blue-100 text-blue-600' : 'bg-gray-50 text-gray-400'}`}>
+                            <Grid2X2 className="w-4 h-4" />
+                          </div>
+                          <div className="text-left">
+                            <div className={`text-sm font-semibold ${isSelected ? 'text-blue-900' : 'text-gray-700'}`}>{v.nome}</div>
+                            <div className="text-[10px] text-gray-400">SKU: {v.sku || '-'} • EAN: {v.codigo_barras || '-'}</div>
+                          </div>
+                        </div>
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
+                          isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-200'
+                        }`}>
+                          {isSelected && <CheckCircle2 className="w-3.5 h-3.5" />}
+                        </div>
+                      </div>
+
+                      {isSelected && (
+                        <div className="px-3 pb-3 pt-1 border-t border-blue-100/50">
+                          <div className="grid grid-cols-2 gap-3 mt-2">
+                            <div>
+                              <label className="block text-[10px] font-bold text-blue-600 uppercase mb-1">Preço (R$)</label>
+                              <input
+                                value={vData.preco}
+                                onClick={e => e.stopPropagation()}
+                                onChange={e => updateVariationData(v.id, 'preco', e.target.value)}
+                                className="w-full px-2 py-1.5 border border-blue-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
+                                placeholder="0,00"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-blue-600 uppercase mb-1">Promoção (R$)</label>
+                              <input
+                                value={vData.preco_promocional}
+                                onClick={e => e.stopPropagation()}
+                                onChange={e => updateVariationData(v.id, 'preco_promocional', e.target.value)}
+                                className="w-full px-2 py-1.5 border border-blue-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
+                                placeholder="Opcional"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-gray-400 mt-2 leading-relaxed italic">
+                Defina preços específicos para cada variação selecionada. Se deixado em branco, usará o preço base do produto.
+              </p>
+            </div>
+          )}
+
+          {variations.length > 0 && isNew && <div className="h-px bg-gray-100" />}
 
           {/* Section: Store Details */}
           <div>
@@ -337,8 +568,9 @@ export function Products() {
 
   const fetchCategories = async () => {
     try {
-      const response = await api.get('/categorias');
-      setDbCategories(response.data.data || []);
+      const response = await api.get('/categorias', { params: { ativa: true } });
+      const data = response.data.data;
+      setDbCategories(Array.isArray(data) ? data : data?.data || []);
     } catch (error) {
       console.error('Error fetching categories:', error);
     }
@@ -348,7 +580,8 @@ export function Products() {
     try {
       setLoading(true);
       const response = await api.get('/produtos_loja');
-      setProducts(response.data.data || []);
+      const data = response.data.data;
+      setProducts(Array.isArray(data) ? data : data?.data || []);
     } catch (error) {
       console.error('Error fetching products:', error);
     } finally {
@@ -375,12 +608,21 @@ export function Products() {
     return matchSearch && matchCat && matchStatus;
   });
 
+  const toggleHighlight = async (id: string, currentStatus: boolean) => {
+    try {
+      await api.patch(`/produtos_loja/${id}`, { destaque: !currentStatus });
+      setProducts(ps => ps.map(p => p.id === id ? { ...p, destaque: !currentStatus } : p));
+    } catch (error) {
+      console.error('Error updating highlight', error);
+    }
+  };
+
   const toggleStatus = async (id: string, currentStatus: boolean) => {
     try {
-       await api.patch(`/produtos_loja/${id}/ativo`, { ativo: !currentStatus });
-       setProducts(ps => ps.map(p => p.id === id ? { ...p, ativo_na_loja: !currentStatus } : p));
+      await api.patch(`/produtos_loja/${id}/ativo`, { ativo: !currentStatus });
+      setProducts(ps => ps.map(p => p.id === id ? { ...p, ativo_na_loja: !currentStatus } : p));
     } catch (error) {
-       console.error('Error updating status', error);
+      console.error('Error updating status', error);
     }
   };
 
@@ -552,12 +794,14 @@ export function Products() {
                         >
                           <Power className="w-3.5 h-3.5" />
                         </button>
-                        <button className="p-1.5 rounded-lg hover:bg-amber-50 text-gray-500 hover:text-amber-600 transition-colors" title="Destacar">
-                          <Star className="w-3.5 h-3.5" />
+                        <button
+                          onClick={() => toggleHighlight(product.id, product.destaque)}
+                          className={`p-1.5 rounded-lg transition-colors ${product.destaque ? 'bg-amber-50 text-amber-600' : 'hover:bg-amber-50 text-gray-500 hover:text-amber-600'}`} 
+                          title={product.destaque ? 'Remover Destaque' : 'Destacar'}
+                        >
+                          <Star className={`w-3.5 h-3.5 ${product.destaque ? 'fill-amber-600' : ''}`} />
                         </button>
-                        <button className="p-1.5 rounded-lg hover:bg-green-50 text-gray-500 hover:text-green-600 transition-colors" title="Promoção">
-                          <Tag className="w-3.5 h-3.5" />
-                        </button>
+
                       </div>
                     </td>
                   </tr>
