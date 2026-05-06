@@ -59,6 +59,7 @@ export function RouteDetail() {
           createdAt: d.criado_em,
           stopCount: 1,
           is_route: false,
+          googleMapsUrl: `https://www.google.com/maps/dir/?api=1&destination=${d.endereco_latitude},${d.endereco_longitude}`,
           stops: [{
             id: d.id,
             orderId: d.numero_pedido || d.id,
@@ -181,7 +182,9 @@ export function RouteDetail() {
           <ArrowLeft className="w-5 h-5 text-gray-600" />
         </button>
         <div className="flex-1">
-          <span className="text-[10px] uppercase font-bold text-gray-400 leading-none">Rota</span>
+          <span className="text-[10px] uppercase font-bold text-gray-400 leading-none">
+            {route.is_route ? 'Rota' : 'Entrega'}
+          </span>
           <h1 className="font-bold text-gray-800 -mt-0.5 truncate max-w-[150px]">
             {route.routeName || `Entrega #${route.id.slice(0, 4)}`}
           </h1>
@@ -209,18 +212,24 @@ export function RouteDetail() {
             </div>
           </div>
 
-          <div className="pt-4 border-t border-gray-100 flex justify-between text-[11px] font-medium text-gray-500">
-            <div className="flex items-center gap-4 shrink-0">
-              <div className="flex items-center gap-1.5">
-                <Navigation className="w-3.5 h-3.5 text-gray-300" />
-                <span>{route.totalDistanceKm} km</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-gray-300" />
-                <span>{route.totalDurationText}</span>
+          {(route.totalDistanceKm && route.totalDistanceKm !== '--') || (route.totalDurationText && route.totalDurationText !== '--') ? (
+            <div className="pt-4 border-t border-gray-100 flex justify-between text-[11px] font-medium text-gray-500">
+              <div className="flex items-center gap-4 shrink-0">
+                {route.totalDistanceKm && route.totalDistanceKm !== '--' && (
+                  <div className="flex items-center gap-1.5">
+                    <Navigation className="w-3.5 h-3.5 text-gray-300" />
+                    <span>{route.totalDistanceKm} km</span>
+                  </div>
+                )}
+                {route.totalDurationText && route.totalDurationText !== '--' && (
+                  <div className="flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-gray-300" />
+                    <span>{route.totalDurationText}</span>
+                  </div>
+                )}
               </div>
             </div>
-          </div>
+          ) : null}
         </div>
 
         {/* Banner Rota Finalizada */}
@@ -248,7 +257,7 @@ export function RouteDetail() {
             ) : (
               <>
                 <Sparkles className="w-5 h-5" />
-                <span>Iniciar Rota</span>
+                <span>{route.is_route ? 'Iniciar Rota' : 'Sair para Entrega'}</span>
               </>
             )}
           </button>

@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import {
   Search, Filter, Eye, X, Phone, MapPin, Clock,
   CreditCard, User, Package, ArrowLeft, CheckCircle2,
-  Printer, List, Map, ChevronDown, ChevronRight, TruckIcon
+  Printer, List, Map, ChevronDown, ChevronRight, TruckIcon,
+  Navigation, Loader2
 } from 'lucide-react';
 import api from '../services/api';
 
@@ -213,6 +214,11 @@ export function Orders() {
   const [assigningCourier, setAssigningCourier] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
+  // Route creation modal state
+  const [routeModalBairro, setRouteModalBairro] = useState<string | null>(null);
+  const [routeDriverId, setRouteDriverId] = useState('');
+  const [creatingRoute, setCreatingRoute] = useState(false);
+  const [routeSuccess, setRouteSuccess] = useState<string | null>(null);
   const PER_PAGE = 20;
 
   useEffect(() => {
@@ -444,6 +450,39 @@ export function Orders() {
     setExpandedBairros(p => ({ ...p, [bairro]: !p[bairro] }));
   };
 
+  const openRouteModal = (bairro: string) => {
+    setRouteModalBairro(bairro);
+    setRouteDriverId(couriers[0]?.id || '');
+    setRouteSuccess(null);
+  };
+
+  const handleCreateRoute = async () => {
+    if (!routeModalBairro || !routeDriverId) return;
+    const group = bairroGroups[routeModalBairro];
+    if (!group) return;
+    const activeOrders = group.orders.filter(
+      o => !['entregue', 'cancelado', 'Entregue', 'Cancelado'].includes(o.status)
+    );
+    if (activeOrders.length === 0) {
+      alert('Nenhum pedido ativo neste bairro para criar rota.');
+      return;
+    }
+    try {
+      setCreatingRoute(true);
+      const user = (() => { try { const u = localStorage.getItem('user'); return u ? JSON.parse(u) : null; } catch { return null; } })();
+      await api.post('/delivery-routes', {
+        driverId: routeDriverId,
+        orderIds: activeOrders.map((o: any) => o.id),
+        routeName: `Rota ${routeModalBairro}`,
+      });
+      setRouteSuccess(`Rota criada com sucesso para ${routeModalBairro}!`);
+    } catch (err: any) {
+      alert(`Erro ao criar rota: ${err?.response?.data?.error || err.message}`);
+    } finally {
+      setCreatingRoute(false);
+    }
+  };
+
   if (loading && orders.length === 0) {
     return (
       <div className="p-5 flex-1 h-full flex items-center justify-center">
@@ -670,13 +709,22 @@ export function Orders() {
                     </div>
                     <div className="flex items-center gap-2">
                       <button
+                        onClick={e => { e.stopPropagation(); openRouteModal(bairro); }}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition-colors hover:opacity-80"
+                        style={{ borderColor: col.border, backgroundColor: PRIMARY, color: 'white' }}
+                        title="Criar rota para este bairro"
+                      >
+                        <Navigation className="w-3 h-3" />
+                        <span className="hidden sm:inline">Criar Rota</span>
+                      </button>
+                      <button
                         onClick={e => { e.stopPropagation(); printBairroRoute(bairro, group.orders); }}
                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition-colors hover:opacity-80"
                         style={{ borderColor: col.border, backgroundColor: 'white', color: col.text }}
                         title="Imprimir folha de rota"
                       >
                         <Printer className="w-3 h-3" />
-                        <span className="hidden sm:inline">Rota</span>
+                        <span className="hidden sm:inline">Imprimir</span>
                       </button>
                       {isExpanded
                         ? <ChevronDown className="w-4 h-4 flex-shrink-0" style={{ color: col.text }} />
@@ -750,6 +798,96 @@ export function Orders() {
           </div>
         )}
       </div>
+
+      {/* ── ROUTE CREATION MODAL ───────────────────────── */}
+      {routeModalBairro && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <div>
+                <h3 className="font-bold text-gray-800">Criar Rota de Entrega</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Bairro: <strong>{routeModalBairro}</strong></p>
+              </div>
+              <button onClick={() => setRouteModalBairro(null)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal body */}
+            <div className="px-5 py-4 space-y-4">
+              {routeSuccess ? (
+                <div className="flex flex-col items-center gap-3 py-4 text-center">
+                  <CheckCircle2 className="w-10 h-10 text-green-500" />
+                  <p className="text-sm font-semibold text-gray-800">{routeSuccess}</p>
+                  <button
+                    onClick={() => setRouteModalBairro(null)}
+                    className="mt-2 px-5 py-2 rounded-lg text-sm font-bold text-white"
+                    style={{ backgroundColor: PRIMARY }}
+                  >
+                    Fechar
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Pedidos ativos no bairro</p>
+                    <p className="text-2xl font-black" style={{ color: PRIMARY }}>
+                      {(bairroGroups[routeModalBairro]?.orders ?? []).filter(
+                        o => !['entregue', 'cancelado', 'Entregue', 'Cancelado'].includes(o.status)
+                      ).length}
+                      <span className="text-sm font-medium text-gray-400 ml-1">pedidos</span>
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide block mb-1.5">
+                      Selecionar Entregador
+                    </label>
+                    {couriers.length === 0 ? (
+                      <p className="text-sm text-red-500">Nenhum entregador disponível.</p>
+                    ) : (
+                      <select
+                        value={routeDriverId}
+                        onChange={e => setRouteDriverId(e.target.value)}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2"
+                        style={{ '--tw-ring-color': PRIMARY } as any}
+                      >
+                        {couriers.map((c: any) => (
+                          <option key={c.id} value={c.id}>
+                            {c.nome || c.name} — {c.veiculo || c.vehicle || 'Veículo não informado'}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={() => setRouteModalBairro(null)}
+                      className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={handleCreateRoute}
+                      disabled={creatingRoute || !routeDriverId}
+                      className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white flex items-center justify-center gap-2 transition-opacity disabled:opacity-60"
+                      style={{ backgroundColor: PRIMARY }}
+                    >
+                      {creatingRoute ? (
+                        <><Loader2 className="w-4 h-4 animate-spin" /> Criando...</>
+                      ) : (
+                        <><Navigation className="w-4 h-4" /> Criar Rota</>
+                      )}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── DETAIL PANEL ───────────────────────────────── */}
       {selected && (
