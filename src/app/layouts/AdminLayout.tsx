@@ -19,7 +19,7 @@ const navItems = [
   { label: 'Produtos', icon: Package, path: '/products', slug: 'produtos' },
   { label: 'Categorias', icon: Grid3X3, path: '/categories', slug: 'categorias' },
   { label: 'Promoções', icon: Tag, path: '/promotions', slug: 'produtos' }, // Using 'produtos' perm for promotions too or we can add 'promocoes'
-  // { label: 'Banners', icon: Image, path: '/banners', slug: 'configuracoes' },
+  { label: 'Banners', icon: Image, path: '/banners', slug: 'banners' },
   { label: 'Clientes', icon: Users, path: '/customers', slug: 'clientes' },
   { label: 'Entregas', icon: Truck, path: '/deliveries', slug: 'entregadores' },
   { label: 'Entregadores', icon: User, path: '/entregadores', slug: 'entregadores' },

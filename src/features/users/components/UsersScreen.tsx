@@ -32,7 +32,7 @@ const getLoggedUser = () => {
 };
 
 const rolePermissions: Record<string, string[]> = {
-  'Administrador': ['dashboard', 'pedidos', 'produtos', 'categorias', 'clientes', 'cupons', 'entregadores', 'usuarios', 'configuracoes', 'financeiro', 'estoque'],
+  'Administrador': ['dashboard', 'pedidos', 'produtos', 'categorias', 'banners', 'clientes', 'cupons', 'entregadores', 'usuarios', 'configuracoes', 'financeiro', 'estoque'],
   'Operador': ['dashboard', 'pedidos', 'produtos', 'categorias', 'clientes', 'estoque'],
   'Separador': ['pedidos', 'estoque'],
   'Entregador': ['pedidos', 'entregadores'],
