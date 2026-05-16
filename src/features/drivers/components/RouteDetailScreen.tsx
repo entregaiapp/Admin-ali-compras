@@ -31,12 +31,18 @@ const getRouteBadgeStyle = (route: DriverRoute) => {
   return { bg: '#dbeafe', color: '#1e40af' };
 };
 
-const getApiErrorMessage = (error: any, fallback: string) => (
-  error?.response?.data?.message ||
-  error?.response?.data?.error?.message ||
-  error?.response?.data?.error ||
-  fallback
-);
+const getApiErrorMessage = (error: any, fallback: string) => {
+  const payload = error?.response?.data;
+  const candidates = [
+    payload?.message,
+    payload?.error?.message,
+    payload?.error,
+    error?.message,
+  ];
+
+  const message = candidates.find((value) => typeof value === 'string' && value.trim());
+  return message || fallback;
+};
 
 export function RouteDetailScreen() {
   const { id } = useParams<{ id: string }>();

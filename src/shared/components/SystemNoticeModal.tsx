@@ -49,10 +49,20 @@ type SystemNoticePayload = {
 
 const SYSTEM_NOTICE_EVENT = "system-notice";
 
-export function showSystemNotice(message: string, title = "Atenção") {
+const normalizeNoticeMessage = (message: unknown) => {
+  if (typeof message === "string") return message;
+  if (message && typeof message === "object" && "message" in message) {
+    const nestedMessage = (message as { message?: unknown }).message;
+    if (typeof nestedMessage === "string") return nestedMessage;
+  }
+
+  return "Não foi possível concluir a operação.";
+};
+
+export function showSystemNotice(message: unknown, title = "Atenção") {
   window.dispatchEvent(
     new CustomEvent<SystemNoticePayload>(SYSTEM_NOTICE_EVENT, {
-      detail: { title, message },
+      detail: { title, message: normalizeNoticeMessage(message) },
     }),
   );
 }

@@ -62,8 +62,18 @@ export const getCourierVehicleLabel = (courier: any) => {
   return vehicle.nome || vehicle.name || vehicle.tipo || vehicle.type || "Veículo não informado";
 };
 
-export const getApiErrorMessage = (error: any, fallback: string) =>
-  error?.response?.data?.message || error?.response?.data?.error || fallback;
+export const getApiErrorMessage = (error: any, fallback: string) => {
+  const payload = error?.response?.data;
+  const candidates = [
+    payload?.message,
+    payload?.error?.message,
+    payload?.error,
+    error?.message,
+  ];
+
+  const message = candidates.find((value) => typeof value === "string" && value.trim());
+  return message || fallback;
+};
 
 export const hexToRgba = (hex: string, alpha: number) => {
   const normalized = hex.replace("#", "");

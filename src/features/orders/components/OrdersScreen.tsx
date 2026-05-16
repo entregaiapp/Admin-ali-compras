@@ -239,6 +239,19 @@ export function OrdersScreen() {
     }
   };
 
+  const updateDeliveryRecord = (delivery: any) => {
+    if (!delivery?.id) return;
+
+    setDeliveryRecords((prev) => {
+      const exists = prev.some((item) => item.id === delivery.id);
+      if (exists) {
+        return prev.map((item) => (item.id === delivery.id ? delivery : item));
+      }
+
+      return [...prev, delivery];
+    });
+  };
+
   const handleAssignCourier = async (entregadorId: string) => {
     if (!selected) return;
 
@@ -269,7 +282,9 @@ export function OrdersScreen() {
             entregador_id: entregadorId,
           },
         );
-        setCurrentDelivery(response.data.data || response.data);
+        const updatedDelivery = response.data.data || response.data;
+        setCurrentDelivery(updatedDelivery);
+        updateDeliveryRecord(updatedDelivery);
       } else {
         // Não existe entrega, vamos criar uma
         // Precisamos de uma área de entrega. Vamos tentar encontrar uma pelo bairro ou usar a primeira disponível.
@@ -297,7 +312,9 @@ export function OrdersScreen() {
           area_entrega_id: area.id,
           status: "atribuida",
         });
-        setCurrentDelivery(response.data.data || response.data);
+        const createdDelivery = response.data.data || response.data;
+        setCurrentDelivery(createdDelivery);
+        updateDeliveryRecord(createdDelivery);
       }
     } catch (error) {
       console.error("Error assigning courier:", error);
