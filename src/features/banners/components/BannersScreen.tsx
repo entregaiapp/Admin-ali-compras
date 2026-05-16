@@ -1,5 +1,5 @@
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
-import { Plus, Edit2, Trash2, GripVertical, X, Image, Calendar, Power, Loader2, UploadCloud, ArrowUp, ArrowDown } from 'lucide-react';
+import { Plus, Edit2, Trash2, GripVertical, X, Image, Calendar, Power, Loader2, UploadCloud, ArrowUp, ArrowDown, Search, PackageCheck } from 'lucide-react';
 import { bannersService } from '../services/bannersService';
 import type { Banner, BannerDisplayType, BannerPageKey, BannerPayload, BannerPlacementKey, BannerSegmentRules } from '../types/banner';
 import { productsService } from '@/features/products';
@@ -103,6 +103,208 @@ function bannerToPayload(banner?: Banner | null): BannerPayload {
   };
 }
 
+function getProductCategoryId(product: any) {
+  return product.categoria_final_id || product.categoria_id || product.produto_categoria_id || '';
+}
+
+function getProductCategoryLabel(product: any) {
+  return product.categoria_caminho || product.categoria_nome || 'Sem categoria';
+}
+
+function ProductPickerModal({
+  products,
+  categories,
+  selectedIds,
+  onChange,
+  onClose,
+}: {
+  products: any[];
+  categories: any[];
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [categoryId, setCategoryId] = useState('');
+  const [page, setPage] = useState(1);
+  const perPage = 30;
+
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const selectedProducts = useMemo(
+    () => selectedIds.map((id) => products.find((product) => product.id === id)).filter(Boolean),
+    [products, selectedIds],
+  );
+
+  const filteredProducts = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+
+    return products.filter((product) => {
+      const categoryMatches = !categoryId || getProductCategoryId(product) === categoryId;
+      const text = `${product.nome || ''} ${product.marca || ''} ${product.codigo_interno || ''} ${getProductCategoryLabel(product)}`.toLowerCase();
+      const searchMatches = !normalizedQuery || text.includes(normalizedQuery);
+      return categoryMatches && searchMatches;
+    });
+  }, [categoryId, products, query]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredProducts.length / perPage));
+  const currentPage = Math.min(page, totalPages);
+  const visibleProducts = filteredProducts.slice((currentPage - 1) * perPage, currentPage * perPage);
+
+  useEffect(() => {
+    setPage(1);
+  }, [categoryId, query]);
+
+  const toggle = (productId: string) => {
+    onChange(selectedSet.has(productId)
+      ? selectedIds.filter((id) => id !== productId)
+      : [...selectedIds, productId]);
+  };
+
+  const selectVisible = () => {
+    const next = new Set(selectedIds);
+    visibleProducts.forEach((product) => next.add(product.id));
+    onChange(Array.from(next));
+  };
+
+  const clearSelected = () => onChange([]);
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 p-4">
+      <div className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-gray-100 px-5 py-4">
+          <div>
+            <h3 className="font-semibold text-gray-900">Selecionar produtos do banner</h3>
+            <p className="text-sm text-gray-500">{selectedIds.length} selecionado{selectedIds.length === 1 ? '' : 's'} · {filteredProducts.length} encontrado{filteredProducts.length === 1 ? '' : 's'}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[1fr_300px]">
+          <div className="flex min-h-0 flex-col border-r border-gray-100">
+            <div className="grid gap-3 border-b border-gray-100 p-4 md:grid-cols-[1fr_240px]">
+              <div className="flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2">
+                <Search className="h-4 w-4 text-gray-400" />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  className="w-full bg-transparent text-sm outline-none"
+                  placeholder="Buscar por nome, marca, código ou categoria"
+                />
+              </div>
+              <select
+                value={categoryId}
+                onChange={(event) => setCategoryId(event.target.value)}
+                className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none"
+              >
+                <option value="">Todas as categorias</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.caminho || category.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+              <button type="button" onClick={selectVisible} className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">
+                Selecionar página atual
+              </button>
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <button type="button" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="rounded-lg border border-gray-200 px-2 py-1 disabled:opacity-40">
+                  Anterior
+                </button>
+                <span>Página {currentPage} de {totalPages}</span>
+                <button type="button" disabled={currentPage >= totalPages} onClick={() => setPage((value) => Math.min(totalPages, value + 1))} className="rounded-lg border border-gray-200 px-2 py-1 disabled:opacity-40">
+                  Próxima
+                </button>
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              {visibleProducts.length === 0 ? (
+                <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-200 py-14 text-center text-sm text-gray-500">
+                  <PackageCheck className="mb-2 h-8 w-8 text-gray-300" />
+                  Nenhum produto encontrado.
+                </div>
+              ) : (
+                <div className="grid gap-2">
+                  {visibleProducts.map((product) => {
+                    const selected = selectedSet.has(product.id);
+                    return (
+                      <button
+                        type="button"
+                        key={product.id}
+                        onClick={() => toggle(product.id)}
+                        className={`flex items-center gap-3 rounded-xl border p-3 text-left transition-colors ${selected ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
+                      >
+                        <input type="checkbox" checked={selected} readOnly className="h-4 w-4" />
+                        {product.imagem_url ? (
+                          <img src={product.imagem_url} alt={product.nome} className="h-12 w-12 rounded-lg object-cover" />
+                        ) : (
+                          <div className="h-12 w-12 rounded-lg bg-gray-100" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-semibold text-gray-900">{product.nome}</div>
+                          <div className="truncate text-xs text-gray-500">{product.marca || 'Sem marca'} · {getProductCategoryLabel(product)}</div>
+                        </div>
+                        <div className="text-sm font-bold text-gray-800">
+                          {product.preco ? `R$ ${Number(product.preco).toFixed(2).replace('.', ',')}` : '-'}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <aside className="flex min-h-0 flex-col bg-gray-50">
+            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+              <span className="text-sm font-semibold text-gray-800">Selecionados</span>
+              <button type="button" onClick={clearSelected} className="text-xs font-semibold text-red-600 hover:text-red-700">
+                Limpar
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-3">
+              {selectedProducts.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-gray-200 bg-white p-4 text-sm text-gray-500">
+                  Nenhum produto selecionado.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {selectedProducts.map((product) => (
+                    <div key={product.id} className="flex items-center gap-2 rounded-xl bg-white p-2 shadow-sm">
+                      {product.imagem_url ? (
+                        <img src={product.imagem_url} alt={product.nome} className="h-9 w-9 rounded-lg object-cover" />
+                      ) : (
+                        <div className="h-9 w-9 rounded-lg bg-gray-100" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-xs font-semibold text-gray-800">{product.nome}</div>
+                        <div className="truncate text-[11px] text-gray-400">{getProductCategoryLabel(product)}</div>
+                      </div>
+                      <button type="button" onClick={() => toggle(product.id)} className="rounded-md p-1 text-gray-400 hover:bg-red-50 hover:text-red-600">
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="border-t border-gray-200 p-4">
+              <button type="button" onClick={onClose} className="w-full rounded-xl px-4 py-3 text-sm font-semibold text-white" style={{ backgroundColor: PRIMARY }}>
+                Concluir seleção
+              </button>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BannerForm({
   banner,
   products,
@@ -121,6 +323,7 @@ function BannerForm({
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [showProductPicker, setShowProductPicker] = useState(false);
 
   const allowedPlacements = useMemo(
     () => placementOptions.filter((option) => option.pages.includes(form.page_key)),
@@ -144,15 +347,6 @@ function BannerForm({
         ...current.segment_rules,
         ...patch,
       },
-    }));
-  };
-
-  const toggleProduct = (productId: string) => {
-    setForm((current) => ({
-      ...current,
-      produto_loja_ids: current.produto_loja_ids.includes(productId)
-        ? current.produto_loja_ids.filter((id) => id !== productId)
-        : [...current.produto_loja_ids, productId],
     }));
   };
 
@@ -227,6 +421,15 @@ function BannerForm({
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      {showProductPicker && (
+        <ProductPickerModal
+          products={products}
+          categories={categories}
+          selectedIds={form.produto_loja_ids}
+          onChange={(ids) => update('produto_loja_ids', ids)}
+          onClose={() => setShowProductPicker(false)}
+        />
+      )}
       <form onSubmit={submit} className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto p-6">
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-semibold text-gray-900">{banner ? 'Editar Banner' : 'Novo Banner'}</h2>
@@ -324,13 +527,40 @@ function BannerForm({
 
             <div>
               <label className="block text-sm text-gray-600 mb-1.5">Produtos ao clicar</label>
-              <div className="max-h-36 overflow-y-auto rounded-lg border border-gray-200 p-2">
-                {products.map((product) => (
-                  <label key={product.id} className="flex items-center gap-2 px-2 py-1.5 text-sm text-gray-700">
-                    <input type="checkbox" checked={form.produto_loja_ids.includes(product.id)} onChange={() => toggleProduct(product.id)} />
-                    <span className="truncate">{product.nome}</span>
-                  </label>
-                ))}
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-gray-800">
+                      {form.produto_loja_ids.length} produto{form.produto_loja_ids.length === 1 ? '' : 's'} selecionado{form.produto_loja_ids.length === 1 ? '' : 's'}
+                    </div>
+                    <div className="text-xs text-gray-500">O cliente verá estes produtos ao tocar no banner.</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowProductPicker(true)}
+                    className="shrink-0 rounded-lg px-3 py-2 text-sm font-semibold text-white"
+                    style={{ backgroundColor: PRIMARY }}
+                  >
+                    Selecionar produtos
+                  </button>
+                </div>
+                {form.produto_loja_ids.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {form.produto_loja_ids.slice(0, 6).map((id) => {
+                      const product = products.find((item) => item.id === id);
+                      return (
+                        <span key={id} className="max-w-[180px] truncate rounded-full bg-white px-2.5 py-1 text-xs font-medium text-gray-700 shadow-sm">
+                          {product?.nome || id}
+                        </span>
+                      );
+                    })}
+                    {form.produto_loja_ids.length > 6 && (
+                      <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-gray-500 shadow-sm">
+                        +{form.produto_loja_ids.length - 6}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
