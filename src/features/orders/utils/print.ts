@@ -1,5 +1,10 @@
 import { orderItemsMock, statusLabels } from '@/features/orders/constants';
-import { extractBairro } from '@/features/orders/utils/orderUtils';
+import {
+  getOrderAddress,
+  getOrderNeighborhood,
+  getOrderPaymentMethod,
+  getOrderStreetAddress,
+} from '@/features/orders/utils/orderUtils';
 
 export const printComanda = (order: any, orderItems: any[] = orderItemsMock) => {
   const subtotal = orderItems.reduce(
@@ -11,6 +16,7 @@ export const printComanda = (order: any, orderItems: any[] = orderItemsMock) => 
       ? order.taxa_entrega || 6.99
       : 0;
   const total = order.total || order.valor_total || 0;
+  const orderDate = order.realizado_em || order.criado_em || order.created_at || new Date();
 
   const html = `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -43,13 +49,14 @@ export const printComanda = (order: any, orderItems: any[] = orderItemsMock) => 
   <div class="center">
     <p class="bold large">COMANDA DE PEDIDO</p>
     <p>Pedido: <span class="bold">${order.numero_pedido || order.id}</span></p>
-    <p>Data: ${new Date(order.created_at || new Date()).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })} ${new Date(order.created_at || new Date()).toLocaleTimeString("pt-BR")}</p>
+    <p>Data: ${new Date(orderDate).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" })} ${new Date(orderDate).toLocaleTimeString("pt-BR")}</p>
     <span class="tag">${(order.tipo_pedido || order.type || "").toUpperCase()}</span>
   </div>
   <div class="divider"></div>
   <p><span class="bold">Cliente:</span> ${order.cliente?.nome || order.customer || "Não informado"}</p>
   <p><span class="bold">Telefone:</span> ${order.cliente?.telefone || order.phone || "Não informado"}</p>
-  ${order.type === "Entrega" || order.tipo_pedido === "entrega" ? `<p><span class="bold">Endereço:</span> ${order.endereco_cliente?.logradouro || order.address || "Não informado"}</p><p><span class="bold">Bairro:</span> ${order.endereco_cliente?.bairro || extractBairro(order.address || "")}</p>` : ""}
+  ${order.cpf_na_nota ? `<p><span class="bold">CPF na nota:</span> ${order.cpf_na_nota_cpf || "Informado"}</p>` : ""}
+  ${order.type === "Entrega" || order.tipo_pedido === "entrega" ? `<p><span class="bold">Endereço:</span> ${getOrderAddress(order)}</p><p><span class="bold">Bairro:</span> ${getOrderNeighborhood(order)}</p>` : ""}
   <div class="divider"></div>
   <p class="bold" style="margin-bottom:6px">ITENS DO PEDIDO:</p>
   ${(Array.isArray(orderItems) ? orderItems : [])
@@ -70,7 +77,7 @@ export const printComanda = (order: any, orderItems: any[] = orderItemsMock) => 
   <div class="divider-solid"></div>
   <div class="row-total"><span>TOTAL A PAGAR</span><span>R$ ${parseFloat(total).toFixed(2).replace(".", ",")}</span></div>
   <div class="divider"></div>
-  <p><span class="bold">Pagamento:</span> ${order.pagamento?.metodo || order.payment || "Não informado"}</p>
+  <p><span class="bold">Pagamento:</span> ${getOrderPaymentMethod(order, order.pagamento)}</p>
   <div class="divider-solid"></div>
   <div class="center" style="margin-top: 8px;">
     <p>Obrigado pela preferência!</p>
@@ -130,14 +137,14 @@ export const printBairroRoute = (bairro: string, bairroOrders: any[]) => {
       <p><span class="num">${i + 1}</span> <span class="bold">${o.numero_pedido || o.id}</span> – ${statusLabels[o.status] || o.status}</p>
       <p class="bold" style="margin-top:4px">${o.cliente?.nome || o.customer || "Não informado"}</p>
       <p>${o.cliente?.telefone || o.phone || "Não informado"}</p>
-      <p>${o.endereco_cliente?.logradouro || o.address || "Não informado"}</p>
+      <p>${getOrderStreetAddress(o)}</p>
       <div class="divider"></div>
       <div class="row"><span>Total</span><span class="bold">R$ ${parseFloat(
         o.valor_total || o.total || 0,
       )
         .toFixed(2)
         .replace(".", ",")}</span></div>
-      <div class="row"><span>Pagamento</span><span>${o.pagamento?.metodo || o.payment || "Não informado"}</span></div>
+      <div class="row"><span>Pagamento</span><span>${getOrderPaymentMethod(o, o.pagamento)}</span></div>
     </div>
   `,
     )

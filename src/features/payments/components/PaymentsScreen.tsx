@@ -7,8 +7,11 @@ const PRIMARY = '#122a4c';
 const statusStyle: Record<string, { bg: string; text: string; icon: typeof CheckCircle2 }> = {
   'Pago': { bg: '#f0fdf4', text: '#16a34a', icon: CheckCircle2 },
   'Pendente': { bg: '#fffbeb', text: '#d97706', icon: Clock },
+  'Em processamento': { bg: '#eff6ff', text: '#2563eb', icon: Clock },
   'Reembolsado': { bg: '#eff6ff', text: '#2563eb', icon: RefreshCw },
   'Cancelado': { bg: '#fef2f2', text: '#dc2626', icon: XCircle },
+  'Rejeitado': { bg: '#fef2f2', text: '#dc2626', icon: XCircle },
+  'Expirado': { bg: '#f3f4f6', text: '#6b7280', icon: XCircle },
 };
 
 const methodIcon: Record<string, typeof CreditCard> = {
@@ -24,9 +27,9 @@ export function PaymentsScreen() {
   const [statusFilter, setStatusFilter] = useState('Todos');
   const [loading, setLoading] = useState(true);
 
-  const fetchPayments = async () => {
+  const fetchPayments = async ({ silent = false } = {}) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       const [payRes, pedRes, cliRes] = await Promise.all([
         api.get('/pagamentos'),
         api.get('/pedidos'),
@@ -49,15 +52,23 @@ export function PaymentsScreen() {
         const methodMapping: Record<string, string> = {
           'credit_card': 'Cartão de Crédito',
           'debit_card': 'Cartão de Débito',
+          'cartao_credito': 'Cartão de Crédito',
+          'cartao_debito': 'Cartão de Débito',
           'pix': 'PIX',
           'cash': 'Dinheiro'
         };
 
         const statusMapping: Record<string, string> = {
+          'aprovado': 'Pago',
           'pago': 'Pago',
           'pendente': 'Pendente',
+          'em_processamento': 'Em processamento',
+          'processando': 'Em processamento',
+          'estornado': 'Reembolsado',
           'reembolsado': 'Reembolsado',
-          'cancelado': 'Cancelado'
+          'cancelado': 'Cancelado',
+          'rejeitado': 'Rejeitado',
+          'expirado': 'Expirado'
         };
 
         return {
@@ -75,12 +86,17 @@ export function PaymentsScreen() {
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchPayments();
+    const intervalId = window.setInterval(() => {
+      fetchPayments({ silent: true });
+    }, 15000);
+
+    return () => window.clearInterval(intervalId);
   }, []);
 
   const filtered = payments.filter(p => {
@@ -132,7 +148,7 @@ export function PaymentsScreen() {
           />
         </div>
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
-          {['Todos', 'Pago', 'Pendente', 'Reembolsado', 'Cancelado'].map(s => (
+          {['Todos', 'Pago', 'Pendente', 'Em processamento', 'Reembolsado', 'Rejeitado', 'Cancelado', 'Expirado'].map(s => (
             <button
               key={s}
               onClick={() => setStatusFilter(s)}

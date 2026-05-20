@@ -36,11 +36,14 @@ import {
 import { printBairroRoute, printComanda } from '@/features/orders/utils/print';
 import {
   canChangeDeliveryCourier,
-  extractBairro,
   getApiErrorMessage,
   getApiList,
   getBackendStatus,
+  getOrderAddress,
   getOrderNeighborhood,
+  getOrderPaymentMethod,
+  getOrderPaymentStatus,
+  getOrderStreetAddress,
   hexToRgba,
   isDeliveryOrder,
 } from '@/features/orders/utils/orderUtils';
@@ -56,6 +59,7 @@ export function OrdersScreen() {
   const [bairroFilter, setBairroFilter] = useState("Todos");
   const [selected, setSelected] = useState<any | null>(null);
   const [selectedItems, setSelectedItems] = useState<any[]>([]);
+  const [selectedPayments, setSelectedPayments] = useState<any[]>([]);
   const [viewMode, setViewMode] = useState<"lista" | "bairros">("lista");
   const [expandedBairros, setExpandedBairros] = useState<
     Record<string, boolean>
@@ -154,9 +158,13 @@ export function OrdersScreen() {
     return () => clearTimeout(timer);
   }, [search]);
 
-  const fetchOrders = async (pageNum = 1, reset = false) => {
+  const fetchOrders = async (
+    pageNum = 1,
+    reset = false,
+    options: { silent?: boolean } = {},
+  ) => {
     try {
-      setLoading(true);
+      if (!options.silent) setLoading(true);
       const params: any = {
         page: pageNum,
         per_page: PER_PAGE + 1, // Pesquisa 21 para saber se tem mais
@@ -179,9 +187,18 @@ export function OrdersScreen() {
     } catch (error) {
       console.error("Error fetching orders:", error);
     } finally {
-      setLoading(false);
+      if (!options.silent) setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      fetchOrders(1, true, { silent: true });
+      fetchAuxiliaryData();
+    }, 15000);
+
+    return () => window.clearInterval(intervalId);
+  }, [statusFilter, typeFilter, search]);
 
   const handleLoadMore = () => {
     fetchOrders(page + 1);
@@ -203,6 +220,24 @@ export function OrdersScreen() {
         setSelectedItems(Array.isArray(rawItems2) ? rawItems2 : []);
       } catch (err2) {
         setSelectedItems(Array.isArray(orderItemsMock) ? orderItemsMock : []);
+      }
+    }
+  };
+
+  const fetchOrderPayments = async (orderId: string) => {
+    try {
+      const response = await api.get(`/pedidos/${orderId}/pagamentos`);
+      setSelectedPayments(getApiList(response.data));
+    } catch (error) {
+      console.error("Error fetching order payments:", error);
+      try {
+        const response = await api.get("/pagamentos", {
+          params: { pedido_id: orderId },
+        });
+        setSelectedPayments(getApiList(response.data));
+      } catch (fallbackError) {
+        console.error("Error fetching order payments fallback:", fallbackError);
+        setSelectedPayments([]);
       }
     }
   };
@@ -232,8 +267,10 @@ export function OrdersScreen() {
   const handleSelectOrder = (order: any) => {
     setSelected(order);
     setSelectedItems([]);
+    setSelectedPayments([]);
     setCurrentDelivery(null);
     fetchOrderItems(order.id);
+    fetchOrderPayments(order.id);
     if ((order.tipo_pedido || order.type || "").toLowerCase() === "entrega") {
       fetchOrderDelivery(order.id);
     }
@@ -289,8 +326,7 @@ export function OrdersScreen() {
         // Não existe entrega, vamos criar uma
         // Precisamos de uma área de entrega. Vamos tentar encontrar uma pelo bairro ou usar a primeira disponível.
         const bairro =
-          selected.endereco_cliente?.bairro ||
-          extractBairro(selected.address || "");
+          getOrderNeighborhood(selected);
         let area = areas.find(
           (a) => a.nome.toLowerCase() === bairro.toLowerCase(),
         );
@@ -509,6 +545,21 @@ export function OrdersScreen() {
     typeFilter !== "Todos",
     bairroFilter !== "Todos",
   ].filter(Boolean).length;
+  const selectedPayment = selectedPayments[0] || selected?.pagamento || null;
+  const selectedForPrint = selected
+    ? { ...selected, pagamento: selectedPayment }
+    : selected;
+  const selectedPaymentMethod = getOrderPaymentMethod(selected, selectedPayment);
+  const selectedPaymentStatus = getOrderPaymentStatus(selected, selectedPayment);
+  const selectedPaymentStatusClass = ["Aprovado", "Confirmado"].includes(
+    selectedPaymentStatus,
+  )
+    ? "text-green-600"
+    : ["Rejeitado", "Cancelado", "Estornado", "Expirado"].includes(
+          selectedPaymentStatus,
+        )
+      ? "text-red-600"
+      : "text-amber-600";
   const bairroGroups: Record<
     string,
     { orders: any[]; total: number; colorIdx: number }
@@ -963,7 +1014,10 @@ export function OrdersScreen() {
                           <span className="text-xs text-gray-400 flex items-center gap-1">
                             <Clock className="w-3 h-3" />
                             {new Date(
-                              order.created_at || new Date(),
+                              order.realizado_em ||
+                                order.criado_em ||
+                                order.created_at ||
+                                new Date(),
                             ).toLocaleTimeString("pt-BR", {
                               hour: "2-digit",
                               minute: "2-digit",
@@ -971,15 +1025,12 @@ export function OrdersScreen() {
                           </span>
                           <span className="text-xs text-gray-400 flex items-center gap-1">
                             <CreditCard className="w-3 h-3" />
-                            {order.pagamento?.metodo ||
-                              order.payment ||
-                              "Pendente"}
+                            {getOrderPaymentMethod(order)}
                           </span>
                           {isEntrega && (
                             <span className="text-xs text-gray-400 flex items-center gap-1">
                               <MapPin className="w-3 h-3" />
-                              {order.endereco_cliente?.bairro ||
-                                extractBairro(order.address || "")}
+                              {getOrderNeighborhood(order)}
                             </span>
                           )}
                         </div>
@@ -1248,15 +1299,14 @@ export function OrdersScreen() {
                                 {order.cliente?.nome || order.customer}
                               </div>
                               <div className="text-xs text-gray-400 mt-0.5 truncate">
-                                {order.endereco_cliente?.logradouro ||
-                                  order.address?.split("–")[0]?.trim()}
+                                {getOrderStreetAddress(order)}
                               </div>
                               <div className="flex items-center gap-2 mt-0.5">
                                 <span className="text-[11px] text-gray-400">
                                   {order.cliente?.telefone || order.phone}
                                 </span>
                                 <span className="text-[11px] text-gray-400">
-                                  · {order.pagamento?.metodo || order.payment}
+                                  · {getOrderPaymentMethod(order)}
                                 </span>
                               </div>
                             </div>
@@ -1355,10 +1405,15 @@ export function OrdersScreen() {
                 </span>
               </div>
               <div className="text-xs text-gray-400 mt-0.5">
-                {new Date(selected.created_at || new Date()).toLocaleTimeString(
-                  "pt-BR",
-                  { hour: "2-digit", minute: "2-digit" },
-                )}{" "}
+                {new Date(
+                  selected.realizado_em ||
+                    selected.criado_em ||
+                    selected.created_at ||
+                    new Date(),
+                ).toLocaleTimeString("pt-BR", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}{" "}
                 ·{" "}
                 {(selected.tipo_pedido || selected.type || "").toUpperCase() ===
                 "ENTREGA"
@@ -1367,7 +1422,7 @@ export function OrdersScreen() {
               </div>
             </div>
             <button
-              onClick={() => printComanda(selected, selectedItems)}
+              onClick={() => printComanda(selectedForPrint, selectedItems)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
               title="Imprimir comanda"
             >
@@ -1445,15 +1500,19 @@ export function OrdersScreen() {
                     selected.phone ||
                     "Sem telefone"}
                 </div>
+                {selected.cpf_na_nota && (
+                  <div className="text-sm text-gray-500">
+                    <span className="font-medium text-gray-700">CPF na nota:</span>{" "}
+                    {selected.cpf_na_nota_cpf || "Informado"}
+                  </div>
+                )}
                 {(selected.tipo_pedido || selected.type || "").toLowerCase() ===
                   "entrega" && (
                   <>
                     <div className="flex items-start gap-2 text-sm text-gray-500">
                       <MapPin className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
                       <span>
-                        {selected.endereco_cliente
-                          ? `${selected.endereco_cliente.logradouro}, ${selected.endereco_cliente.numero} - ${selected.endereco_cliente.complemento || ""}`
-                          : selected.address}
+                        {getOrderAddress(selected)}
                       </span>
                     </div>
                     <div className="flex items-center gap-2 mt-1">
@@ -1462,8 +1521,7 @@ export function OrdersScreen() {
                         style={{ backgroundColor: "#e0e7ff", color: "#3730a3" }}
                       >
                         Bairro:{" "}
-                        {selected.endereco_cliente?.bairro ||
-                          extractBairro(selected.address || "")}
+                        {getOrderNeighborhood(selected)}
                       </span>
                     </div>
                   </>
@@ -1562,13 +1620,13 @@ export function OrdersScreen() {
                 Pagamento
               </h4>
               <div className="text-sm text-gray-600">
-                {selected.pagamento?.metodo ||
-                  selected.payment ||
-                  "Não informado"}
+                {selectedPaymentMethod}
               </div>
-              <div className="mt-1 text-xs text-green-600 font-medium">
-                ✓ {selected.pagamento?.status || "Confirmado"}
-              </div>
+              {selectedPaymentStatus !== "Não informado" && (
+                <div className={`mt-1 text-xs font-medium ${selectedPaymentStatusClass}`}>
+                  ✓ {selectedPaymentStatus}
+                </div>
+              )}
             </div>
 
             {/* Delivery Person Assignment */}
