@@ -3,7 +3,7 @@ import { Outlet, useNavigate, useLocation, Navigate } from 'react-router';
 import {
   LayoutDashboard, ShoppingCart, Package,  Grid3X3, Tag, Image, Users, Truck, User,
   Ticket, CreditCard, BarChart3, UserCog, Settings, Bell, Menu, X, LogOut,
-  ChevronRight, Store, Key, Bike, FileUp
+  ChevronRight, Store, Key, Bike
 } from 'lucide-react';
 import { notifications } from '@/shared/constants/mockData';
 import api from '@/shared/lib/api';
@@ -17,7 +17,6 @@ const navItems = [
   { label: 'Minhas Entregas', icon: Bike, path: '/driver', slug: 'entregadores' },
   { label: 'Pedidos', icon: ShoppingCart, path: '/orders', slug: 'pedidos' },
   { label: 'Produtos', icon: Package, path: '/products', slug: 'produtos' },
-  { label: 'Importar CSV', icon: FileUp, path: '/products-import', slug: 'produtos' },
   { label: 'Categorias', icon: Grid3X3, path: '/categories', slug: 'categorias' },
   { label: 'Promoções', icon: Tag, path: '/promotions', slug: 'produtos' }, // Using 'produtos' perm for promotions too or we can add 'promocoes'
   { label: 'Banners', icon: Image, path: '/banners', slug: 'banners' },
@@ -74,7 +73,10 @@ export function AdminLayout() {
     }
   }, [user?.loja_id]);
 
-  const isActive = (path: string) => location.pathname === path || location.pathname.startsWith(path + '/');
+  const isActive = (path: string) => {
+    const legacyProductImportPath = location.pathname === '/products-import' || location.pathname === '/importar-produtos';
+    return location.pathname === path || location.pathname.startsWith(path + '/') || (path === '/products' && legacyProductImportPath);
+  };
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">

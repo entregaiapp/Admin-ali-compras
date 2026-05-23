@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router';
 import { 
   Plus, Search, Filter, Edit2, Power, Eye, X, Package, 
-  ChevronDown, Grid2X2, List, Trash2, CheckCircle2, AlertCircle, Tag, Star, Zap
+  ChevronDown, Grid2X2, List, Trash2, CheckCircle2, AlertCircle, Tag, Star, Zap, FileUp
 } from 'lucide-react';
 import { showSystemNotice } from '@/shared/components/SystemNoticeModal';
 import { useProducts } from '../hooks/useProducts';
@@ -646,6 +647,7 @@ function ProductForm({ product, isNew, categories, onClose, onSuccess }: { produ
 }
 
 export function ProductsScreen() {
+  const navigate = useNavigate();
   const [isSearchingGlobal, setIsSearchingGlobal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
   const {
@@ -706,6 +708,14 @@ export function ProductsScreen() {
           >
             <Plus className="w-4 h-4" />
             <span className="hidden sm:inline">Novo Produto</span>
+          </button>
+          <button
+            onClick={() => navigate('/products/import')}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-sm font-medium transition-all hover:bg-gray-50 active:scale-95 flex-shrink-0"
+          >
+            <FileUp className="w-4 h-4" />
+            <span className="hidden sm:inline">Importar CSV</span>
+            <span className="sm:hidden">CSV</span>
           </button>
         </div>
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
