@@ -77,7 +77,9 @@ export function ProductCsvImportScreen() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-xl font-semibold text-gray-900">Importar produtos por CSV</h1>
-            <p className="mt-1 text-sm text-gray-500">Vincule produtos globais à loja usando slug e preços.</p>
+            <p className="mt-1 text-sm text-gray-500">
+              Vincule produtos globais à loja usando apenas slug e preço. Colunas extras serão ignoradas.
+            </p>
           </div>
           <button
             onClick={downloadTemplate}
@@ -117,7 +119,7 @@ export function ProductCsvImportScreen() {
                   {selectedFile ? selectedFile.name : "Selecionar CSV"}
                 </div>
                 <div className="mt-1 text-xs text-gray-500">
-                  Colunas: slug, preco, preco_promocional, sku
+                  Obrigatórias: slug e preco. Opcionais: preco_promocional e sku.
                 </div>
                 <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
                   <button
