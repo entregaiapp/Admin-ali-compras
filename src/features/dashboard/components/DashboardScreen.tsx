@@ -243,7 +243,7 @@ export function DashboardScreen() {
   const slogan = storeConfig?.slogan;
 
   return (
-    <div className="p-5 max-w-screen-xl mx-auto overflow-y-auto flex-1 h-full m-[0px]">
+    <div className="w-full max-w-none p-4 sm:p-5 lg:p-6 overflow-y-auto flex-1 h-full">
       {/* Welcome bar */}
       <div
         className="rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between text-white gap-4"
