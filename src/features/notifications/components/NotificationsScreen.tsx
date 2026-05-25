@@ -104,7 +104,7 @@ export function NotificationsScreen() {
   const activatePush = async () => {
     try {
       await enableAdminPush();
-      setFeedback('Notificações push ativadas neste dispositivo.');
+      setFeedback('Push administrativo ativado neste dispositivo para alertas de novos pedidos. Campanhas são recebidas apenas no app cliente.');
     } catch (error: any) {
       setFeedback(error?.message || 'Não foi possível ativar notificações.');
     }
@@ -146,8 +146,8 @@ export function NotificationsScreen() {
           <h2 className="text-gray-900 font-semibold">Notificações</h2>
           <p className="text-gray-500 text-sm mt-0.5">Alertas operacionais e campanhas push</p>
         </div>
-        <button onClick={activatePush} className="flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
-          <Smartphone className="w-4 h-4" /> Ativar push
+        <button onClick={activatePush} title="Receber alertas administrativos, como novos pedidos" className="flex items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+          <Smartphone className="w-4 h-4" /> Ativar alertas admin
         </button>
       </div>
 
@@ -203,7 +203,7 @@ export function NotificationsScreen() {
             <textarea required maxLength={500} rows={4} placeholder="Mensagem" value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm resize-none" />
             <input type="url" placeholder="URL de imagem (opcional)" value={form.image_url} onChange={(e) => setForm({ ...form, image_url: e.target.value })} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
             <input placeholder="Link interno, ex.: /promocoes" value={form.deep_link} onChange={(e) => setForm({ ...form, deep_link: e.target.value })} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-            <div className="text-xs text-gray-500">Público: todos os clientes desta loja</div>
+            <div className="text-xs text-gray-500">Público: clientes desta loja que ativaram push no app cliente.</div>
             <button disabled={submitting} className="flex items-center justify-center gap-2 w-full rounded-md px-4 py-2 text-sm text-white disabled:opacity-60" style={{ backgroundColor: PRIMARY }}>
               <Send className="w-4 h-4" /> {submitting ? 'Enviando...' : 'Enviar agora'}
             </button>
