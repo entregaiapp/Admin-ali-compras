@@ -13,13 +13,27 @@ export interface InternalNotification {
   created_at: string;
 }
 
+export type CampaignAudience =
+  | 'all_customers'
+  | 'recent_customers'
+  | 'inactive_customers'
+  | 'never_ordered'
+  | 'loyal_customers'
+  | 'high_value_customers'
+  | 'birthday_month';
+
 export interface PushCampaign {
   id: string;
   title: string;
   body: string;
   image_url: string | null;
   deep_link: string | null;
-  audience: string;
+  audience: CampaignAudience;
+  audience_config: {
+    min_orders?: number;
+    min_total?: number;
+    month?: number;
+  };
   status: 'draft' | 'sending' | 'sent' | 'failed' | 'scheduled';
   created_at: string;
   total_devices: number;
@@ -116,10 +130,9 @@ export async function createCampaign(input: {
   body: string;
   image_url?: string | null;
   deep_link?: string | null;
+  audience: CampaignAudience;
+  audience_config?: PushCampaign['audience_config'];
 }) {
-  const response = await api.post<{ data: PushCampaign }>('/tenant/notifications/campaigns', {
-    ...input,
-    audience: 'all_customers',
-  });
+  const response = await api.post<{ data: PushCampaign }>('/tenant/notifications/campaigns', input);
   return response.data.data;
 }

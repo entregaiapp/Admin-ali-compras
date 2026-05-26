@@ -7,6 +7,7 @@ import {
   fetchCampaigns,
   fetchNotifications,
   readNotification,
+  type CampaignAudience,
   type InternalNotification,
   type PushCampaign,
 } from '../services/notificationsService';
@@ -28,6 +29,20 @@ const statusLabels: Record<string, string> = {
   scheduled: 'Agendada',
 };
 
+const audienceOptions: Array<{ value: CampaignAudience; label: string; help: string }> = [
+  { value: 'all_customers', label: 'Todos os clientes', help: 'Clientes que permitiram campanhas push.' },
+  { value: 'recent_customers', label: 'Compraram nos últimos 30 dias', help: 'Clientes com compra recente não cancelada.' },
+  { value: 'inactive_customers', label: 'Sem comprar há 60 dias', help: 'Clientes que já compraram, mas estão inativos.' },
+  { value: 'never_ordered', label: 'Ainda não compraram', help: 'Clientes cadastrados sem pedidos válidos.' },
+  { value: 'loyal_customers', label: 'Clientes fiéis', help: 'Quantidade mínima de pedidos escolhida abaixo.' },
+  { value: 'high_value_customers', label: 'Clientes de alto valor', help: 'Total mínimo gasto escolhido abaixo.' },
+  { value: 'birthday_month', label: 'Aniversariantes do mês', help: 'Clientes com aniversário no mês escolhido.' },
+];
+
+const audienceLabel = (audience: CampaignAudience) => (
+  audienceOptions.find((option) => option.value === audience)?.label || audience
+);
+
 export function NotificationsScreen() {
   const navigate = useNavigate();
   const [tab, setTab] = useState<'history' | 'campaigns'>('history');
@@ -38,7 +53,16 @@ export function NotificationsScreen() {
   const [campaignsLoaded, setCampaignsLoaded] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({ title: '', body: '', image_url: '', deep_link: '/promocoes' });
+  const [form, setForm] = useState({
+    title: '',
+    body: '',
+    image_url: '',
+    deep_link: '/promocoes',
+    audience: 'all_customers' as CampaignAudience,
+    min_orders: '3',
+    min_total: '300',
+    month: String(new Date().getMonth() + 1),
+  });
 
   const setNotificationItems = (items: InternalNotification[]) => {
     setNotifications(items);
@@ -115,13 +139,31 @@ export function NotificationsScreen() {
     setSubmitting(true);
     setFeedback('');
     try {
+      const audienceConfig = form.audience === 'loyal_customers'
+        ? { min_orders: Number(form.min_orders) }
+        : form.audience === 'high_value_customers'
+          ? { min_total: Number(form.min_total) }
+          : form.audience === 'birthday_month'
+            ? { month: Number(form.month) }
+            : {};
       const campaign = await createCampaign({
         title: form.title,
         body: form.body,
         image_url: form.image_url || null,
         deep_link: form.deep_link || null,
+        audience: form.audience,
+        audience_config: audienceConfig,
       });
-      setForm({ title: '', body: '', image_url: '', deep_link: '/promocoes' });
+      setForm({
+        title: '',
+        body: '',
+        image_url: '',
+        deep_link: '/promocoes',
+        audience: 'all_customers',
+        min_orders: '3',
+        min_total: '300',
+        month: String(new Date().getMonth() + 1),
+      });
       if (campaign.total_devices === 0) {
         setFeedback('Histórico criado, mas nenhum cliente desta loja ativou notificações push.');
       } else if (campaign.total_sent === 0) {
@@ -203,7 +245,37 @@ export function NotificationsScreen() {
             <textarea required maxLength={500} rows={4} placeholder="Mensagem" value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm resize-none" />
             <input type="url" placeholder="URL de imagem (opcional)" value={form.image_url} onChange={(e) => setForm({ ...form, image_url: e.target.value })} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
             <input placeholder="Link interno, ex.: /promocoes" value={form.deep_link} onChange={(e) => setForm({ ...form, deep_link: e.target.value })} className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
-            <div className="text-xs text-gray-500">Público: clientes desta loja que ativaram push no app cliente.</div>
+            <label className="block text-xs font-medium text-gray-700">
+              Segmentação
+              <select value={form.audience} onChange={(e) => setForm({ ...form, audience: e.target.value as CampaignAudience })} className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white">
+                {audienceOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+            {form.audience === 'loyal_customers' && (
+              <label className="block text-xs font-medium text-gray-700">
+                Mínimo de pedidos
+                <input required type="number" min={2} max={1000} value={form.min_orders} onChange={(e) => setForm({ ...form, min_orders: e.target.value })} className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+              </label>
+            )}
+            {form.audience === 'high_value_customers' && (
+              <label className="block text-xs font-medium text-gray-700">
+                Total mínimo gasto (R$)
+                <input required type="number" min={1} step="0.01" value={form.min_total} onChange={(e) => setForm({ ...form, min_total: e.target.value })} className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+              </label>
+            )}
+            {form.audience === 'birthday_month' && (
+              <label className="block text-xs font-medium text-gray-700">
+                Mês de aniversário
+                <select value={form.month} onChange={(e) => setForm({ ...form, month: e.target.value })} className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm bg-white">
+                  {['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'].map((month, index) => (
+                    <option key={month} value={index + 1}>{month}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <div className="text-xs text-gray-500">
+              {audienceOptions.find((option) => option.value === form.audience)?.help} Somente clientes que aceitaram campanhas recebem o push.
+            </div>
             <button disabled={submitting} className="flex items-center justify-center gap-2 w-full rounded-md px-4 py-2 text-sm text-white disabled:opacity-60" style={{ backgroundColor: PRIMARY }}>
               <Send className="w-4 h-4" /> {submitting ? 'Enviando...' : 'Enviar agora'}
             </button>
@@ -227,6 +299,7 @@ export function NotificationsScreen() {
                       <td className="px-3 py-3">
                         <div className="font-medium text-gray-800">{campaign.title}</div>
                         <div className="text-xs text-gray-400">{formatDate(campaign.created_at)} | {campaign.total_devices || 0} dispositivos</div>
+                        <div className="text-xs text-gray-500">{audienceLabel(campaign.audience)}</div>
                       </td>
                       <td className="px-3 py-3 text-gray-600">{statusLabels[campaign.status] || campaign.status}</td>
                       <td className="px-3 py-3 text-right text-green-700">{campaign.total_sent || 0}</td>
