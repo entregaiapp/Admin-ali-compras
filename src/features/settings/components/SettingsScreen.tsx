@@ -66,8 +66,6 @@ export function SettingsScreen() {
     horario_fechamento: "",
     valor_minimo_pedido: 0,
     taxa_entrega_padrao: 0,
-    latitude: "",
-    longitude: "",
     // Configurações
     permite_entrega: true,
     permite_retirada: true,
@@ -184,8 +182,6 @@ export function SettingsScreen() {
           store.valor_minimo_pedido ?? prev.valor_minimo_pedido ?? 0,
         taxa_entrega_padrao:
           store.taxa_entrega_padrao ?? prev.taxa_entrega_padrao ?? 0,
-        latitude: store.latitude ?? "",
-        longitude: store.longitude ?? "",
         formas_pagamento: config.formas_pagamento || prev.formas_pagamento,
         preferencias_notificacao:
           config.preferencias_notificacao || prev.preferencias_notificacao,
@@ -229,8 +225,6 @@ export function SettingsScreen() {
         horario_fechamento: formData.horario_fechamento,
         valor_minimo_pedido: Number(formData.valor_minimo_pedido),
         taxa_entrega_padrao: Number(formData.taxa_entrega_padrao),
-        latitude: formData.latitude === "" ? null : Number(formData.latitude),
-        longitude: formData.longitude === "" ? null : Number(formData.longitude),
       };
 
       const configData = {
@@ -787,41 +781,6 @@ export function SettingsScreen() {
                     onChange={handleInputChange}
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none"
                   />
-                </div>
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1.5">
-                    Latitude da loja
-                  </label>
-                  <input
-                    type="number"
-                    step="0.0000001"
-                    min="-90"
-                    max="90"
-                    name="latitude"
-                    value={formData.latitude}
-                    onChange={handleInputChange}
-                    placeholder="-8.047562"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm text-gray-600 mb-1.5">
-                    Longitude da loja
-                  </label>
-                  <input
-                    type="number"
-                    step="0.0000001"
-                    min="-180"
-                    max="180"
-                    name="longitude"
-                    value={formData.longitude}
-                    onChange={handleInputChange}
-                    placeholder="-34.877000"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none"
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Usada como origem ao vincular pedidos a entregadores.
-                  </p>
                 </div>
                 <div className="flex items-center gap-4 py-2">
                   <label className="flex items-center gap-2 cursor-pointer">
