@@ -85,7 +85,7 @@ export function EntregadoresScreen() {
 
   const fetchVehicles = async () => {
     try {
-      const response = await api.get('/automoveis', { params: { loja_id: user?.loja_id, per_page: 100 } });
+      const response = await api.get('/automoveis', { params: { per_page: 100 } });
       const data = response.data.data;
       setVehicles(Array.isArray(data) ? data : data?.data || []);
     } catch (error) {
@@ -220,7 +220,6 @@ export function EntregadoresScreen() {
         cor: vehicleForm.cor || null,
         ano: vehicleForm.ano ? Number(vehicleForm.ano) : null,
         status: vehicleForm.status,
-        loja_id: user?.loja_id,
       };
 
       if (vehicleForm.id) {
