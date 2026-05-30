@@ -618,6 +618,14 @@ export function OrdersScreen() {
 
     if (idx >= 0 && idx < backendStatusFlow.length - 1) {
       const nextStatus = backendStatusFlow[idx + 1];
+
+      if (isDeliveryOrder && nextStatus === "entregue") {
+        showSystemNotice(
+          "A entrega deve ser confirmada pelo entregador com a chave do cliente.",
+        );
+        return;
+      }
+
       try {
         setUpdatingStatusOrderId(id);
         const nextIsDeliveryStatus =
@@ -649,10 +657,6 @@ export function OrdersScreen() {
             !["saiu_para_entrega", "entregue"].includes(delivery.status)
           ) {
             await api.patch(`/entregas/${delivery.id}/sair-para-entrega`);
-          }
-
-          if (nextStatus === "entregue" && delivery.status !== "entregue") {
-            await api.patch(`/entregas/${delivery.id}/entregar`);
           }
 
           const updatedDelivery = await getDeliveryForOrder(id);
@@ -828,6 +832,7 @@ export function OrdersScreen() {
   const selectedIsDelivery = String(selected?.tipo_pedido || selected?.type || "").toLowerCase() === "entrega";
   const selectedStatusLabel = selected ? getStatusLabel(selected.status) : "";
   const adminCannotDispatchDelivery = selectedIsDelivery && selectedStatusLabel === "Pronto";
+  const adminCannotConfirmDelivery = selectedIsDelivery && selectedStatusLabel === "Saiu para Entrega";
   const selectedCustomerName = selected?.cliente?.nome || selected?.customer || "";
   const selectedOrderNumber = selected?.numero_pedido || String(selected?.id || "").slice(0, 8);
   const selectedCustomerWhatsappMessage = selectedCustomerName
@@ -2191,7 +2196,8 @@ export function OrdersScreen() {
               {getStatusLabel(selected.status) !== "Entregue" &&
                 getStatusLabel(selected.status) !== "Cancelado" &&
                 getStatusLabel(selected.status) !== "Não entregue" &&
-                !adminCannotDispatchDelivery && (
+                !adminCannotDispatchDelivery &&
+                !adminCannotConfirmDelivery && (
                   <button
                     onClick={() =>
                       advanceStatus(
@@ -2230,6 +2236,11 @@ export function OrdersScreen() {
               {adminCannotDispatchDelivery && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                   Pedido pronto. A saída para entrega deve ser iniciada pelo entregador.
+                </div>
+              )}
+              {adminCannotConfirmDelivery && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                  A entrega deve ser confirmada pelo entregador com a chave do cliente.
                 </div>
               )}
               <button

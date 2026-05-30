@@ -52,6 +52,9 @@ export function RouteDetailScreen() {
   const [generating, setGenerating] = useState(false);
   const [updating, setUpdating] = useState<string | null>(null);
   const [problemFor, setProblemFor] = useState<DriverStop | null>(null);
+  const [receiptKeyFor, setReceiptKeyFor] = useState<DriverStop | null>(null);
+  const [receiptKey, setReceiptKey] = useState('');
+  const [receiptKeyError, setReceiptKeyError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const fetchRoute = async () => {
@@ -106,16 +109,33 @@ export function RouteDetailScreen() {
     }
   };
 
-  const updateStop = async (stop: DriverStop, status: 'delivered' | 'failed', reason?: string) => {
+  const updateStop = async (
+    stop: DriverStop,
+    status: 'delivered' | 'failed',
+    reason?: string,
+    chaveRecebimento?: string,
+  ) => {
     try {
       setUpdating(stop.id);
       setError(null);
-      await api.patch(`/delivery-route-stops/${stop.id}/check`, { status, reason });
+      setReceiptKeyError(null);
+      await api.patch(`/delivery-route-stops/${stop.id}/check`, {
+        status,
+        reason,
+        chave_recebimento: chaveRecebimento,
+      });
       await fetchRoute();
       setProblemFor(null);
+      setReceiptKeyFor(null);
+      setReceiptKey('');
     } catch (err) {
       console.error('Erro ao atualizar parada:', err);
-      setError(getApiErrorMessage(err, 'Não foi possível atualizar o pedido.'));
+      const message = getApiErrorMessage(err, 'Não foi possível atualizar o pedido.');
+      if (status === 'delivered') {
+        setReceiptKeyError(message);
+      } else {
+        setError(message);
+      }
     } finally {
       setUpdating(null);
     }
@@ -231,7 +251,11 @@ export function RouteDetailScreen() {
               hasRoute={hasRoute}
               disabled={!!updating || allFinished}
               updating={updating === stop.id}
-              onDelivered={() => updateStop(stop, 'delivered')}
+              onDelivered={() => {
+                setReceiptKeyFor(stop);
+                setReceiptKey('');
+                setReceiptKeyError(null);
+              }}
               onProblem={() => setProblemFor(stop)}
             />
           ))}
@@ -282,6 +306,53 @@ export function RouteDetailScreen() {
                 </button>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {receiptKeyFor && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50" onClick={() => setReceiptKeyFor(null)}>
+          <div
+            className="bg-white w-full sm:max-w-sm sm:rounded-2xl rounded-t-2xl p-5"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-green-700" />
+                <h4 className="font-semibold text-gray-900">Confirmar entrega</h4>
+              </div>
+              <button onClick={() => setReceiptKeyFor(null)} className="text-gray-400 hover:text-gray-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <p className="text-sm text-gray-600">
+              Solicite ao cliente a chave de recebimento de 4 dígitos.
+            </p>
+            <input
+              autoFocus
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={4}
+              value={receiptKey}
+              onChange={(event) => {
+                setReceiptKey(event.target.value.replace(/\D/g, '').slice(0, 4));
+                setReceiptKeyError(null);
+              }}
+              className="mt-4 w-full rounded-xl border border-gray-300 px-4 py-3 text-center text-2xl font-semibold tracking-[0.5em] outline-none focus:border-[#122a4c]"
+              placeholder="0000"
+              aria-label="Chave de recebimento"
+            />
+            {receiptKeyError && (
+              <p className="mt-2 text-sm font-medium text-red-700">{receiptKeyError}</p>
+            )}
+            <button
+              onClick={() => updateStop(receiptKeyFor, 'delivered', undefined, receiptKey)}
+              disabled={receiptKey.length !== 4 || updating === receiptKeyFor.id}
+              className="mt-4 w-full flex items-center justify-center gap-2 rounded-xl py-3 text-white font-semibold bg-green-600 hover:bg-green-700 disabled:opacity-50"
+            >
+              {updating === receiptKeyFor.id && <Loader2 className="w-4 h-4 animate-spin" />}
+              Confirmar entrega
+            </button>
           </div>
         </div>
       )}
