@@ -29,8 +29,8 @@ import {
   AlertTriangle,
   RotateCcw,
 } from "lucide-react";
-import api from '@/shared/lib/api';
-import { formatBrasiliaTime } from '@/shared/lib/dateTime';
+import api from "@/shared/lib/api";
+import { formatBrasiliaTime } from "@/shared/lib/dateTime";
 import {
   allStatuses,
   bairroColors,
@@ -39,14 +39,15 @@ import {
   statusColor,
   statusFlow,
   statusLabels,
-} from '@/features/orders/constants';
-import { printBairroRoute, printComanda } from '@/features/orders/utils/print';
+} from "@/features/orders/constants";
+import { printBairroRoute, printComanda } from "@/features/orders/utils/print";
 import {
   canChangeDeliveryCourier,
   getApiErrorMessage,
   getApiList,
   getBackendStatus,
   getOrderAddress,
+  getOrderItemChecklistId,
   getOrderItemName,
   getOrderItemQuantity,
   getOrderItemTotal,
@@ -58,11 +59,14 @@ import {
   hexToRgba,
   isDeliveryOrder,
   isOrderPaid,
-} from '@/features/orders/utils/orderUtils';
-import { DeliveryAssignmentModal } from '@/features/orders/components/DeliveryAssignmentModal';
-import { OrderItemsChecklistModal } from '@/features/orders/components/OrderItemsChecklistModal';
-import { showSystemNotice } from '@/shared/components/SystemNoticeModal';
-import { MfaApprovalModal, type MfaApproval } from '@/shared/components/MfaApprovalModal';
+} from "@/features/orders/utils/orderUtils";
+import { DeliveryAssignmentModal } from "@/features/orders/components/DeliveryAssignmentModal";
+import { OrderItemsChecklistModal } from "@/features/orders/components/OrderItemsChecklistModal";
+import { showSystemNotice } from "@/shared/components/SystemNoticeModal";
+import {
+  MfaApprovalModal,
+  type MfaApproval,
+} from "@/shared/components/MfaApprovalModal";
 
 const getWhatsappPhone = (phone: any) => {
   const digits = String(phone || "").replace(/\D/g, "");
@@ -86,12 +90,15 @@ const getOrderCustomerPhone = (order: any) =>
   order?.phone ||
   "";
 
-const getCancellationRequest = (order: any) => order?.solicitacao_cancelamento || null;
+const getCancellationRequest = (order: any) =>
+  order?.solicitacao_cancelamento || null;
 const hasPendingCancellationRequest = (order: any) =>
   getCancellationRequest(order)?.status === "pendente";
 const parseCurrencyInput = (value: string) => Number(value.replace(",", "."));
 const formatCurrency = (value: unknown) =>
-  `R$ ${Number(value || 0).toFixed(2).replace(".", ",")}`;
+  `R$ ${Number(value || 0)
+    .toFixed(2)
+    .replace(".", ",")}`;
 const REFUND_ACTIVE_STATUSES = new Set(["pendente", "processando", "aprovado"]);
 
 export function OrdersScreen() {
@@ -108,8 +115,12 @@ export function OrdersScreen() {
   const [selectedPayments, setSelectedPayments] = useState<any[]>([]);
   const [selectedRefunds, setSelectedRefunds] = useState<any[]>([]);
   const [refundModalOpen, setRefundModalOpen] = useState(false);
-  const [refundMode, setRefundMode] = useState<"produto_em_falta" | "outro_motivo">("produto_em_falta");
-  const [refundMissingQuantities, setRefundMissingQuantities] = useState<Record<string, string>>({});
+  const [refundMode, setRefundMode] = useState<
+    "produto_em_falta" | "outro_motivo"
+  >("produto_em_falta");
+  const [refundMissingQuantities, setRefundMissingQuantities] = useState<
+    Record<string, string>
+  >({});
   const [refundReason, setRefundReason] = useState("");
   const [refundAmount, setRefundAmount] = useState("");
   const [refundApprovalOpen, setRefundApprovalOpen] = useState(false);
@@ -118,7 +129,9 @@ export function OrdersScreen() {
   const [checklistItems, setChecklistItems] = useState<any[]>([]);
   const [checklistLoading, setChecklistLoading] = useState(false);
   const [checklistError, setChecklistError] = useState("");
-  const [viewMode, setViewMode] = useState<"lista" | "bairros" | "arquivados">("lista");
+  const [viewMode, setViewMode] = useState<"lista" | "bairros" | "arquivados">(
+    "lista",
+  );
   const [expandedBairros, setExpandedBairros] = useState<
     Record<string, boolean>
   >({});
@@ -147,16 +160,22 @@ export function OrdersScreen() {
   const [storePrintData, setStorePrintData] = useState<any | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [newOrdersCount, setNewOrdersCount] = useState(0);
-  const [lastOrdersLoadedAt, setLastOrdersLoadedAt] = useState<string | null>(null);
+  const [lastOrdersLoadedAt, setLastOrdersLoadedAt] = useState<string | null>(
+    null,
+  );
   const [checkingNewOrders, setCheckingNewOrders] = useState(false);
   const [archivedStartDate, setArchivedStartDate] = useState("");
   const [archivedEndDate, setArchivedEndDate] = useState("");
   const [cancelApprovalOrderId, setCancelApprovalOrderId] = useState("");
-  const [cancellationReviewOrder, setCancellationReviewOrder] = useState<any | null>(null);
+  const [cancellationReviewOrder, setCancellationReviewOrder] = useState<
+    any | null
+  >(null);
   const [cancellationRefundValue, setCancellationRefundValue] = useState("");
   const [cancellationReviewNote, setCancellationReviewNote] = useState("");
-  const [cancellationReviewApprovalOpen, setCancellationReviewApprovalOpen] = useState(false);
-  const [resolvingCancellationOrderId, setResolvingCancellationOrderId] = useState("");
+  const [cancellationReviewApprovalOpen, setCancellationReviewApprovalOpen] =
+    useState(false);
+  const [resolvingCancellationOrderId, setResolvingCancellationOrderId] =
+    useState("");
   const PER_PAGE = 20;
 
   const user = (() => {
@@ -298,7 +317,8 @@ export function OrdersScreen() {
       const more = Array.isArray(rawData)
         ? data.length > PER_PAGE
         : pageNum < Number(rawData?.total_pages || pageNum);
-      const displayData = Array.isArray(rawData) && more ? data.slice(0, PER_PAGE) : data;
+      const displayData =
+        Array.isArray(rawData) && more ? data.slice(0, PER_PAGE) : data;
 
       setHasMore(more);
       setOrders((prev) =>
@@ -334,7 +354,9 @@ export function OrdersScreen() {
       const response = await api.get("/pedidos/novos/contagem", {
         params: getNewOrdersQueryParams(),
       });
-      const count = Number(response.data?.data?.count ?? response.data?.count ?? 0);
+      const count = Number(
+        response.data?.data?.count ?? response.data?.count ?? 0,
+      );
       setNewOrdersCount(Number.isFinite(count) ? count : 0);
     } catch (error) {
       console.error("Error checking new orders:", error);
@@ -349,17 +371,21 @@ export function OrdersScreen() {
     }, 60000);
 
     return () => window.clearInterval(intervalId);
-  }, [statusFilter, typeFilter, bairroFilter, search, viewMode, lastOrdersLoadedAt]);
+  }, [
+    statusFilter,
+    typeFilter,
+    bairroFilter,
+    search,
+    viewMode,
+    lastOrdersLoadedAt,
+  ]);
 
   const handleRefreshNewOrders = async () => {
     if (newOrdersCount <= 0) return;
 
     setOrders([]);
     setPage(1);
-    await Promise.all([
-      fetchOrders(1, true),
-      fetchAuxiliaryData(),
-    ]);
+    await Promise.all([fetchOrders(1, true), fetchAuxiliaryData()]);
   };
 
   const handleLoadMore = () => {
@@ -427,9 +453,13 @@ export function OrdersScreen() {
 
     try {
       const responses = await Promise.all(
-        paymentIds.map((paymentId) => api.get(`/pagamentos/${paymentId}/estornos`)),
+        paymentIds.map((paymentId) =>
+          api.get(`/pagamentos/${paymentId}/estornos`),
+        ),
       );
-      const refunds = responses.flatMap((response) => getApiList(response.data));
+      const refunds = responses.flatMap((response) =>
+        getApiList(response.data),
+      );
       setSelectedRefunds(refunds);
       return refunds;
     } catch (error) {
@@ -468,7 +498,9 @@ export function OrdersScreen() {
     setSelectedRefunds([]);
     setCurrentDelivery(null);
     fetchOrderItems(order.id);
-    fetchOrderPayments(order.id).then((payments) => fetchOrderRefunds(payments));
+    fetchOrderPayments(order.id).then((payments) =>
+      fetchOrderRefunds(payments),
+    );
     if ((order.tipo_pedido || order.type || "").toLowerCase() === "entrega") {
       fetchOrderDelivery(order.id);
     }
@@ -519,10 +551,12 @@ export function OrdersScreen() {
   };
 
   useEffect(() => {
-    const deepLinkedOrderId = searchParams.get('orderId');
+    const deepLinkedOrderId = searchParams.get("orderId");
     if (!deepLinkedOrderId || selected?.id === deepLinkedOrderId) return;
 
-    const deepLinkedOrder = orders.find((order) => order.id === deepLinkedOrderId);
+    const deepLinkedOrder = orders.find(
+      (order) => order.id === deepLinkedOrderId,
+    );
     if (deepLinkedOrder) {
       handleSelectOrder(deepLinkedOrder);
     }
@@ -545,12 +579,16 @@ export function OrdersScreen() {
     if (!selected) return;
 
     if (hasPendingCancellationRequest(selected)) {
-      showSystemNotice("Analise a solicitação de cancelamento antes de atribuir uma entrega.");
+      showSystemNotice(
+        "Analise a solicitação de cancelamento antes de atribuir uma entrega.",
+      );
       return;
     }
 
     if (!isOrderPaid(selected, selectedPayments)) {
-      showSystemNotice("O pedido só pode avançar após a aprovação do pagamento.");
+      showSystemNotice(
+        "O pedido só pode avançar após a aprovação do pagamento.",
+      );
       return;
     }
 
@@ -587,8 +625,7 @@ export function OrdersScreen() {
       } else {
         // Não existe entrega, vamos criar uma
         // Precisamos de uma área de entrega. Vamos tentar encontrar uma pelo bairro ou usar a primeira disponível.
-        const bairro =
-          getOrderNeighborhood(selected);
+        const bairro = getOrderNeighborhood(selected);
         let area = areas.find(
           (a) => a.nome.toLowerCase() === bairro.toLowerCase(),
         );
@@ -632,18 +669,24 @@ export function OrdersScreen() {
     if (!delivery?.id) return;
 
     if (!canChangeDeliveryCourier(delivery)) {
-      showSystemNotice("Não é possível desvincular o entregador depois que a entrega saiu para rota.");
+      showSystemNotice(
+        "Não é possível desvincular o entregador depois que a entrega saiu para rota.",
+      );
       return;
     }
 
     try {
       const releasedOrderId = delivery.pedido_id;
       setUnassigningDeliveryId(delivery.id);
-      const response = await api.patch(`/entregas/${delivery.id}/desvincular-entregador`);
+      const response = await api.patch(
+        `/entregas/${delivery.id}/desvincular-entregador`,
+      );
       const updatedDelivery = response.data.data || response.data;
 
       setDeliveryRecords((prev) =>
-        prev.map((item) => (item.id === updatedDelivery.id ? updatedDelivery : item)),
+        prev.map((item) =>
+          item.id === updatedDelivery.id ? updatedDelivery : item,
+        ),
       );
 
       if (currentDelivery?.id === updatedDelivery.id) {
@@ -683,7 +726,9 @@ export function OrdersScreen() {
     const idx = backendStatusFlow.indexOf(rawStatus);
 
     if (hasPendingCancellationRequest(order)) {
-      showSystemNotice("Analise a solicitação de cancelamento antes de avançar o pedido.");
+      showSystemNotice(
+        "Analise a solicitação de cancelamento antes de avançar o pedido.",
+      );
       return;
     }
 
@@ -691,7 +736,9 @@ export function OrdersScreen() {
       const nextStatus = backendStatusFlow[idx + 1];
 
       if (!isOrderPaid(order, selected?.id === id ? selectedPayments : [])) {
-        showSystemNotice("O pedido só pode avançar após a aprovação do pagamento.");
+        showSystemNotice(
+          "O pedido só pode avançar após a aprovação do pagamento.",
+        );
         return;
       }
 
@@ -758,7 +805,9 @@ export function OrdersScreen() {
           ),
         );
       } finally {
-        setUpdatingStatusOrderId((currentId) => (currentId === id ? "" : currentId));
+        setUpdatingStatusOrderId((currentId) =>
+          currentId === id ? "" : currentId,
+        );
       }
     }
   };
@@ -789,7 +838,12 @@ export function OrdersScreen() {
     if (!request || request.status !== "pendente") return;
 
     setCancellationReviewOrder(order);
-    setCancellationRefundValue(String(Number(request.valor_pago || order.total || 0).toFixed(2)).replace(".", ","));
+    setCancellationRefundValue(
+      String(Number(request.valor_pago || order.total || 0).toFixed(2)).replace(
+        ".",
+        ",",
+      ),
+    );
     setCancellationReviewNote("");
     setCancellationReviewApprovalOpen(false);
   };
@@ -802,13 +856,23 @@ export function OrdersScreen() {
     setCancellationReviewApprovalOpen(false);
   };
 
-  const applyCancellationResolution = (orderId: string, request: any, status?: string) => {
+  const applyCancellationResolution = (
+    orderId: string,
+    request: any,
+    status?: string,
+  ) => {
     const patch = {
       ...(status ? { status } : {}),
       solicitacao_cancelamento: request,
     };
-    setOrders((prev) => prev.map((order) => (order.id === orderId ? { ...order, ...patch } : order)));
-    setSelected((prev: any) => (prev?.id === orderId ? { ...prev, ...patch } : prev));
+    setOrders((prev) =>
+      prev.map((order) =>
+        order.id === orderId ? { ...order, ...patch } : order,
+      ),
+    );
+    setSelected((prev: any) =>
+      prev?.id === orderId ? { ...prev, ...patch } : prev,
+    );
   };
 
   const rejectCancellationRequest = async () => {
@@ -823,11 +887,16 @@ export function OrdersScreen() {
         `/pedidos/${cancellationReviewOrder.id}/solicitacao-cancelamento/recusar`,
         { observacao: cancellationReviewNote.trim() },
       );
-      applyCancellationResolution(cancellationReviewOrder.id, response.data.data || response.data);
+      applyCancellationResolution(
+        cancellationReviewOrder.id,
+        response.data.data || response.data,
+      );
       closeCancellationReview();
       await fetchOrders(1, true, { silent: true });
     } catch (error) {
-      showSystemNotice(getApiErrorMessage(error, "Não foi possível recusar a solicitação."));
+      showSystemNotice(
+        getApiErrorMessage(error, "Não foi possível recusar a solicitação."),
+      );
     } finally {
       setResolvingCancellationOrderId("");
       setCancellationReviewOrder(null);
@@ -835,10 +904,16 @@ export function OrdersScreen() {
   };
 
   const requestCancellationApproval = () => {
-    const totalPaid = Number(getCancellationRequest(cancellationReviewOrder)?.valor_pago || 0);
+    const totalPaid = Number(
+      getCancellationRequest(cancellationReviewOrder)?.valor_pago || 0,
+    );
     const refundValue = parseCurrencyInput(cancellationRefundValue);
 
-    if (!Number.isFinite(refundValue) || refundValue < 0 || refundValue > totalPaid) {
+    if (
+      !Number.isFinite(refundValue) ||
+      refundValue < 0 ||
+      refundValue > totalPaid
+    ) {
       showSystemNotice("Informe um reembolso entre R$ 0,00 e o total pago.");
       return;
     }
@@ -863,12 +938,18 @@ export function OrdersScreen() {
           mfa_approval: approval,
         },
       );
-      applyCancellationResolution(cancellationReviewOrder.id, response.data.data || response.data, "cancelado");
+      applyCancellationResolution(
+        cancellationReviewOrder.id,
+        response.data.data || response.data,
+        "cancelado",
+      );
       setCancellationReviewApprovalOpen(false);
       setCancellationReviewOrder(null);
       await fetchOrders(1, true, { silent: true });
     } catch (error) {
-      showSystemNotice(getApiErrorMessage(error, "Não foi possível aprovar a solicitação."));
+      showSystemNotice(
+        getApiErrorMessage(error, "Não foi possível aprovar a solicitação."),
+      );
     } finally {
       setResolvingCancellationOrderId("");
     }
@@ -876,7 +957,9 @@ export function OrdersScreen() {
 
   const openRefundModal = () => {
     if (!selectedCanRefund) {
-      showSystemNotice("Este pedido não possui saldo disponível para reembolso.");
+      showSystemNotice(
+        "Este pedido não possui saldo disponível para reembolso.",
+      );
       return;
     }
 
@@ -896,7 +979,9 @@ export function OrdersScreen() {
 
   const requestRefundApproval = () => {
     if (!selectedCanRefund) {
-      showSystemNotice("Este pedido não possui saldo disponível para reembolso.");
+      showSystemNotice(
+        "Este pedido não possui saldo disponível para reembolso.",
+      );
       return;
     }
 
@@ -911,7 +996,9 @@ export function OrdersScreen() {
     }
 
     if (refundMode === "produto_em_falta") {
-      const hasMissingItem = Object.values(refundMissingQuantities).some((value) => Number(value) > 0);
+      const hasMissingItem = Object.values(refundMissingQuantities).some(
+        (value) => Number(value) > 0,
+      );
       if (!hasMissingItem) {
         showSystemNotice("Selecione ao menos um produto em falta.");
         return;
@@ -937,9 +1024,15 @@ export function OrdersScreen() {
             itens: selectedItems
               .map((item, index) => ({
                 item_pedido_id: item.id,
-                quantidade_faltante: Number(refundMissingQuantities[getOrderItemChecklistId(item, index)] || 0),
+                quantidade_faltante: Number(
+                  refundMissingQuantities[
+                    getOrderItemChecklistId(item, index)
+                  ] || 0,
+                ),
               }))
-              .filter((item) => item.item_pedido_id && item.quantidade_faltante > 0),
+              .filter(
+                (item) => item.item_pedido_id && item.quantidade_faltante > 0,
+              ),
             mfa_approval: approval,
           }
         : {
@@ -959,7 +1052,9 @@ export function OrdersScreen() {
       setRefundModalOpen(false);
       showSystemNotice("Reembolso solicitado com sucesso.");
     } catch (error) {
-      showSystemNotice(getApiErrorMessage(error, "Não foi possível solicitar o reembolso."));
+      showSystemNotice(
+        getApiErrorMessage(error, "Não foi possível solicitar o reembolso."),
+      );
     } finally {
       setRefundSubmitting(false);
     }
@@ -1000,7 +1095,9 @@ export function OrdersScreen() {
 
   const getStatusLabel = (status: string) => statusLabels[status] || status;
   const getDeliveryFailureReason = (order: any) =>
-    (currentDelivery?.pedido_id === order?.id ? currentDelivery?.observacoes : "") ||
+    (currentDelivery?.pedido_id === order?.id
+      ? currentDelivery?.observacoes
+      : "") ||
     deliveryByOrderId.get(order?.id)?.observacoes ||
     order?.entrega?.observacoes ||
     order?.delivery_failure_reason ||
@@ -1036,10 +1133,12 @@ export function OrdersScreen() {
           (order) => getOrderNeighborhood(order) === bairroFilter,
         );
   const listDeliveryOrders = allDeliveryOrders.filter(
-    (order) => !assignedOrderIds.has(order.id) && !hasPendingCancellationRequest(order),
+    (order) =>
+      !assignedOrderIds.has(order.id) && !hasPendingCancellationRequest(order),
   );
   const deliveryOrders = bairroFilteredDeliveryOrders.filter(
-    (order) => !assignedOrderIds.has(order.id) && !hasPendingCancellationRequest(order),
+    (order) =>
+      !assignedOrderIds.has(order.id) && !hasPendingCancellationRequest(order),
   );
   const selectableDeliveryOrders =
     viewMode === "bairros" ? deliveryOrders : listDeliveryOrders;
@@ -1070,18 +1169,23 @@ export function OrdersScreen() {
   const selectedPayment = getPreferredOrderPayment(selected, selectedPayments);
   const selectedIsPaid = isOrderPaid(selected, selectedPayments);
   const selectedRefundedAmount = selectedRefunds
-    .filter((refund) => REFUND_ACTIVE_STATUSES.has(String(refund.status || "").toLowerCase()))
+    .filter((refund) =>
+      REFUND_ACTIVE_STATUSES.has(String(refund.status || "").toLowerCase()),
+    )
     .reduce((sum, refund) => sum + Number(refund.valor || 0), 0);
   const selectedRefundableAmount = Math.max(
     0,
-    Number(selectedPayment?.valor || selected?.valor_total || selected?.total || 0) - selectedRefundedAmount,
+    Number(
+      selectedPayment?.valor || selected?.valor_total || selected?.total || 0,
+    ) - selectedRefundedAmount,
   );
   const missingItemsRefundAmount = selectedItems.reduce((sum, item, index) => {
     const key = getOrderItemChecklistId(item, index);
     const quantity = Number(refundMissingQuantities[key] || 0);
     if (!Number.isFinite(quantity) || quantity <= 0) return sum;
     const itemQuantity = getOrderItemQuantity(item);
-    const unitPrice = itemQuantity > 0 ? getOrderItemTotal(item) / itemQuantity : 0;
+    const unitPrice =
+      itemQuantity > 0 ? getOrderItemTotal(item) / itemQuantity : 0;
     return sum + unitPrice * Math.min(quantity, itemQuantity);
   }, 0);
   const refundPreviewAmount =
@@ -1091,8 +1195,14 @@ export function OrdersScreen() {
   const selectedForPrint = selected
     ? { ...selected, pagamento: selectedPayment }
     : selected;
-  const selectedPaymentMethod = getOrderPaymentMethod(selected, selectedPayment);
-  const selectedPaymentStatus = getOrderPaymentStatus(selected, selectedPayment);
+  const selectedPaymentMethod = getOrderPaymentMethod(
+    selected,
+    selectedPayment,
+  );
+  const selectedPaymentStatus = getOrderPaymentStatus(
+    selected,
+    selectedPayment,
+  );
   const selectedStatusUpdating = updatingStatusOrderId === selected?.id;
   const selectedCancelling = cancellingOrderId === selected?.id;
   const selectedArchiving = archivingOrderId === selected?.id;
@@ -1102,9 +1212,13 @@ export function OrdersScreen() {
     selectedIsPaid &&
     !selectedCancellationPending &&
     selectedRefundableAmount > 0;
-  const selectedCancellationResolving = resolvingCancellationOrderId === selected?.id;
+  const selectedCancellationResolving =
+    resolvingCancellationOrderId === selected?.id;
   const selectedOrderUpdating =
-    selectedStatusUpdating || selectedCancelling || selectedArchiving || selectedCancellationResolving;
+    selectedStatusUpdating ||
+    selectedCancelling ||
+    selectedArchiving ||
+    selectedCancellationResolving;
   const selectedPaymentStatusClass = ["Aprovado", "Confirmado"].includes(
     selectedPaymentStatus,
   )
@@ -1114,12 +1228,18 @@ export function OrdersScreen() {
         )
       ? "text-red-600"
       : "text-amber-600";
-  const selectedIsDelivery = String(selected?.tipo_pedido || selected?.type || "").toLowerCase() === "entrega";
+  const selectedIsDelivery =
+    String(selected?.tipo_pedido || selected?.type || "").toLowerCase() ===
+    "entrega";
   const selectedStatusLabel = selected ? getStatusLabel(selected.status) : "";
-  const adminCannotDispatchDelivery = selectedIsDelivery && selectedStatusLabel === "Pronto";
-  const adminCannotConfirmDelivery = selectedIsDelivery && selectedStatusLabel === "Saiu para Entrega";
-  const selectedCustomerName = selected?.cliente?.nome || selected?.customer || "";
-  const selectedOrderNumber = selected?.numero_pedido || String(selected?.id || "").slice(0, 8);
+  const adminCannotDispatchDelivery =
+    selectedIsDelivery && selectedStatusLabel === "Pronto";
+  const adminCannotConfirmDelivery =
+    selectedIsDelivery && selectedStatusLabel === "Saiu para Entrega";
+  const selectedCustomerName =
+    selected?.cliente?.nome || selected?.customer || "";
+  const selectedOrderNumber =
+    selected?.numero_pedido || String(selected?.id || "").slice(0, 8);
   const selectedCustomerWhatsappMessage = selectedCustomerName
     ? `Olá, ${selectedCustomerName}! Sobre o pedido #${selectedOrderNumber}, vimos que ele consta como não entregue. Podemos combinar os próximos passos?`
     : `Olá! Sobre o pedido #${selectedOrderNumber}, vimos que ele consta como não entregue. Podemos combinar os próximos passos?`;
@@ -1152,8 +1272,10 @@ export function OrdersScreen() {
             description: "Pedidos que ainda exigem ação",
             orders: filtered.filter(
               (order) =>
-                !hasPendingCancellationRequest(order)
-                && !["entregue", "nao_entregue", "cancelado"].includes(order.status),
+                !hasPendingCancellationRequest(order) &&
+                !["entregue", "nao_entregue", "cancelado"].includes(
+                  order.status,
+                ),
             ),
           },
           {
@@ -1234,9 +1356,14 @@ export function OrdersScreen() {
         isOrderPaid(order) &&
         !assignedOrderIds.has(order.id) &&
         !hasPendingCancellationRequest(order) &&
-        !["entregue", "nao_entregue", "cancelado", "Entregue", "Não entregue", "Cancelado"].includes(
-          order.status,
-        ),
+        ![
+          "entregue",
+          "nao_entregue",
+          "cancelado",
+          "Entregue",
+          "Não entregue",
+          "Cancelado",
+        ].includes(order.status),
     );
     if (activeOrders.length === 0) {
       showSystemNotice(
@@ -1418,7 +1545,9 @@ export function OrdersScreen() {
                         setArchivedStartDate("");
                         setArchivedEndDate("");
                       } else {
-                        setTypeFilter(viewMode === "bairros" ? "Entrega" : "Todos");
+                        setTypeFilter(
+                          viewMode === "bairros" ? "Entrega" : "Todos",
+                        );
                         setBairroFilter("Todos");
                       }
                     }}
@@ -1429,7 +1558,9 @@ export function OrdersScreen() {
                 )}
               </div>
 
-              <div className={`grid grid-cols-1 gap-3 ${viewMode === "arquivados" ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
+              <div
+                className={`grid grid-cols-1 gap-3 ${viewMode === "arquivados" ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}
+              >
                 <div className="relative">
                   <label className="block text-[11px] font-semibold uppercase text-gray-400 mb-1">
                     Busca
@@ -1461,25 +1592,25 @@ export function OrdersScreen() {
                 </div>
 
                 {viewMode !== "arquivados" && (
-                    <div>
-                      <label className="block text-[11px] font-semibold uppercase text-gray-400 mb-1">
-                        Tipo
-                      </label>
-                      <select
-                        value={typeFilter}
-                        onChange={(e) => setTypeFilter(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-700 focus:outline-none focus:ring-1"
-                      >
-                        {(viewMode === "bairros"
-                          ? ["Entrega"]
-                          : ["Todos", "Entrega", "Retirada"]
-                        ).map((t) => (
-                          <option key={t} value={t}>
-                            {t}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold uppercase text-gray-400 mb-1">
+                      Tipo
+                    </label>
+                    <select
+                      value={typeFilter}
+                      onChange={(e) => setTypeFilter(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-700 focus:outline-none focus:ring-1"
+                    >
+                      {(viewMode === "bairros"
+                        ? ["Entrega"]
+                        : ["Todos", "Entrega", "Retirada"]
+                      ).map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 )}
 
                 {viewMode === "arquivados" && (
@@ -1595,9 +1726,7 @@ export function OrdersScreen() {
                 : "cursor-not-allowed border-gray-200 bg-gray-100 text-gray-400"
             }`}
             style={
-              newOrdersCount > 0
-                ? { backgroundColor: PRIMARY }
-                : undefined
+              newOrdersCount > 0 ? { backgroundColor: PRIMARY } : undefined
             }
           >
             <RefreshCw
@@ -1617,7 +1746,9 @@ export function OrdersScreen() {
               >
                 <div className="flex items-center justify-between gap-3 border-b border-gray-100 bg-white px-4 py-3">
                   <div>
-                    <h3 className="text-sm font-semibold text-gray-800">{group.title}</h3>
+                    <h3 className="text-sm font-semibold text-gray-800">
+                      {group.title}
+                    </h3>
                     <p className="text-xs text-gray-500">{group.description}</p>
                   </div>
                   <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
@@ -1625,166 +1756,190 @@ export function OrdersScreen() {
                   </span>
                 </div>
                 <div className="divide-y divide-gray-100">
-            {group.orders.map((order, orderIndex) => {
-              const statusDisplay = getStatusLabel(order.status);
-              const sc = statusColor[order.status] ||
-                statusColor["Recebido"] || { bg: "#fffbeb", text: "#d97706" };
-              const isEntrega = isDeliveryOrder(order);
-              const canSelectForDelivery =
-                isEntrega &&
-                isOrderPaid(order) &&
-                !assignedOrderIds.has(order.id) &&
-                !hasPendingCancellationRequest(order) &&
-                !["entregue", "nao_entregue", "cancelado"].includes(order.status);
-              const isSelectedForDelivery = selectedOrderIds.includes(order.id);
-              const assignedDelivery = deliveryByOrderId.get(order.id);
-              const failureReason = getDeliveryFailureReason(order);
-              const rowBgClass = isSelectedForDelivery
-                ? ""
-                : orderIndex % 2 === 0
-                  ? "bg-white"
-                  : "bg-slate-50";
+                  {group.orders.map((order, orderIndex) => {
+                    const statusDisplay = getStatusLabel(order.status);
+                    const sc = statusColor[order.status] ||
+                      statusColor["Recebido"] || {
+                        bg: "#fffbeb",
+                        text: "#d97706",
+                      };
+                    const isEntrega = isDeliveryOrder(order);
+                    const canSelectForDelivery =
+                      isEntrega &&
+                      isOrderPaid(order) &&
+                      !assignedOrderIds.has(order.id) &&
+                      !hasPendingCancellationRequest(order) &&
+                      !["entregue", "nao_entregue", "cancelado"].includes(
+                        order.status,
+                      );
+                    const isSelectedForDelivery = selectedOrderIds.includes(
+                      order.id,
+                    );
+                    const assignedDelivery = deliveryByOrderId.get(order.id);
+                    const failureReason = getDeliveryFailureReason(order);
+                    const rowBgClass = isSelectedForDelivery
+                      ? ""
+                      : orderIndex % 2 === 0
+                        ? "bg-white"
+                        : "bg-slate-50";
 
-              return (
-                <div
-                  key={order.id}
-                  onClick={() =>
-                    toggleSelectableOrder(order, canSelectForDelivery)
-                  }
-                  onKeyDown={(event) => {
-                    if (!canSelectForDelivery) return;
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      toggleOrderSelection(order.id);
-                    }
-                  }}
-                  role={canSelectForDelivery ? "checkbox" : undefined}
-                  aria-checked={
-                    canSelectForDelivery ? isSelectedForDelivery : undefined
-                  }
-                  tabIndex={canSelectForDelivery ? 0 : undefined}
-                  className={`px-4 py-3.5 transition-colors border-l-2 ${rowBgClass} ${canSelectForDelivery ? "cursor-pointer hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-inset" : "cursor-default"} ${isSelectedForDelivery ? "" : "border-transparent"}`}
-                  style={
-                    isSelectedForDelivery
-                      ? {
-                          backgroundColor: hexToRgba(primaryColor, 0.12),
-                          borderLeftColor: primaryColor,
-                          boxShadow: `inset 0 0 0 1px ${hexToRgba(primaryColor, 0.22)}`,
+                    return (
+                      <div
+                        key={order.id}
+                        onClick={() =>
+                          toggleSelectableOrder(order, canSelectForDelivery)
                         }
-                      : ({
-                          borderLeftColor: "transparent",
-                          "--tw-ring-color": hexToRgba(primaryColor, 0.35),
-                        } as any)
-                  }
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-start gap-3 flex-1 min-w-0">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-semibold text-gray-800">
-                            {order.numero_pedido || order.id}
-                          </span>
-                          <span
-                            className="px-2 py-0.5 rounded-full text-[11px] font-medium"
-                            style={{ backgroundColor: sc.bg, color: sc.text }}
-                          >
-                            {statusDisplay}
-                          </span>
-                          <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
-                            {isEntrega ? "Entrega" : "Retirada"}
-                          </span>
-                          {viewMode === "arquivados" && (
-                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                              Arquivado
-                            </span>
-                          )}
-                          {!isOrderPaid(order) && (
-                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
-                              Pagamento pendente
-                            </span>
-                          )}
-                          {hasPendingCancellationRequest(order) && (
-                            <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-50 text-red-700">
-                              Cancelamento para análise
-                            </span>
-                          )}
-                          {isEntrega && assignedDelivery?.entregador_id && (
-                            <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
-                              <span>Atribuído</span>
-                              <button
-                                type="button"
-                                title="Desvincular entregador"
-                                aria-label="Desvincular entregador"
-                                disabled={unassigningDeliveryId === assignedDelivery.id}
-                                onClick={(event) =>
-                                  handleUnassignCourier(assignedDelivery, event)
-                                }
-                                className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full text-blue-700 hover:bg-blue-100 disabled:opacity-50"
-                              >
-                                {unassigningDeliveryId === assignedDelivery.id ? (
-                                  <Loader2 className="h-3 w-3 animate-spin" />
-                                ) : (
-                                  <ArrowLeft className="h-3 w-3" />
-                                )}
-                              </button>
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-sm text-gray-600 mt-0.5">
-                          {order.cliente?.nome ||
-                            order.customer ||
-                            "Desconhecido"}
-                        </div>
-                        {order.status === "nao_entregue" && (
-                          <div className="mt-1 rounded-md border border-red-100 bg-red-50 px-2 py-1 text-xs font-medium text-red-700">
-                            Problema na entrega{failureReason ? `: ${failureReason}` : ""}
-                          </div>
-                        )}
-                        <div className="flex items-center gap-3 mt-1">
-                          <span className="text-xs text-gray-400 flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            {formatBrasiliaTime(
-                              order.realizado_em ||
-                                order.criado_em ||
-                                order.created_at ||
-                                new Date(),
-                            )}
-                          </span>
-                          <span className="text-xs text-gray-400 flex items-center gap-1">
-                            <CreditCard className="w-3 h-3" />
-                            {getOrderPaymentMethod(order)}
-                          </span>
-                          {isEntrega && (
-                            <span className="text-xs text-gray-400 flex items-center gap-1">
-                              <MapPin className="w-3 h-3" />
-                              {getOrderNeighborhood(order)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <div className="text-sm font-semibold text-gray-800">
-                        R${" "}
-                        {parseFloat(order.valor_total || order.total || 0)
-                          .toFixed(2)
-                          .replace(".", ",")}
-                      </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleSelectOrder(order);
+                        onKeyDown={(event) => {
+                          if (!canSelectForDelivery) return;
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            toggleOrderSelection(order.id);
+                          }
                         }}
-                        className="mt-1 text-xs flex items-center gap-1 ml-auto hover:underline"
-                        style={{ color: PRIMARY }}
+                        role={canSelectForDelivery ? "checkbox" : undefined}
+                        aria-checked={
+                          canSelectForDelivery
+                            ? isSelectedForDelivery
+                            : undefined
+                        }
+                        tabIndex={canSelectForDelivery ? 0 : undefined}
+                        className={`px-4 py-3.5 transition-colors border-l-2 ${rowBgClass} ${canSelectForDelivery ? "cursor-pointer hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-inset" : "cursor-default"} ${isSelectedForDelivery ? "" : "border-transparent"}`}
+                        style={
+                          isSelectedForDelivery
+                            ? {
+                                backgroundColor: hexToRgba(primaryColor, 0.12),
+                                borderLeftColor: primaryColor,
+                                boxShadow: `inset 0 0 0 1px ${hexToRgba(primaryColor, 0.22)}`,
+                              }
+                            : ({
+                                borderLeftColor: "transparent",
+                                "--tw-ring-color": hexToRgba(
+                                  primaryColor,
+                                  0.35,
+                                ),
+                              } as any)
+                        }
                       >
-                        <Eye className="w-3 h-3" /> Detalhes
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-start gap-3 flex-1 min-w-0">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm font-semibold text-gray-800">
+                                  {order.numero_pedido || order.id}
+                                </span>
+                                <span
+                                  className="px-2 py-0.5 rounded-full text-[11px] font-medium"
+                                  style={{
+                                    backgroundColor: sc.bg,
+                                    color: sc.text,
+                                  }}
+                                >
+                                  {statusDisplay}
+                                </span>
+                                <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
+                                  {isEntrega ? "Entrega" : "Retirada"}
+                                </span>
+                                {viewMode === "arquivados" && (
+                                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                                    Arquivado
+                                  </span>
+                                )}
+                                {!isOrderPaid(order) && (
+                                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
+                                    Pagamento pendente
+                                  </span>
+                                )}
+                                {hasPendingCancellationRequest(order) && (
+                                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-50 text-red-700">
+                                    Cancelamento para análise
+                                  </span>
+                                )}
+                                {isEntrega &&
+                                  assignedDelivery?.entregador_id && (
+                                    <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+                                      <span>Atribuído</span>
+                                      <button
+                                        type="button"
+                                        title="Desvincular entregador"
+                                        aria-label="Desvincular entregador"
+                                        disabled={
+                                          unassigningDeliveryId ===
+                                          assignedDelivery.id
+                                        }
+                                        onClick={(event) =>
+                                          handleUnassignCourier(
+                                            assignedDelivery,
+                                            event,
+                                          )
+                                        }
+                                        className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+                                      >
+                                        {unassigningDeliveryId ===
+                                        assignedDelivery.id ? (
+                                          <Loader2 className="h-3 w-3 animate-spin" />
+                                        ) : (
+                                          <ArrowLeft className="h-3 w-3" />
+                                        )}
+                                      </button>
+                                    </span>
+                                  )}
+                              </div>
+                              <div className="text-sm text-gray-600 mt-0.5">
+                                {order.cliente?.nome ||
+                                  order.customer ||
+                                  "Desconhecido"}
+                              </div>
+                              {order.status === "nao_entregue" && (
+                                <div className="mt-1 rounded-md border border-red-100 bg-red-50 px-2 py-1 text-xs font-medium text-red-700">
+                                  Problema na entrega
+                                  {failureReason ? `: ${failureReason}` : ""}
+                                </div>
+                              )}
+                              <div className="flex items-center gap-3 mt-1">
+                                <span className="text-xs text-gray-400 flex items-center gap-1">
+                                  <Clock className="w-3 h-3" />
+                                  {formatBrasiliaTime(
+                                    order.realizado_em ||
+                                      order.criado_em ||
+                                      order.created_at ||
+                                      new Date(),
+                                  )}
+                                </span>
+                                <span className="text-xs text-gray-400 flex items-center gap-1">
+                                  <CreditCard className="w-3 h-3" />
+                                  {getOrderPaymentMethod(order)}
+                                </span>
+                                {isEntrega && (
+                                  <span className="text-xs text-gray-400 flex items-center gap-1">
+                                    <MapPin className="w-3 h-3" />
+                                    {getOrderNeighborhood(order)}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <div className="text-sm font-semibold text-gray-800">
+                              R${" "}
+                              {parseFloat(order.valor_total || order.total || 0)
+                                .toFixed(2)
+                                .replace(".", ",")}
+                            </div>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSelectOrder(order);
+                              }}
+                              className="mt-1 text-xs flex items-center gap-1 ml-auto hover:underline"
+                              style={{ color: PRIMARY }}
+                            >
+                              <Eye className="w-3 h-3" /> Detalhes
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </section>
             ))}
@@ -1838,9 +1993,14 @@ export function OrdersScreen() {
                 (o) =>
                   isOrderPaid(o) &&
                   !hasPendingCancellationRequest(o) &&
-                  !["entregue", "nao_entregue", "cancelado", "Entregue", "Não entregue", "Cancelado"].includes(
-                    o.status,
-                  ),
+                  ![
+                    "entregue",
+                    "nao_entregue",
+                    "cancelado",
+                    "Entregue",
+                    "Não entregue",
+                    "Cancelado",
+                  ].includes(o.status),
               );
               const deliveredCount = group.orders.filter((o) =>
                 ["entregue", "Entregue"].includes(o.status),
@@ -1920,7 +2080,11 @@ export function OrdersScreen() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          printBairroRoute(bairro, group.orders, storePrintData);
+                          printBairroRoute(
+                            bairro,
+                            group.orders,
+                            storePrintData,
+                          );
                         }}
                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition-colors hover:opacity-80"
                         style={{
@@ -1964,7 +2128,9 @@ export function OrdersScreen() {
                           isOrderPaid(order) &&
                           !assignedOrderIds.has(order.id) &&
                           !hasPendingCancellationRequest(order) &&
-                          !["entregue", "nao_entregue", "cancelado"].includes(order.status);
+                          !["entregue", "nao_entregue", "cancelado"].includes(
+                            order.status,
+                          );
                         const isSelectedForDelivery = selectedOrderIds.includes(
                           order.id,
                         );
@@ -2049,7 +2215,8 @@ export function OrdersScreen() {
                               </div>
                               {order.status === "nao_entregue" && (
                                 <div className="mt-1 rounded-md border border-red-100 bg-red-50 px-2 py-1 text-xs font-medium text-red-700">
-                                  Problema na entrega{failureReason ? `: ${failureReason}` : ""}
+                                  Problema na entrega
+                                  {failureReason ? `: ${failureReason}` : ""}
                                 </div>
                               )}
                               <div className="text-xs text-gray-400 mt-0.5 truncate">
@@ -2151,9 +2318,12 @@ export function OrdersScreen() {
           <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
             <div className="flex items-start justify-between gap-4 border-b border-gray-100 px-5 py-4">
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">Reembolsar pedido</h2>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Reembolsar pedido
+                </h2>
                 <p className="mt-1 text-sm text-gray-500">
-                  Pedido {selected.numero_pedido || selected.id} · saldo {formatCurrency(selectedRefundableAmount)}
+                  Pedido {selected.numero_pedido || selected.id} · saldo{" "}
+                  {formatCurrency(selectedRefundableAmount)}
                 </p>
               </div>
               <button type="button" onClick={closeRefundModal}>
@@ -2170,7 +2340,9 @@ export function OrdersScreen() {
                   <button
                     key={option.value}
                     type="button"
-                    onClick={() => setRefundMode(option.value as typeof refundMode)}
+                    onClick={() =>
+                      setRefundMode(option.value as typeof refundMode)
+                    }
                     className={`rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
                       refundMode === option.value
                         ? "bg-white text-blue-950 shadow-sm"
@@ -2184,50 +2356,65 @@ export function OrdersScreen() {
 
               {refundMode === "produto_em_falta" ? (
                 <div className="mt-5 space-y-3">
-                  {selectedItemsLoading && <p className="text-sm text-gray-500">Carregando produtos...</p>}
+                  {selectedItemsLoading && (
+                    <p className="text-sm text-gray-500">
+                      Carregando produtos...
+                    </p>
+                  )}
                   {!selectedItemsLoading && selectedItems.length === 0 && (
                     <p className="rounded-lg bg-gray-50 px-3 py-3 text-sm text-gray-500">
                       Nenhum produto encontrado para este pedido.
                     </p>
                   )}
-                  {!selectedItemsLoading && selectedItems.map((item, index) => {
-                    const key = getOrderItemChecklistId(item, index);
-                    const quantity = getOrderItemQuantity(item);
-                    const unitPrice = quantity > 0 ? getOrderItemTotal(item) / quantity : 0;
+                  {!selectedItemsLoading &&
+                    selectedItems.map((item, index) => {
+                      const key = getOrderItemChecklistId(item, index);
+                      const quantity = getOrderItemQuantity(item);
+                      const unitPrice =
+                        quantity > 0 ? getOrderItemTotal(item) / quantity : 0;
 
-                    return (
-                      <div key={key} className="rounded-xl border border-gray-200 p-3">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="min-w-0">
-                            <p className="text-sm font-semibold text-gray-800">
-                              {quantity}x {getOrderItemName(item)}
-                            </p>
-                            <p className="mt-0.5 text-xs text-gray-500">
-                              Unitário {formatCurrency(unitPrice)} · total {formatCurrency(getOrderItemTotal(item))}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <label className="text-xs font-medium text-gray-500" htmlFor={`refund-item-${key}`}>
-                              Faltou
-                            </label>
-                            <input
-                              id={`refund-item-${key}`}
-                              type="number"
-                              min="0"
-                              max={quantity}
-                              step="1"
-                              value={refundMissingQuantities[key] || ""}
-                              onChange={(event) => setRefundMissingQuantities((prev) => ({
-                                ...prev,
-                                [key]: event.target.value,
-                              }))}
-                              className="w-20 rounded-lg border border-gray-300 px-3 py-2 text-sm"
-                            />
+                      return (
+                        <div
+                          key={key}
+                          className="rounded-xl border border-gray-200 p-3"
+                        >
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-gray-800">
+                                {quantity}x {getOrderItemName(item)}
+                              </p>
+                              <p className="mt-0.5 text-xs text-gray-500">
+                                Unitário {formatCurrency(unitPrice)} · total{" "}
+                                {formatCurrency(getOrderItemTotal(item))}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <label
+                                className="text-xs font-medium text-gray-500"
+                                htmlFor={`refund-item-${key}`}
+                              >
+                                Faltou
+                              </label>
+                              <input
+                                id={`refund-item-${key}`}
+                                type="number"
+                                min="0"
+                                max={quantity}
+                                step="1"
+                                value={refundMissingQuantities[key] || ""}
+                                onChange={(event) =>
+                                  setRefundMissingQuantities((prev) => ({
+                                    ...prev,
+                                    [key]: event.target.value,
+                                  }))
+                                }
+                                className="w-20 rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                              />
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
 
                   <label className="block text-sm font-medium text-gray-700">
                     Observação opcional
@@ -2266,8 +2453,12 @@ export function OrdersScreen() {
 
             <div className="border-t border-gray-100 bg-gray-50 px-5 py-4">
               <div className="mb-3 flex items-center justify-between text-sm">
-                <span className="font-medium text-gray-600">Total do reembolso</span>
-                <span className="text-lg font-bold text-blue-950">{formatCurrency(refundPreviewAmount)}</span>
+                <span className="font-medium text-gray-600">
+                  Total do reembolso
+                </span>
+                <span className="text-lg font-bold text-blue-950">
+                  {formatCurrency(refundPreviewAmount)}
+                </span>
               </div>
               <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <button
@@ -2373,21 +2564,34 @@ export function OrdersScreen() {
             <div className="bg-gray-50 rounded-xl p-4">
               <div className="flex items-start gap-1 overflow-x-auto pb-1">
                 {(() => {
-                  const baseFlow = String(selected.tipo_pedido || selected.type || "").toLowerCase() === "retirada"
-                    ? statusFlow.filter((status) => status !== "Saiu para Entrega")
-                    : statusFlow;
+                  const baseFlow =
+                    String(
+                      selected.tipo_pedido || selected.type || "",
+                    ).toLowerCase() === "retirada"
+                      ? statusFlow.filter(
+                          (status) => status !== "Saiu para Entrega",
+                        )
+                      : statusFlow;
 
                   return selected.status === "nao_entregue"
-                    ? baseFlow.map((status) => status === "Entregue" ? "Não entregue" : status)
+                    ? baseFlow.map((status) =>
+                        status === "Entregue" ? "Não entregue" : status,
+                      )
                     : baseFlow;
                 })().map((s, i, visibleStatusFlow) => {
-                  const isFailedStep = selected.status === "nao_entregue" && s === "Não entregue";
-                  const currentDisplay = isFailedStep ? "Não entregue" : getStatusLabel(selected.status);
-                  const currentFlowIndex = visibleStatusFlow.indexOf(currentDisplay);
+                  const isFailedStep =
+                    selected.status === "nao_entregue" && s === "Não entregue";
+                  const currentDisplay = isFailedStep
+                    ? "Não entregue"
+                    : getStatusLabel(selected.status);
+                  const currentFlowIndex =
+                    visibleStatusFlow.indexOf(currentDisplay);
                   const curIdx = currentFlowIndex >= 0 ? currentFlowIndex : 0;
                   const done = isFailedStep ? false : i <= curIdx;
                   const connectorDone = i < curIdx;
-                  const connectorFailed = selected.status === "nao_entregue" && visibleStatusFlow[i + 1] === "Não entregue";
+                  const connectorFailed =
+                    selected.status === "nao_entregue" &&
+                    visibleStatusFlow[i + 1] === "Não entregue";
                   return (
                     <div
                       key={s}
@@ -2397,7 +2601,11 @@ export function OrdersScreen() {
                         <div
                           className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
                           style={{
-                            backgroundColor: isFailedStep ? "#dc2626" : done ? PRIMARY : "#e5e7eb",
+                            backgroundColor: isFailedStep
+                              ? "#dc2626"
+                              : done
+                                ? PRIMARY
+                                : "#e5e7eb",
                           }}
                         >
                           {isFailedStep ? (
@@ -2408,7 +2616,9 @@ export function OrdersScreen() {
                             <div className="w-2 h-2 rounded-full bg-gray-400" />
                           )}
                         </div>
-                        <span className={`mt-1 min-h-[22px] max-w-14 text-center text-[9px] leading-tight ${isFailedStep ? "font-semibold text-red-700" : "text-gray-500"}`}>
+                        <span
+                          className={`mt-1 min-h-[22px] max-w-14 text-center text-[9px] leading-tight ${isFailedStep ? "font-semibold text-red-700" : "text-gray-500"}`}
+                        >
                           {s}
                         </span>
                       </div>
@@ -2416,7 +2626,11 @@ export function OrdersScreen() {
                         <div
                           className="mt-3 h-0.5 w-6 flex-shrink-0"
                           style={{
-                            backgroundColor: connectorDone ? (connectorFailed ? "#dc2626" : PRIMARY) : "#e5e7eb",
+                            backgroundColor: connectorDone
+                              ? connectorFailed
+                                ? "#dc2626"
+                                : PRIMARY
+                              : "#e5e7eb",
                           }}
                         />
                       )}
@@ -2433,10 +2647,13 @@ export function OrdersScreen() {
                 </h4>
                 <p className="text-sm text-red-700">
                   Problema relatado pelo entregador
-                  {getDeliveryFailureReason(selected) ? `: ${getDeliveryFailureReason(selected)}` : "."}
+                  {getDeliveryFailureReason(selected)
+                    ? `: ${getDeliveryFailureReason(selected)}`
+                    : "."}
                 </p>
                 <p className="mt-2 text-sm font-medium text-red-800">
-                  Entre em contato com o cliente pelo WhatsApp para combinar os próximos passos.
+                  Entre em contato com o cliente pelo WhatsApp para combinar os
+                  próximos passos.
                 </p>
                 {selectedCustomerWhatsappUrl ? (
                   <a
@@ -2472,7 +2689,9 @@ export function OrdersScreen() {
                 </div>
                 {selected.cpf_na_nota && (
                   <div className="text-sm text-gray-500">
-                    <span className="font-medium text-gray-700">CPF na nota:</span>{" "}
+                    <span className="font-medium text-gray-700">
+                      CPF na nota:
+                    </span>{" "}
                     {selected.cpf_na_nota_cpf || "Informado"}
                   </div>
                 )}
@@ -2481,17 +2700,14 @@ export function OrdersScreen() {
                   <>
                     <div className="flex items-start gap-2 text-sm text-gray-500">
                       <MapPin className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-                      <span>
-                        {getOrderAddress(selected)}
-                      </span>
+                      <span>{getOrderAddress(selected)}</span>
                     </div>
                     <div className="flex items-center gap-2 mt-1">
                       <span
                         className="text-xs px-2 py-0.5 rounded-full font-medium"
                         style={{ backgroundColor: "#e0e7ff", color: "#3730a3" }}
                       >
-                        Bairro:{" "}
-                        {getOrderNeighborhood(selected)}
+                        Bairro: {getOrderNeighborhood(selected)}
                       </span>
                     </div>
                   </>
@@ -2507,7 +2723,9 @@ export function OrdersScreen() {
               </h4>
               <div className="space-y-2.5">
                 {selectedItemsLoading && (
-                  <p className="text-sm text-gray-500">Carregando produtos...</p>
+                  <p className="text-sm text-gray-500">
+                    Carregando produtos...
+                  </p>
                 )}
                 {!selectedItemsLoading && selectedItems.length === 0 && (
                   <p className="text-sm text-gray-500">
@@ -2532,9 +2750,7 @@ export function OrdersScreen() {
                       </div>
                       <div className="text-sm font-medium text-gray-700">
                         R${" "}
-                        {getOrderItemTotal(item)
-                          .toFixed(2)
-                          .replace(".", ",")}
+                        {getOrderItemTotal(item).toFixed(2).replace(".", ",")}
                       </div>
                     </div>
                   ))}
@@ -2601,8 +2817,11 @@ export function OrdersScreen() {
                 {selectedPaymentMethod}
               </div>
               {selectedPaymentStatus !== "Não informado" && (
-                <div className={`mt-1 text-xs font-medium ${selectedPaymentStatusClass}`}>
-                  {selectedIsPaid ? "✓ " : ""}{selectedPaymentStatus}
+                <div
+                  className={`mt-1 text-xs font-medium ${selectedPaymentStatusClass}`}
+                >
+                  {selectedIsPaid ? "✓ " : ""}
+                  {selectedPaymentStatus}
                 </div>
               )}
               {!selectedIsPaid && (
@@ -2619,22 +2838,37 @@ export function OrdersScreen() {
                   <div className="space-y-2">
                     {selectedRefunds.map((refund) => {
                       const metadata = refund.metadata || {};
-                      const missingItems = Array.isArray(metadata.itens_faltantes)
+                      const missingItems = Array.isArray(
+                        metadata.itens_faltantes,
+                      )
                         ? metadata.itens_faltantes
                         : [];
                       return (
-                        <div key={refund.id} className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2">
+                        <div
+                          key={refund.id}
+                          className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2"
+                        >
                           <div className="flex items-center justify-between gap-2 text-xs">
-                            <span className="font-semibold text-blue-900">{formatCurrency(refund.valor)}</span>
-                            <span className="capitalize text-blue-700">{String(refund.status || "").replace(/_/g, " ")}</span>
+                            <span className="font-semibold text-blue-900">
+                              {formatCurrency(refund.valor)}
+                            </span>
+                            <span className="capitalize text-blue-700">
+                              {String(refund.status || "").replace(/_/g, " ")}
+                            </span>
                           </div>
                           <p className="mt-1 text-xs text-blue-800">
-                            {refund.motivo || (metadata.tipo === "produto_em_falta" ? "Produto em falta" : "Reembolso")}
+                            {refund.motivo ||
+                              (metadata.tipo === "produto_em_falta"
+                                ? "Produto em falta"
+                                : "Reembolso")}
                           </p>
                           {missingItems.length > 0 && (
                             <p className="mt-1 text-[11px] text-blue-700">
                               {missingItems
-                                .map((item: any) => `${item.quantidade_faltante}x ${item.nome_produto}`)
+                                .map(
+                                  (item: any) =>
+                                    `${item.quantidade_faltante}x ${item.nome_produto}`,
+                                )
                                 .join(", ")}
                             </p>
                           )}
@@ -2657,11 +2891,13 @@ export function OrdersScreen() {
                   Cancelamento aguardando análise
                 </h4>
                 <p className="mt-1 text-sm text-red-700">
-                  O pedido está bloqueado para avanço e atribuição de entrega até a decisão da loja.
+                  O pedido está bloqueado para avanço e atribuição de entrega
+                  até a decisão da loja.
                 </p>
                 {getCancellationRequest(selected)?.erro_estorno && (
                   <p className="mt-2 text-xs text-red-700">
-                    Falha no estorno automático: {getCancellationRequest(selected).erro_estorno}
+                    Falha no estorno automático:{" "}
+                    {getCancellationRequest(selected).erro_estorno}
                   </p>
                 )}
                 <button
@@ -2706,7 +2942,9 @@ export function OrdersScreen() {
                         title="Desvincular entregador"
                         aria-label="Desvincular entregador"
                         disabled={unassigningDeliveryId === currentDelivery.id}
-                        onClick={(event) => handleUnassignCourier(currentDelivery, event)}
+                        onClick={(event) =>
+                          handleUnassignCourier(currentDelivery, event)
+                        }
                         className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-blue-100 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50"
                       >
                         {unassigningDeliveryId === currentDelivery.id ? (
@@ -2760,11 +2998,15 @@ export function OrdersScreen() {
                         {getStatusLabel(selected.status) === "Em Separação" &&
                           "Marcar como Pronto"}
                         {getStatusLabel(selected.status) === "Pronto" &&
-                          ((selected.tipo_pedido || selected.type || "").toLowerCase() === "retirada"
+                          ((
+                            selected.tipo_pedido ||
+                            selected.type ||
+                            ""
+                          ).toLowerCase() === "retirada"
                             ? "Confirmar Retirada"
                             : "")}
-                        {getStatusLabel(selected.status) === "Saiu para Entrega" &&
-                          "Confirmar Entrega"}
+                        {getStatusLabel(selected.status) ===
+                          "Saiu para Entrega" && "Confirmar Entrega"}
                       </>
                     )}
                   </button>
@@ -2779,12 +3021,14 @@ export function OrdersScreen() {
                 )}
               {adminCannotDispatchDelivery && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                  Pedido pronto. A saída para entrega deve ser iniciada pelo entregador.
+                  Pedido pronto. A saída para entrega deve ser iniciada pelo
+                  entregador.
                 </div>
               )}
               {adminCannotConfirmDelivery && (
                 <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
-                  A entrega deve ser confirmada pelo entregador com a chave do cliente.
+                  A entrega deve ser confirmada pelo entregador com a chave do
+                  cliente.
                 </div>
               )}
               <button
@@ -2824,7 +3068,9 @@ export function OrdersScreen() {
                     ) : (
                       <Archive className="w-4 h-4" />
                     )}
-                    {selected.arquivado ? "Restaurar pedido" : "Arquivar pedido"}
+                    {selected.arquivado
+                      ? "Restaurar pedido"
+                      : "Arquivar pedido"}
                   </>
                 )}
               </button>
@@ -2859,9 +3105,13 @@ export function OrdersScreen() {
           <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">Analisar cancelamento</h2>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Analisar cancelamento
+                </h2>
                 <p className="mt-1 text-sm text-gray-500">
-                  Pedido {cancellationReviewOrder.numero_pedido || cancellationReviewOrder.id}
+                  Pedido{" "}
+                  {cancellationReviewOrder.numero_pedido ||
+                    cancellationReviewOrder.id}
                 </p>
               </div>
               <button type="button" onClick={closeCancellationReview}>
@@ -2870,13 +3120,23 @@ export function OrdersScreen() {
             </div>
 
             <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              Total pago: R$ {Number(getCancellationRequest(cancellationReviewOrder)?.valor_pago || 0).toFixed(2).replace(".", ",")}
+              Total pago: R${" "}
+              {Number(
+                getCancellationRequest(cancellationReviewOrder)?.valor_pago ||
+                  0,
+              )
+                .toFixed(2)
+                .replace(".", ",")}
             </div>
 
-            <label className="mt-4 block text-sm font-medium text-gray-700">Valor do reembolso</label>
+            <label className="mt-4 block text-sm font-medium text-gray-700">
+              Valor do reembolso
+            </label>
             <input
               value={cancellationRefundValue}
-              onChange={(event) => setCancellationRefundValue(event.target.value)}
+              onChange={(event) =>
+                setCancellationRefundValue(event.target.value)
+              }
               inputMode="decimal"
               className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
               placeholder="0,00"
@@ -2887,7 +3147,9 @@ export function OrdersScreen() {
             </label>
             <textarea
               value={cancellationReviewNote}
-              onChange={(event) => setCancellationReviewNote(event.target.value)}
+              onChange={(event) =>
+                setCancellationReviewNote(event.target.value)
+              }
               className="mt-1 min-h-24 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
               placeholder="Obrigatória para retenção de valores ou recusa"
             />
@@ -2919,7 +3181,9 @@ export function OrdersScreen() {
         description="Selecione um administrador do mercado e confirme o código do autenticador."
         loading={Boolean(cancellingOrderId)}
         onClose={() => setCancelApprovalOrderId("")}
-        onConfirm={(approval) => void cancelOrder(cancelApprovalOrderId, approval)}
+        onConfirm={(approval) =>
+          void cancelOrder(cancelApprovalOrderId, approval)
+        }
       />
       <MfaApprovalModal
         open={cancellationReviewApprovalOpen}
