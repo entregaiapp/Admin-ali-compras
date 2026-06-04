@@ -151,7 +151,7 @@ export function LoginScreen() {
       }
     } catch (err: any) {
       console.error(err);
-      setError(err.response?.data?.message || 'E-mail ou senha incorretos.');
+      setError(err.response?.data?.error?.message || err.response?.data?.message || 'E-mail ou senha incorretos.');
     } finally {
       setLoading(false);
     }

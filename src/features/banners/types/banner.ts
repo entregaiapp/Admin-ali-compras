@@ -22,7 +22,9 @@ export interface Banner {
   imagem_path?: string | null;
   display_type: BannerDisplayType;
   page_key: BannerPageKey;
+  page_keys?: BannerPageKey[];
   placement_key: BannerPlacementKey;
+  placement_keys?: BannerPlacementKey[];
   action_type: 'product_collection';
   background_color: string;
   ativo: boolean;
@@ -43,7 +45,9 @@ export interface BannerPayload {
   imagem_path?: string | null;
   display_type: BannerDisplayType;
   page_key: BannerPageKey;
+  page_keys: BannerPageKey[];
   placement_key: BannerPlacementKey;
+  placement_keys: BannerPlacementKey[];
   action_type: 'product_collection';
   background_color: string;
   ativo: boolean;

@@ -40,6 +40,24 @@ const placementOptions: Array<{ value: BannerPlacementKey; label: string; pages:
   { value: 'checkout_top', label: 'Topo do checkout', pages: ['checkout', 'payment', 'order_confirmed'] },
 ];
 
+const placementLabelByValue = new Map(placementOptions.map((option) => [option.value, option.label]));
+
+const unique = <T,>(items: T[]) => Array.from(new Set(items));
+
+function derivePageKeys(placementKeys: BannerPlacementKey[]): BannerPageKey[] {
+  const pageKeys = unique(placementKeys.flatMap((placementKey) => (
+    placementOptions.find((option) => option.value === placementKey)?.pages || []
+  )));
+  return pageKeys.length ? pageKeys : ['home'];
+}
+
+function formatBannerPlacements(banner: Pick<Banner, 'placement_key' | 'placement_keys'>) {
+  const placementKeys = banner.placement_keys?.length ? banner.placement_keys : [banner.placement_key];
+  return placementKeys
+    .map((placementKey) => placementLabelByValue.get(placementKey) || placementKey)
+    .join(', ');
+}
+
 const audienceOptions: Array<{ value: BannerSegmentRules['audience']; label: string }> = [
   { value: 'all', label: 'Todos' },
   { value: 'authenticated', label: 'Clientes logados' },
@@ -58,7 +76,9 @@ const emptyPayload: BannerPayload = {
   imagem_path: '',
   display_type: 'inline',
   page_key: 'home',
+  page_keys: ['home'],
   placement_key: 'home_top',
+  placement_keys: ['home_top'],
   action_type: 'product_collection',
   background_color: PRIMARY,
   ativo: true,
@@ -84,6 +104,8 @@ function textToList(value: string) {
 
 function bannerToPayload(banner?: Banner | null): BannerPayload {
   if (!banner) return emptyPayload;
+  const placementKeys = banner.placement_keys?.length ? banner.placement_keys : [banner.placement_key || 'home_top'];
+  const pageKeys = banner.page_keys?.length ? banner.page_keys : derivePageKeys(placementKeys);
   return {
     titulo: banner.titulo || '',
     subtitulo: banner.subtitulo || '',
@@ -91,8 +113,10 @@ function bannerToPayload(banner?: Banner | null): BannerPayload {
     imagem_url: banner.imagem_url || '',
     imagem_path: banner.imagem_path || '',
     display_type: banner.display_type,
-    page_key: banner.page_key,
-    placement_key: banner.placement_key,
+    page_key: banner.page_key || pageKeys[0],
+    page_keys: pageKeys,
+    placement_key: banner.placement_key || placementKeys[0],
+    placement_keys: placementKeys,
     action_type: 'product_collection',
     background_color: banner.background_color || PRIMARY,
     ativo: banner.ativo,
@@ -415,9 +439,16 @@ function BannerForm({
   const [error, setError] = useState<string | null>(null);
   const [productPickerTarget, setProductPickerTarget] = useState<'banner' | 'purchased' | null>(null);
 
-  const allowedPlacements = useMemo(
-    () => placementOptions.filter((option) => option.pages.includes(form.page_key)),
-    [form.page_key],
+  const selectedPlacements = useMemo(
+    () => new Set(form.placement_keys?.length ? form.placement_keys : [form.placement_key]),
+    [form.placement_key, form.placement_keys],
+  );
+
+  const selectedPageLabels = useMemo(
+    () => derivePageKeys(form.placement_keys?.length ? form.placement_keys : [form.placement_key])
+      .map((pageKey) => pageOptions.find((option) => option.value === pageKey)?.label || pageKey)
+      .join(', '),
+    [form.placement_key, form.placement_keys],
   );
 
   const rememberProducts = useCallback((items: any[]) => {
@@ -435,14 +466,30 @@ function BannerForm({
     onLoadCategories();
   }, [onLoadCategories]);
 
-  useEffect(() => {
-    if (!allowedPlacements.some((option) => option.value === form.placement_key)) {
-      setForm((current) => ({ ...current, placement_key: allowedPlacements[0]?.value || 'home_top' }));
-    }
-  }, [allowedPlacements, form.placement_key]);
-
   const update = <K extends keyof BannerPayload>(key: K, value: BannerPayload[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
+  };
+
+  const togglePlacement = (placementKey: BannerPlacementKey) => {
+    setForm((current) => {
+      const currentPlacementKeys = current.placement_keys?.length ? current.placement_keys : [current.placement_key];
+      let placementKeys = currentPlacementKeys.includes(placementKey)
+        ? currentPlacementKeys.filter((value) => value !== placementKey)
+        : [...currentPlacementKeys, placementKey];
+
+      if (placementKeys.length === 0) {
+        placementKeys = [placementKey];
+      }
+
+      const pageKeys = derivePageKeys(placementKeys);
+      return {
+        ...current,
+        page_key: pageKeys[0],
+        page_keys: pageKeys,
+        placement_key: placementKeys[0],
+        placement_keys: placementKeys,
+      };
+    });
   };
 
   const updateRules = (patch: Partial<BannerSegmentRules>) => {
@@ -513,6 +560,10 @@ function BannerForm({
 
     const payload: BannerPayload = {
       ...form,
+      placement_key: (form.placement_keys?.length ? form.placement_keys[0] : form.placement_key) || 'home_top',
+      placement_keys: form.placement_keys?.length ? form.placement_keys : [form.placement_key || 'home_top'],
+      page_key: derivePageKeys(form.placement_keys?.length ? form.placement_keys : [form.placement_key || 'home_top'])[0],
+      page_keys: derivePageKeys(form.placement_keys?.length ? form.placement_keys : [form.placement_key || 'home_top']),
       inicia_em: startOfBrasiliaDayInput(form.inicia_em || ''),
       expira_em: endOfBrasiliaDayInput(form.expira_em || ''),
       segment_rules: {
@@ -601,26 +652,49 @@ function BannerForm({
           </div>
 
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm text-gray-600 mb-1.5">Tipo</label>
-                <select value={form.display_type} onChange={(event) => update('display_type', event.target.value as BannerDisplayType)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none">
-                  {displayOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600 mb-1.5">Tela</label>
-                <select value={form.page_key} onChange={(event) => update('page_key', event.target.value as BannerPageKey)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none">
-                  {pageOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-              </div>
+            <div>
+              <label className="block text-sm text-gray-600 mb-1.5">Tipo</label>
+              <select value={form.display_type} onChange={(event) => update('display_type', event.target.value as BannerDisplayType)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none">
+                {displayOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
             </div>
 
             <div>
-              <label className="block text-sm text-gray-600 mb-1.5">Posição</label>
-              <select value={form.placement_key} onChange={(event) => update('placement_key', event.target.value as BannerPlacementKey)} className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none">
-                {allowedPlacements.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
+              <div className="mb-2 flex items-start justify-between gap-3">
+                <div>
+                  <label className="block text-sm text-gray-600">Posições de exibição</label>
+                  <div className="text-xs text-gray-400">Telas: {selectedPageLabels}</div>
+                </div>
+                <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
+                  {selectedPlacements.size} selecionada{selectedPlacements.size === 1 ? '' : 's'}
+                </span>
+              </div>
+              <div className="max-h-56 overflow-y-auto rounded-xl border border-gray-200 bg-gray-50 p-2">
+                {pageOptions
+                  .filter((page) => placementOptions.some((option) => option.pages[0] === page.value))
+                  .map((page) => (
+                    <div key={page.value} className="mb-2 last:mb-0 rounded-lg bg-white p-2 shadow-sm">
+                      <div className="mb-1.5 text-[11px] font-semibold uppercase text-gray-400">{page.label}</div>
+                      <div className="grid gap-1.5 sm:grid-cols-2">
+                        {placementOptions
+                          .filter((option) => option.pages[0] === page.value)
+                          .map((option) => {
+                            const checked = selectedPlacements.has(option.value);
+                            return (
+                              <label key={option.value} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 text-xs font-medium transition-colors ${checked ? 'border-blue-200 bg-blue-50 text-blue-800' : 'border-gray-100 text-gray-700 hover:bg-gray-50'}`}>
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => togglePlacement(option.value)}
+                                />
+                                <span>{option.label}</span>
+                              </label>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  ))}
+              </div>
             </div>
 
             <div className="grid grid-cols-3 gap-3">
@@ -902,7 +976,7 @@ export function BannersScreen() {
                     {banner.ativo ? 'Ativo' : 'Inativo'}
                   </span>
                   <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-50 text-blue-700">
-                    {banner.display_type} · {banner.placement_key}
+                    {banner.display_type} · {formatBannerPlacements(banner)}
                   </span>
                 </div>
                 <div className="text-xs text-gray-400 mt-0.5 truncate">{banner.subtitulo || 'Sem subtítulo'}</div>
