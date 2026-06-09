@@ -44,6 +44,26 @@ const getApiErrorMessage = (error: any, fallback: string) => {
   return message || fallback;
 };
 
+const getCurrentPosition = () => new Promise<GeolocationPosition>((resolve, reject) => {
+  if (!navigator.geolocation) {
+    reject(new Error('Seu navegador não permite obter a localização atual.'));
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(resolve, (error) => {
+    if (error.code === error.PERMISSION_DENIED) {
+      reject(new Error('Permita o acesso à localização para gerar a rota a partir da sua posição atual.'));
+      return;
+    }
+
+    reject(new Error('Não foi possível obter sua localização atual. Tente novamente.'));
+  }, {
+    enableHighAccuracy: true,
+    timeout: 15000,
+    maximumAge: 60000,
+  });
+});
+
 export function RouteDetailScreen() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -96,7 +116,11 @@ export function RouteDetailScreen() {
     try {
       setGenerating(true);
       setError(null);
-      const response = await api.patch(`/delivery-routes/${route.id}/generate-optimized`);
+      const position = await getCurrentPosition();
+      const response = await api.patch(`/delivery-routes/${route.id}/generate-optimized`, {
+        currentLatitude: position.coords.latitude,
+        currentLongitude: position.coords.longitude,
+      });
       setRoute({
         ...response.data.route,
         stops: response.data.stops || [],
