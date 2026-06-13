@@ -47,6 +47,11 @@ export const authService = {
     return response.data;
   },
 
+  async updateMfaPreferences(preferences: { login_required?: boolean; refund_required?: boolean }) {
+    const response = await api.patch<MfaStatus>("/auth/mfa/preferences", preferences);
+    return response.data;
+  },
+
   async enrollMfa() {
     const response = await api.post<{ id: string; totp: { qr_code: string; secret: string } }>("/auth/mfa/enroll");
     return response.data;

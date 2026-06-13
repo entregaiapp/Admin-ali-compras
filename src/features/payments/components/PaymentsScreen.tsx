@@ -4,6 +4,7 @@ import api from '@/shared/lib/api';
 import { showSystemNotice } from '@/shared/components/SystemNoticeModal';
 import { formatBrasiliaDate } from '@/shared/lib/dateTime';
 import { MfaApprovalModal, type MfaApproval } from '@/shared/components/MfaApprovalModal';
+import { authService } from '@/features/auth/services/authService';
 
 const PRIMARY = '#122a4c';
 
@@ -126,12 +127,12 @@ export function PaymentsScreen() {
     return message;
   };
 
-  const refundPayment = async (payment: any, approval: MfaApproval) => {
+  const refundPayment = async (payment: any, approval?: MfaApproval) => {
     if (!payment?.originalId || payment.status !== 'Pago' || refundingPaymentId) return;
 
     try {
       setRefundingPaymentId(payment.originalId);
-      await api.post(`/mercadopago/payment/${payment.originalId}/refund`, { mfa_approval: approval });
+      await api.post(`/mercadopago/payment/${payment.originalId}/refund`, approval ? { mfa_approval: approval } : {});
       showSystemNotice('Reembolso solicitado com sucesso.');
       await fetchPayments({ silent: true });
     } catch (error) {
@@ -143,6 +144,19 @@ export function PaymentsScreen() {
     } finally {
       setRefundingPaymentId('');
       setRefundApprovalPayment(null);
+    }
+  };
+
+  const requestRefund = async (payment: any) => {
+    try {
+      const mfa = await authService.getMfaStatus();
+      if (mfa.refund_required) {
+        setRefundApprovalPayment(payment);
+        return;
+      }
+      await refundPayment(payment);
+    } catch (error) {
+      showSystemNotice('Não foi possível verificar a preferência de segurança.', 'Erro no reembolso');
     }
   };
 
@@ -273,7 +287,7 @@ export function PaymentsScreen() {
                         {payment.status === 'Pago' ? (
                           <button
                             type="button"
-                            onClick={() => setRefundApprovalPayment(payment)}
+                            onClick={() => void requestRefund(payment)}
                             disabled={refundingPaymentId === payment.originalId}
                             className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-blue-200 px-2.5 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60"
                             title="Reembolsar pagamento"

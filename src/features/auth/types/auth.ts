@@ -18,6 +18,7 @@ export type AuthUser = {
   cliente_id?: string | null;
   cpf?: string | null;
   cpf_na_nota_padrao?: boolean;
+  exigir_mfa_login?: boolean;
   user_type?: string;
   permissions?: string[];
 };
@@ -42,6 +43,8 @@ export type MfaFactor = {
 
 export type MfaStatus = {
   required: boolean;
+  login_required: boolean;
+  refund_required: boolean;
   aal: "aal1" | "aal2";
   enrollment_required: boolean;
   challenge_required: boolean;

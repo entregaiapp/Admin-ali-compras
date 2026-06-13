@@ -67,6 +67,7 @@ import {
   MfaApprovalModal,
   type MfaApproval,
 } from "@/shared/components/MfaApprovalModal";
+import { authService } from "@/features/auth/services/authService";
 
 const getWhatsappPhone = (phone: any) => {
   const digits = String(phone || "").replace(/\D/g, "");
@@ -903,7 +904,7 @@ export function OrdersScreen() {
     }
   };
 
-  const requestCancellationApproval = () => {
+  const requestCancellationApproval = async () => {
     const totalPaid = Number(
       getCancellationRequest(cancellationReviewOrder)?.valor_pago || 0,
     );
@@ -922,10 +923,19 @@ export function OrdersScreen() {
       return;
     }
 
-    setCancellationReviewApprovalOpen(true);
+    try {
+      const mfa = await authService.getMfaStatus();
+      if (refundValue > 0 && mfa.refund_required) {
+        setCancellationReviewApprovalOpen(true);
+        return;
+      }
+      await approveCancellationRequest();
+    } catch (error) {
+      showSystemNotice("Não foi possível verificar a preferência de segurança.");
+    }
   };
 
-  const approveCancellationRequest = async (approval: MfaApproval) => {
+  const approveCancellationRequest = async (approval?: MfaApproval) => {
     if (!cancellationReviewOrder) return;
 
     try {
@@ -935,7 +945,7 @@ export function OrdersScreen() {
         {
           valor_reembolso: parseCurrencyInput(cancellationRefundValue),
           observacao: cancellationReviewNote.trim() || null,
-          mfa_approval: approval,
+          ...(approval ? { mfa_approval: approval } : {}),
         },
       );
       applyCancellationResolution(
@@ -977,7 +987,7 @@ export function OrdersScreen() {
     setRefundApprovalOpen(false);
   };
 
-  const requestRefundApproval = () => {
+  const requestRefundApproval = async () => {
     if (!selectedCanRefund) {
       showSystemNotice(
         "Este pedido não possui saldo disponível para reembolso.",
@@ -1010,10 +1020,19 @@ export function OrdersScreen() {
       return;
     }
 
-    setRefundApprovalOpen(true);
+    try {
+      const mfa = await authService.getMfaStatus();
+      if (mfa.refund_required) {
+        setRefundApprovalOpen(true);
+        return;
+      }
+      await submitRefund();
+    } catch (error) {
+      showSystemNotice("Não foi possível verificar a preferência de segurança.");
+    }
   };
 
-  const submitRefund = async (approval: MfaApproval) => {
+  const submitRefund = async (approval?: MfaApproval) => {
     if (!selected) return;
 
     const payload =
@@ -1033,13 +1052,13 @@ export function OrdersScreen() {
               .filter(
                 (item) => item.item_pedido_id && item.quantidade_faltante > 0,
               ),
-            mfa_approval: approval,
+            ...(approval ? { mfa_approval: approval } : {}),
           }
         : {
             tipo: refundMode,
             valor: parseCurrencyInput(refundAmount),
             motivo: refundReason.trim(),
-            mfa_approval: approval,
+            ...(approval ? { mfa_approval: approval } : {}),
           };
 
     try {
@@ -2471,11 +2490,11 @@ export function OrdersScreen() {
                 </button>
                 <button
                   type="button"
-                  onClick={requestRefundApproval}
+                  onClick={() => void requestRefundApproval()}
                   disabled={refundSubmitting}
                   className="rounded-lg bg-blue-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
                 >
-                  Aprovar com MFA
+                  Confirmar reembolso
                 </button>
               </div>
             </div>
@@ -3165,11 +3184,11 @@ export function OrdersScreen() {
               </button>
               <button
                 type="button"
-                onClick={requestCancellationApproval}
+                onClick={() => void requestCancellationApproval()}
                 disabled={Boolean(resolvingCancellationOrderId)}
                 className="rounded-lg bg-blue-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
               >
-                Aprovar com MFA
+                Aprovar solicitação
               </button>
             </div>
           </div>
