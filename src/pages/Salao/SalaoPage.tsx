@@ -18,7 +18,23 @@ import { productsService } from "@/features/products";
 import { showSystemNotice } from "@/shared/components/SystemNoticeModal";
 
 const PRIMARY = "#122a4c";
-const CLIENT_BASE_URL = (import.meta.env.VITE_CLIENTE_URL || window.location.origin).replace(/\/$/, "");
+
+const resolveClientBaseUrl = () => {
+  const configured = import.meta.env.VITE_CLIENTE_URL?.trim();
+  if (configured) return configured.replace(/\/$/, "");
+
+  const { protocol, hostname, port, origin } = window.location;
+  if (hostname === "localhost" || hostname === "127.0.0.1") return origin;
+  if (hostname === "admin.deliplaytecnologia.com") {
+    return "https://cliente.deliplaytecnologia.com";
+  }
+  if (hostname.startsWith("admin.")) {
+    return `${protocol}//${hostname.replace(/^admin\./, "cliente.")}${port ? `:${port}` : ""}`;
+  }
+  return origin;
+};
+
+const CLIENT_BASE_URL = resolveClientBaseUrl();
 
 const getUser = () => {
   try {
