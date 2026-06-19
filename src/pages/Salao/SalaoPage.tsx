@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Armchair,
   ChefHat,
@@ -39,6 +39,7 @@ const resolveClientBaseUrl = () => {
 };
 
 const CLIENT_BASE_URL = resolveClientBaseUrl();
+const SALAO_POLLING_INTERVAL_MS = 60000;
 
 const getUser = () => {
   try {
@@ -82,35 +83,53 @@ export function SalaoPage() {
   const [itemNotes, setItemNotes] = useState("");
   const [addingItem, setAddingItem] = useState(false);
   const [latestPin, setLatestPin] = useState("");
+  const loadingRef = useRef(false);
+  const hasLoadedRef = useRef(false);
+  const productsLoadedRef = useRef(false);
 
-  const load = async () => {
+  const load = useCallback(async (options: { silent?: boolean; includeProducts?: boolean } = {}) => {
     if (!user?.loja_id) return;
-    setLoading(true);
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    const shouldShowLoading = !options.silent && !hasLoadedRef.current;
+    if (shouldShowLoading) setLoading(true);
     try {
       const [tablesPayload, tabsPayload, requestsPayload, kdsPayload, productsPayload] = await Promise.all([
         salaoService.listMesas({ loja_id: user.loja_id, per_page: 100 }),
         salaoService.listComandas({ loja_id: user.loja_id, per_page: 100 }),
         salaoService.listOpeningRequests({ loja_id: user.loja_id, status: "pendente" }),
         salaoService.listKds({ loja_id: user.loja_id }),
-        productsService.getStoreProductsPage({ page: 1, perPage: 100, activeOnly: true }, { forceRefresh: true }),
+        options.includeProducts || !productsLoadedRef.current
+          ? productsService.getStoreProductsPage({ page: 1, perPage: 100, activeOnly: true }, { forceRefresh: true })
+          : Promise.resolve(null),
       ]);
       setMesas(unwrapList(tablesPayload));
       setComandas(unwrapList(tabsPayload).filter((item: any) => !["paga", "cancelada"].includes(item.status)));
       setOpeningRequests(unwrapList(requestsPayload));
       setKds(unwrapList(kdsPayload));
-      setProducts(productsPayload.products || []);
+      if (productsPayload) {
+        setProducts(productsPayload.products || []);
+        productsLoadedRef.current = true;
+      }
+      hasLoadedRef.current = true;
     } catch (error: any) {
-      showSystemNotice(error?.response?.data?.message || error?.message || "Nao foi possivel carregar o salao.");
+      if (!options.silent) {
+        showSystemNotice(error?.response?.data?.message || error?.message || "Nao foi possivel carregar o salao.");
+      }
     } finally {
       setLoading(false);
+      loadingRef.current = false;
     }
-  };
+  }, [user?.loja_id]);
 
   useEffect(() => {
-    void load();
-    const interval = window.setInterval(() => void load(), 12000);
+    void load({ includeProducts: true });
+  }, [load]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => void load({ silent: true }), SALAO_POLLING_INTERVAL_MS);
     return () => window.clearInterval(interval);
-  }, []);
+  }, [load]);
 
   const createMesa = async () => {
     if (!newTableNumber.trim()) return;
