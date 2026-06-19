@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import QRCode from "qrcode";
 import { salaoService } from "@/features/salao/services/salaoService";
+import { createSalaoAdminRealtime, salaoTenantTopic } from "@/features/salao/services/salaoRealtime";
 import { productsService } from "@/features/products";
 import { showSystemNotice } from "@/shared/components/SystemNoticeModal";
 
@@ -39,7 +40,6 @@ const resolveClientBaseUrl = () => {
 };
 
 const CLIENT_BASE_URL = resolveClientBaseUrl();
-const SALAO_POLLING_INTERVAL_MS = 60000;
 
 const getUser = () => {
   try {
@@ -86,9 +86,27 @@ export function SalaoPage() {
   const [itemNotes, setItemNotes] = useState("");
   const [addingItem, setAddingItem] = useState(false);
   const [latestPin, setLatestPin] = useState("");
+  const [realtimeMesaId, setRealtimeMesaId] = useState("");
   const loadingRef = useRef(false);
   const hasLoadedRef = useRef(false);
   const productsLoadedRef = useRef(false);
+  const soundEnabledRef = useRef(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
+
+  const playRealtimeAlert = useCallback(() => {
+    if (!soundEnabledRef.current) return;
+    const audio = audioContextRef.current;
+    if (!audio) return;
+    if (audio.state === "suspended") void audio.resume();
+    const oscillator = audio.createOscillator();
+    const gain = audio.createGain();
+    oscillator.frequency.value = 880;
+    gain.gain.setValueAtTime(0.08, audio.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.25);
+    oscillator.connect(gain).connect(audio.destination);
+    oscillator.start();
+    oscillator.stop(audio.currentTime + 0.25);
+  }, []);
 
   const load = useCallback(async (options: { silent?: boolean; includeProducts?: boolean } = {}) => {
     if (!user?.loja_id) return;
@@ -130,9 +148,56 @@ export function SalaoPage() {
   }, [load]);
 
   useEffect(() => {
-    const interval = window.setInterval(() => void load({ silent: true }), SALAO_POLLING_INTERVAL_MS);
-    return () => window.clearInterval(interval);
-  }, [load]);
+    const enableSound = () => {
+      soundEnabledRef.current = true;
+      if (!audioContextRef.current) {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioContextClass) audioContextRef.current = new AudioContextClass();
+      }
+      if (audioContextRef.current?.state === "suspended") void audioContextRef.current.resume();
+    };
+    window.addEventListener("pointerdown", enableSound, { once: true });
+    window.addEventListener("keydown", enableSound, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", enableSound);
+      window.removeEventListener("keydown", enableSound);
+      if (audioContextRef.current) void audioContextRef.current.close();
+      audioContextRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const lojaId = user?.loja_id;
+    const accessToken = localStorage.getItem("token") || "";
+    const realtime = lojaId ? createSalaoAdminRealtime(accessToken) : null;
+    if (!realtime || !lojaId) return;
+
+    const channel = realtime
+      .channel(salaoTenantTopic(lojaId), { config: { private: true } })
+      .on("broadcast", { event: "salao:update" }, ({ payload }: any) => {
+        if (payload?.mesaId) {
+          setRealtimeMesaId(payload.mesaId);
+          window.setTimeout(() => setRealtimeMesaId((current) => current === payload.mesaId ? "" : current), 6000);
+        }
+        playRealtimeAlert();
+        void load({ silent: true });
+      })
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") void load({ silent: true });
+      });
+
+    const reconcile = () => void load({ silent: true });
+    window.addEventListener("focus", reconcile);
+    window.addEventListener("online", reconcile);
+    document.addEventListener("visibilitychange", reconcile);
+
+    return () => {
+      window.removeEventListener("focus", reconcile);
+      window.removeEventListener("online", reconcile);
+      document.removeEventListener("visibilitychange", reconcile);
+      void realtime.removeChannel(channel);
+    };
+  }, [load, playRealtimeAlert, user?.loja_id]);
 
   const createMesa = async () => {
     if (!newTableNumber.trim()) return;
@@ -408,7 +473,10 @@ export function SalaoPage() {
               {mesas.map((mesa) => (
                 <div
                   key={mesa.id}
-                  className={`rounded-lg border bg-white p-4 shadow-sm ${
+                  className={`rounded-lg border bg-white p-4 shadow-sm transition-all ${
+                    realtimeMesaId === mesa.id
+                      ? "border-emerald-500 ring-4 ring-emerald-200 animate-pulse"
+                      :
                     mesa.destaque === "abertura_pendente"
                       ? "border-amber-300 ring-2 ring-amber-100"
                       : mesa.destaque === "novo_pedido"
