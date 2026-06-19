@@ -129,7 +129,7 @@ export function PaymentsScreen() {
     }
 
     if (/refund failed/i.test(message)) {
-      return 'Não foi possível realizar o reembolso no Mercado Pago. Verifique o saldo dos recebedores.';
+      return 'Não foi possível realizar o reembolso no gateway. Verifique o saldo disponível.';
     }
 
     return message;
@@ -140,7 +140,7 @@ export function PaymentsScreen() {
 
     try {
       setRefundingPaymentId(payment.originalId);
-      await api.post(`/mercadopago/payment/${payment.originalId}/refund`, approval ? { mfa_approval: approval } : {});
+      await api.post(`/payment-gateways/payment/${payment.originalId}/refund`, approval ? { mfa_approval: approval } : {});
       showSystemNotice('Reembolso solicitado com sucesso.');
       await fetchPayments({ silent: true });
     } catch (error) {

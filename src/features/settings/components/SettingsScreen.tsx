@@ -15,6 +15,7 @@ import {
   Map,
   Palette,
   Edit2,
+  KeyRound,
 } from "lucide-react";
 import api from '@/shared/lib/api';
 import LoadingModal from '@/shared/components/ui/LoadingModal';
@@ -38,6 +39,8 @@ export function SettingsScreen() {
   const [activeSection, setActiveSection] = useState("Dados do Mercado");
   const [saved, setSaved] = useState(false);
   const [mpStatus, setMpStatus] = useState<any>(null);
+  const [pagarmeStatus, setPagarmeStatus] = useState<any>(null);
+  const [pagarmeCredentials, setPagarmeCredentials] = useState({ public_key: "", secret_key: "", webhook_secret: "" });
   const [loadingMp, setLoadingMp] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -91,21 +94,23 @@ export function SettingsScreen() {
       "Status do pedido alterado",
       "Entrega concluída",
     ],
+    gateway_pagamento_padrao: "mercadopago",
   });
 
   const user = JSON.parse(localStorage.getItem("user") || "{}");
   const lojaId = user.loja_id;
 
-  const checkMpConnection = useCallback(async () => {
+  const checkGatewayConnections = useCallback(async () => {
     if (!lojaId) return;
     try {
       setLoadingMp(true);
-      const response = await api.get(
-        `/mercadopago/connection-status/${lojaId}`,
-      );
-      setMpStatus(response.data.data);
+      const response = await api.get(`/payment-gateways/connections/${lojaId}`);
+      const data = response.data.data;
+      setMpStatus(data.gateways?.mercadopago || null);
+      setPagarmeStatus(data.gateways?.pagarme || null);
+      setFormData((prev: any) => ({ ...prev, gateway_pagamento_padrao: data.selected_gateway || "mercadopago" }));
     } catch (error) {
-      console.error("Erro ao verificar conexão MP:", error);
+      console.error("Erro ao verificar gateways:", error);
     } finally {
       setLoadingMp(false);
     }
@@ -209,9 +214,9 @@ export function SettingsScreen() {
 
   useEffect(() => {
     loadData();
-    checkMpConnection();
+    checkGatewayConnections();
     loadAreasEntrega();
-  }, [loadData, checkMpConnection, loadAreasEntrega]);
+  }, [loadData, checkGatewayConnections, loadAreasEntrega]);
 
   const save = async () => {
     try {
@@ -322,6 +327,35 @@ export function SettingsScreen() {
     } catch (err: any) {
       console.error("Erro ao iniciar OAuth Mercado Pago:", err);
       setError(err.response?.data?.error?.message || err.message || "Erro ao conectar Mercado Pago.");
+      setLoadingMp(false);
+    }
+  };
+
+  const handleSelectGateway = async (gateway: "mercadopago" | "pagarme") => {
+    if (!lojaId || gateway === formData.gateway_pagamento_padrao) return;
+    try {
+      setLoadingMp(true);
+      await api.patch(`/payment-gateways/${lojaId}/selected`, { gateway });
+      await checkGatewayConnections();
+    } catch (err: any) {
+      setError(err.response?.data?.error?.message || "Conecte o gateway antes de ativá-lo.");
+    } finally {
+      setLoadingMp(false);
+    }
+  };
+
+  const handleSavePagarme = async () => {
+    if (!lojaId) return;
+    try {
+      setLoadingMp(true);
+      setError("");
+      await api.put(`/payment-gateways/pagarme/${lojaId}/credentials`, pagarmeCredentials);
+      setPagarmeCredentials({ public_key: "", secret_key: "", webhook_secret: "" });
+      await checkGatewayConnections();
+      showSystemNotice("Credenciais Pagar.me validadas e salvas.");
+    } catch (err: any) {
+      setError(err.response?.data?.error?.message || "Não foi possível validar as credenciais Pagar.me.");
+    } finally {
       setLoadingMp(false);
     }
   };
@@ -971,6 +1005,85 @@ export function SettingsScreen() {
                     </button>
                   </div>
                 ))}
+              </div>
+
+              <div className="mt-8 border-t border-gray-100 pt-6">
+                <h4 className="mb-3 text-sm font-semibold text-gray-800">Gateway para novas vendas</h4>
+                <div className="grid grid-cols-2 gap-2" role="group" aria-label="Gateway de pagamento">
+                  {([
+                    ["mercadopago", "Mercado Pago"],
+                    ["pagarme", "Stone (Pagar.me)"],
+                  ] as const).map(([gateway, label]) => {
+                    const active = formData.gateway_pagamento_padrao === gateway;
+                    return (
+                      <button
+                        key={gateway}
+                        type="button"
+                        onClick={() => void handleSelectGateway(gateway)}
+                        className={`rounded-lg border px-3 py-2.5 text-sm font-semibold transition-colors ${active ? "border-[#122a4c] bg-[#122a4c] text-white" : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"}`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="mt-2 text-xs text-gray-500">A alteração afeta apenas novos pagamentos. O histórico continua vinculado ao gateway original.</p>
+              </div>
+
+              <div className="mt-8 border-t border-gray-100 pt-6">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#00a868] text-xs font-bold text-white">ST</div>
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-800">Stone (Pagar.me)</h4>
+                      <p className="text-xs text-gray-500">Checkout transparente com PIX e cartão</p>
+                    </div>
+                  </div>
+                  <div className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${pagarmeStatus?.connected ? "border-green-100 bg-green-50 text-green-600" : "border-amber-100 bg-amber-50 text-amber-600"}`}>
+                    {pagarmeStatus?.connected ? <CheckCircle className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
+                    {pagarmeStatus?.connected ? "Conectado" : "Não conectado"}
+                  </div>
+                </div>
+                <div className="space-y-3 rounded-xl border border-gray-100 bg-gray-50 p-4">
+                  {pagarmeStatus?.connected && (
+                    <p className="text-xs text-gray-600">Ambiente: <strong>{pagarmeStatus.environment === "sandbox" ? "Sandbox" : "Produção"}</strong> · chave final {pagarmeStatus.public_key_suffix}</p>
+                  )}
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <input
+                      type="password"
+                      autoComplete="off"
+                      value={pagarmeCredentials.public_key}
+                      onChange={(event) => setPagarmeCredentials((prev) => ({ ...prev, public_key: event.target.value }))}
+                      placeholder="Public key (pk_test_... ou pk_live_...)"
+                      className="rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm"
+                    />
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      value={pagarmeCredentials.secret_key}
+                      onChange={(event) => setPagarmeCredentials((prev) => ({ ...prev, secret_key: event.target.value }))}
+                      placeholder="Secret key (sk_test_... ou sk_live_...)"
+                      className="rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm"
+                    />
+                  </div>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={pagarmeCredentials.webhook_secret}
+                    onChange={(event) => setPagarmeCredentials((prev) => ({ ...prev, webhook_secret: event.target.value }))}
+                    placeholder="Segredo do webhook (opcional)"
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2.5 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleSavePagarme()}
+                    disabled={loadingMp || !pagarmeCredentials.public_key || !pagarmeCredentials.secret_key}
+                    className="inline-flex items-center gap-2 rounded-lg bg-[#00a868] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+                  >
+                    <KeyRound className="h-4 w-4" />
+                    Validar e salvar chaves
+                  </button>
+                </div>
               </div>
 
               <div className="mt-8 pt-6 border-t border-gray-100">
