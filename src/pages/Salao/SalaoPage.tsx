@@ -94,6 +94,7 @@ export function SalaoPage() {
   const [actionBusy, setActionBusy] = useState("");
   const [latestPin, setLatestPin] = useState("");
   const [realtimeMesaId, setRealtimeMesaId] = useState("");
+  const [qrDownloadMesa, setQrDownloadMesa] = useState<any | null>(null);
   const loadingRef = useRef(false);
   const hasLoadedRef = useRef(false);
   const productsLoadedRef = useRef(false);
@@ -288,10 +289,12 @@ export function SalaoPage() {
     }
   };
 
-  const downloadQrCode = async (mesa: any) => {
+  const downloadQrCode = async (mesa: any, generateNew = false) => {
     setActionBusy(`qr-${mesa.id}`);
     try {
-      const result = await salaoService.rotateMesaQr(mesa.id);
+      const result = generateNew
+        ? await salaoService.rotateMesaQr(mesa.id)
+        : await salaoService.getMesaQr(mesa.id);
       const url = `${CLIENT_BASE_URL}/mercado/${mesa.loja_id}/mesa/${result.qr_token}`;
       const dataUrl = await QRCode.toDataURL(url, {
         width: 720,
@@ -305,11 +308,12 @@ export function SalaoPage() {
       document.body.appendChild(link);
       link.click();
       link.remove();
-      showSystemNotice("QR Code baixado. O QR anterior desta mesa foi substituido.");
+      showSystemNotice(generateNew ? "Novo QR Code criado e baixado. O QR anterior foi substituído." : "QR Code atual baixado.");
     } catch (error: any) {
       showSystemNotice(error?.response?.data?.message || error?.message || "Nao foi possivel baixar o QR Code.");
     } finally {
       setActionBusy("");
+      setQrDownloadMesa(null);
     }
   };
 
@@ -323,7 +327,7 @@ export function SalaoPage() {
     }
     setActionBusy(`print-qr-${mesa.id}`);
     try {
-      const result = await salaoService.rotateMesaQr(mesa.id);
+      const result = await salaoService.getMesaQr(mesa.id);
       const url = `${CLIENT_BASE_URL}/mercado/${mesa.loja_id}/mesa/${result.qr_token}`;
       const dataUrl = await QRCode.toDataURL(url, {
         width: 900,
@@ -637,7 +641,7 @@ export function SalaoPage() {
                     </button>
                     <div className="grid grid-cols-2 gap-2">
                       <button
-                        onClick={() => void downloadQrCode(mesa)}
+                        onClick={() => setQrDownloadMesa(mesa)}
                         disabled={actionBusy === `qr-${mesa.id}` || actionBusy === `print-qr-${mesa.id}`}
                         className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700 disabled:opacity-60"
                       >
@@ -920,6 +924,19 @@ export function SalaoPage() {
           </div>
         )}
       </div>
+      {qrDownloadMesa && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+            <h2 className="text-base font-extrabold text-slate-950">Baixar QR Code</h2>
+            <p className="mt-2 text-sm text-slate-600">Você quer baixar o QR atual da mesa ou criar um novo? Ao criar outro, os QR Codes impressos anteriormente deixam de funcionar.</p>
+            <div className="mt-5 grid gap-2 sm:grid-cols-2">
+              <button onClick={() => void downloadQrCode(qrDownloadMesa, false)} disabled={Boolean(actionBusy)} className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700 disabled:opacity-60">Baixar QR atual</button>
+              <button onClick={() => void downloadQrCode(qrDownloadMesa, true)} disabled={Boolean(actionBusy)} className="rounded-xl bg-[#122a4c] px-4 py-3 text-sm font-bold text-white disabled:opacity-60">Criar e baixar novo</button>
+            </div>
+            <button onClick={() => setQrDownloadMesa(null)} disabled={Boolean(actionBusy)} className="mt-3 w-full rounded-xl px-4 py-2 text-sm font-bold text-slate-500">Cancelar</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

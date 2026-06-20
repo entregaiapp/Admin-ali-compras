@@ -14,6 +14,9 @@ export const salaoService = {
   rotateMesaQr: async (id: string) =>
     unwrap(await api.post(`/salao/mesas/${id}/qrcode/rotate`)),
 
+  getMesaQr: async (id: string) =>
+    unwrap(await api.get(`/salao/mesas/${id}/qrcode`)),
+
   listOpeningRequests: async (params?: Record<string, unknown>) =>
     unwrap(await api.get("/salao/solicitacoes", { params })),
 
