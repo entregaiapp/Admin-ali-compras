@@ -85,6 +85,7 @@ export function SalaoPage() {
   const [itemQuantity, setItemQuantity] = useState("1");
   const [itemNotes, setItemNotes] = useState("");
   const [addingItem, setAddingItem] = useState(false);
+  const [actionBusy, setActionBusy] = useState("");
   const [latestPin, setLatestPin] = useState("");
   const [realtimeMesaId, setRealtimeMesaId] = useState("");
   const loadingRef = useRef(false);
@@ -218,6 +219,7 @@ export function SalaoPage() {
   };
 
   const openComanda = async (mesa: any) => {
+    setActionBusy(`open-${mesa.id}`);
     try {
       const result = await salaoService.openComanda({
         loja_id: user.loja_id,
@@ -233,10 +235,13 @@ export function SalaoPage() {
       await load();
     } catch (error: any) {
       showSystemNotice(error?.response?.data?.message || error?.message || "Nao foi possivel abrir a comanda.");
+    } finally {
+      setActionBusy("");
     }
   };
 
   const approveOpeningRequest = async (request: any) => {
+    setActionBusy(`approve-${request.id}`);
     try {
       const result = await salaoService.approveOpeningRequest(request.id);
       setSelectedComanda(result.comanda);
@@ -246,15 +251,20 @@ export function SalaoPage() {
       await load();
     } catch (error: any) {
       showSystemNotice(error?.response?.data?.message || error?.message || "Nao foi possivel aprovar a solicitacao.");
+    } finally {
+      setActionBusy("");
     }
   };
 
   const refuseOpeningRequest = async (request: any) => {
+    setActionBusy(`refuse-${request.id}`);
     try {
       await salaoService.refuseOpeningRequest(request.id);
       await load();
     } catch (error: any) {
       showSystemNotice(error?.response?.data?.message || error?.message || "Nao foi possivel recusar a solicitacao.");
+    } finally {
+      setActionBusy("");
     }
   };
 
@@ -271,6 +281,7 @@ export function SalaoPage() {
   };
 
   const downloadQrCode = async (mesa: any) => {
+    setActionBusy(`qr-${mesa.id}`);
     try {
       const result = await salaoService.rotateMesaQr(mesa.id);
       const url = `${CLIENT_BASE_URL}/mercado/${mesa.loja_id}/mesa/${result.qr_token}`;
@@ -289,6 +300,8 @@ export function SalaoPage() {
       showSystemNotice("QR Code baixado. O QR anterior desta mesa foi substituido.");
     } catch (error: any) {
       showSystemNotice(error?.response?.data?.message || error?.message || "Nao foi possivel baixar o QR Code.");
+    } finally {
+      setActionBusy("");
     }
   };
 
@@ -319,6 +332,7 @@ export function SalaoPage() {
   };
 
   const closeAccount = async (comanda: any) => {
+    setActionBusy(`close-${comanda.id}`);
     try {
       await salaoService.closeAccount(comanda.id, {
         tipo: "compartilhada",
@@ -329,44 +343,58 @@ export function SalaoPage() {
       await load();
     } catch (error: any) {
       showSystemNotice(error?.response?.data?.message || error?.message || "Nao foi possivel fechar a conta.");
+    } finally {
+      setActionBusy("");
     }
   };
 
   const regeneratePin = async (comanda: any) => {
+    setActionBusy(`pin-${comanda.id}`);
     try {
       const result = await salaoService.regeneratePin(comanda.id);
       setLatestPin(result.pin);
       showSystemNotice(`Novo PIN da mesa: ${result.pin}`);
     } catch (error: any) {
       showSystemNotice(error?.response?.data?.message || error?.message || "Nao foi possivel gerar novo PIN.");
+    } finally {
+      setActionBusy("");
     }
   };
 
   const confirmPayment = async (comanda: any) => {
+    setActionBusy(`payment-${comanda.id}`);
     try {
       await salaoService.confirmPayment(comanda.id);
       setSelectedComanda(null);
       await load();
     } catch (error: any) {
       showSystemNotice(error?.response?.data?.message || error?.message || "Nao foi possivel confirmar o pagamento.");
+    } finally {
+      setActionBusy("");
     }
   };
 
   const unblockParticipant = async (participant: any) => {
+    setActionBusy(`unblock-${participant.id}`);
     try {
       await salaoService.unblockParticipant(participant.id);
       if (selectedComanda?.id) setSelectedComanda(await salaoService.getComanda(selectedComanda.id));
     } catch (error: any) {
       showSystemNotice(error?.response?.data?.message || error?.message || "Nao foi possivel desbloquear o participante.");
+    } finally {
+      setActionBusy("");
     }
   };
 
   const updateKds = async (item: any, status: string) => {
+    setActionBusy(`kds-${item.id}-${status}`);
     try {
       await salaoService.updateItemStatus(item.id, status);
       await load();
     } catch (error: any) {
       showSystemNotice(error?.response?.data?.message || error?.message || "Nao foi possivel atualizar o item.");
+    } finally {
+      setActionBusy("");
     }
   };
 
@@ -375,6 +403,13 @@ export function SalaoPage() {
   );
   const selectedProduct = products.find((product) => product.id === selectedProductId);
   const activeTabClass = "bg-white text-gray-900 shadow-sm";
+  const tableStatusClass: Record<string, string> = {
+    livre: "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200",
+    ocupada: "bg-rose-100 text-rose-800 ring-1 ring-rose-200",
+    reservada: "bg-amber-100 text-amber-800 ring-1 ring-amber-200",
+    aguardando_conta: "bg-blue-100 text-blue-800 ring-1 ring-blue-200",
+    aguardando_garcom: "bg-violet-100 text-violet-800 ring-1 ring-violet-200",
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-gray-50">
@@ -386,10 +421,11 @@ export function SalaoPage() {
           </div>
           <button
             onClick={() => void load()}
-            className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+            disabled={loading}
+            className="inline-flex items-center gap-2 rounded-lg bg-[#122a4c] px-4 py-2 text-sm font-semibold text-white shadow-md shadow-blue-200 hover:bg-[#0b1e38] disabled:opacity-60"
           >
-            <RefreshCw className="h-4 w-4" />
-            Atualizar
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            {loading ? "Atualizando..." : "Atualizar"}
           </button>
         </div>
         <div className="mt-4 inline-flex rounded-lg bg-gray-100 p-1">
@@ -491,13 +527,13 @@ export function SalaoPage() {
                       <div className="text-sm text-gray-500">Mesa</div>
                       <div className="text-2xl font-semibold text-gray-900">{mesa.numero}</div>
                     </div>
-                    <span className="rounded-full bg-gray-100 px-2 py-1 text-xs capitalize text-gray-700">
+                    <span className={`rounded-full px-3 py-1.5 text-xs font-extrabold uppercase tracking-wide ${tableStatusClass[mesa.status] || "bg-gray-100 text-gray-700"}`}>
                       {mesa.status?.replace(/_/g, " ")}
                     </span>
                   </div>
                   {mesa.solicitacao_abertura && (
                     <div className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                      Abertura pendente: {mesa.solicitacao_abertura.nome_snapshot || "Cliente"}
+                      Cliente solicitou a abertura: {mesa.solicitacao_abertura.nome_snapshot || "Cliente"}
                     </div>
                   )}
                   {mesa.comanda_aberta && (
@@ -511,17 +547,18 @@ export function SalaoPage() {
                   <div className="mt-4 space-y-2">
                     <button
                       onClick={() => void openComanda(mesa)}
-                      disabled={Boolean(mesa.comanda_aberta)}
+                      disabled={Boolean(mesa.comanda_aberta) || actionBusy === `open-${mesa.id}`}
                       className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm disabled:opacity-50"
                     >
-                      {mesa.comanda_aberta ? `Comanda ${mesa.comanda_aberta.numero_comanda}` : "Abrir comanda"}
+                      {actionBusy === `open-${mesa.id}` ? <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Abrindo...</span> : mesa.comanda_aberta ? `Comanda ${mesa.comanda_aberta.numero_comanda}` : "Abrir comanda"}
                     </button>
                     <button
                       onClick={() => void downloadQrCode(mesa)}
+                      disabled={actionBusy === `qr-${mesa.id}`}
                       className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-sm text-blue-700"
                     >
-                      <Download className="h-4 w-4" />
-                      Baixar QR Code
+                      {actionBusy === `qr-${mesa.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                      {actionBusy === `qr-${mesa.id}` ? "Gerando QR Code..." : "Baixar QR Code"}
                     </button>
                     {mesa.comanda_aberta && (
                       <button
@@ -547,7 +584,7 @@ export function SalaoPage() {
                   key={comanda.id}
                   onClick={() => void selectComanda(comanda)}
                   className={`w-full rounded-lg border bg-white p-4 text-left shadow-sm hover:border-blue-200 ${
-                    selectedComanda?.id === comanda.id ? "border-blue-300" : "border-gray-200"
+                    selectedComanda?.id === comanda.id ? "border-blue-500 bg-blue-50 ring-2 ring-blue-100" : "border-gray-200"
                   }`}
                 >
                   <div className="flex items-center justify-between">
@@ -571,7 +608,7 @@ export function SalaoPage() {
                     <div className="flex flex-col gap-2 border-b border-gray-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <h2 className="font-semibold text-gray-900">{selectedComanda.numero_comanda}</h2>
-                        <p className="text-sm text-gray-500">Mesa {selectedComanda.mesa?.numero}</p>
+                        <p className="inline-flex rounded-md bg-blue-100 px-2 py-1 text-sm font-bold text-blue-800">Mesa {selectedComanda.mesa?.numero}</p>
                       </div>
                       <div className="text-left sm:text-right">
                         <div className="text-xs text-gray-500">Total</div>
@@ -631,6 +668,7 @@ export function SalaoPage() {
                               <div className="text-xs text-gray-500">
                                 {item.quantidade} x R$ {formatMoney(item.preco_unitario)} · {item.status}
                               </div>
+                              {item.adicionado_por && <div className="mt-1 text-xs font-semibold text-blue-700">Adicionado por {item.adicionado_por}</div>}
                               {item.observacoes && <div className="mt-1 text-xs text-gray-500">{item.observacoes}</div>}
                             </div>
                             <div className="text-sm font-semibold text-gray-900">R$ {formatMoney(item.preco_total)}</div>
@@ -641,12 +679,12 @@ export function SalaoPage() {
 
                     <button
                       onClick={() => void closeAccount(selectedComanda)}
-                      disabled={(selectedComanda.itens || []).length === 0 || selectedComanda.status === "fechada"}
+                      disabled={(selectedComanda.itens || []).length === 0 || selectedComanda.status === "fechada" || actionBusy === `close-${selectedComanda.id}`}
                       className="mt-5 inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                       style={{ backgroundColor: PRIMARY }}
                     >
-                      <Receipt className="h-4 w-4" />
-                      Fechar conta compartilhada
+                      {actionBusy === `close-${selectedComanda.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Receipt className="h-4 w-4" />}
+                      {actionBusy === `close-${selectedComanda.id}` ? "Finalizando conta..." : "Fechar conta compartilhada"}
                     </button>
                     {["fechada", "aguardando_conta"].includes(selectedComanda.status) && (
                       <button
@@ -743,8 +781,10 @@ export function SalaoPage() {
                     <button
                       key={status}
                       onClick={() => void updateKds(item, status)}
-                      className="rounded-md border border-gray-200 px-2 py-1 text-xs capitalize text-gray-700 hover:bg-gray-50"
+                      disabled={actionBusy.startsWith(`kds-${item.id}-`)}
+                      className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs capitalize text-gray-700 hover:bg-gray-50 disabled:opacity-60"
                     >
+                      {actionBusy === `kds-${item.id}-${status}` && <Loader2 className="h-3 w-3 animate-spin" />}
                       {status}
                     </button>
                   ))}
