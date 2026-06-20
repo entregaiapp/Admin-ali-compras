@@ -82,6 +82,10 @@ export function SalaoPage() {
   const [selectedComanda, setSelectedComanda] = useState<any | null>(null);
   const [productSearch, setProductSearch] = useState("");
   const [selectedProductId, setSelectedProductId] = useState("");
+  const [selectedProductConfiguration, setSelectedProductConfiguration] = useState<any | null>(null);
+  const [configurationLoading, setConfigurationLoading] = useState(false);
+  const [selectedVariationId, setSelectedVariationId] = useState("");
+  const [selectedOptions, setSelectedOptions] = useState<Array<{ group: any; option: any; quantity: number }>>([]);
   const [itemQuantity, setItemQuantity] = useState("1");
   const [itemNotes, setItemNotes] = useState("");
   const [addingItem, setAddingItem] = useState(false);
@@ -316,11 +320,25 @@ export function SalaoPage() {
     try {
       const updated = await salaoService.addItem(selectedComanda.id, {
         produto_loja_id: selectedProductId,
+        variacao_produto_loja_id: selectedVariationId || undefined,
         quantidade: quantity,
         observacoes: itemNotes.trim() || undefined,
+        configuracao_versao: selectedProductConfiguration?.versao,
+        selecoes: selectedOptions.map(({ group, option, quantity: optionQuantity }) => ({
+          grupo_id: group.id,
+          opcao_id: option.id,
+          quantidade: optionQuantity,
+          nome_grupo: group.nome,
+          nome_opcao: option.nome,
+          preco_unitario: Number(option.preco_adicional || 0),
+          preco_contribuicao: Number(option.preco_adicional || 0) * optionQuantity,
+        })),
       });
       setSelectedComanda(updated);
       setSelectedProductId("");
+      setSelectedProductConfiguration(null);
+      setSelectedVariationId("");
+      setSelectedOptions([]);
       setItemQuantity("1");
       setItemNotes("");
       await load();
@@ -329,6 +347,35 @@ export function SalaoPage() {
     } finally {
       setAddingItem(false);
     }
+  };
+
+  const selectProductForComanda = async (product: any) => {
+    setSelectedProductId(product.id);
+    setSelectedProductConfiguration(null);
+    setSelectedVariationId("");
+    setSelectedOptions([]);
+    if (product.modo_compra !== "configuravel") return;
+    setConfigurationLoading(true);
+    try {
+      const configuration = await productsService.getProductConfiguration(product.id);
+      setSelectedProductConfiguration(configuration);
+      setSelectedVariationId(configuration?.variacoes?.[0]?.id || "");
+    } catch (error: any) {
+      showSystemNotice(error?.response?.data?.message || error?.message || "Não foi possível carregar as opções do produto.");
+    } finally {
+      setConfigurationLoading(false);
+    }
+  };
+
+  const toggleOption = (group: any, option: any) => {
+    setSelectedOptions((current) => {
+      const selected = current.find((item) => item.group.id === group.id && item.option.id === option.id);
+      if (selected) return current.filter((item) => !(item.group.id === group.id && item.option.id === option.id));
+      if (group.tipo_selecao === "unica") return [...current.filter((item) => item.group.id !== group.id), { group, option, quantity: 1 }];
+      const groupCount = current.filter((item) => item.group.id === group.id).reduce((sum, item) => sum + item.quantity, 0);
+      if (groupCount >= Number(group.maximo_selecoes || 1)) return current;
+      return [...current, { group, option, quantity: 1 }];
+    });
   };
 
   const closeAccount = async (comanda: any) => {
@@ -402,6 +449,10 @@ export function SalaoPage() {
     productName(product).toLowerCase().includes(productSearch.trim().toLowerCase()),
   );
   const selectedProduct = products.find((product) => product.id === selectedProductId);
+  const configurationIsValid = !selectedProductConfiguration || (selectedProductConfiguration.grupos || []).every((group: any) => {
+    const selectedCount = selectedOptions.filter((item) => item.group.id === group.id).reduce((sum, item) => sum + item.quantity, 0);
+    return selectedCount >= Number(group.minimo_selecoes || 0) && selectedCount <= Number(group.maximo_selecoes || Number.MAX_SAFE_INTEGER);
+  });
   const activeTabClass = "bg-white text-gray-900 shadow-sm";
   const tableStatusClass: Record<string, string> = {
     livre: "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200",
@@ -716,7 +767,7 @@ export function SalaoPage() {
                       {filteredProducts.map((product) => (
                         <button
                           key={product.id}
-                          onClick={() => setSelectedProductId(product.id)}
+                          onClick={() => void selectProductForComanda(product)}
                           className={`flex w-full items-center justify-between gap-3 rounded-lg border bg-white p-3 text-left ${
                             selectedProductId === product.id ? "border-blue-300" : "border-gray-200"
                           }`}
@@ -729,6 +780,39 @@ export function SalaoPage() {
                         </button>
                       ))}
                     </div>
+
+                    {configurationLoading && (
+                      <div className="mt-3 flex items-center gap-2 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Carregando variações e adicionais...</div>
+                    )}
+                    {selectedProductConfiguration && (
+                      <div className="mt-3 max-h-72 space-y-3 overflow-auto rounded-lg border border-blue-100 bg-blue-50 p-3">
+                        <div className="text-xs font-bold text-blue-900">Configure o item antes de adicionar</div>
+                        {(selectedProductConfiguration.variacoes || []).length > 0 && (
+                          <div>
+                            <div className="mb-1 text-xs font-semibold text-gray-700">Variação / tamanho</div>
+                            <div className="flex flex-wrap gap-2">
+                              {selectedProductConfiguration.variacoes.map((variation: any) => (
+                                <button key={variation.id} onClick={() => setSelectedVariationId(variation.id)} className={`rounded-md border px-2 py-1 text-xs font-semibold ${selectedVariationId === variation.id ? "border-blue-600 bg-blue-600 text-white" : "border-gray-300 bg-white text-gray-700"}`}>{variation.nome} · R$ {formatMoney(variation.preco_promocional || variation.preco)}</button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {(selectedProductConfiguration.grupos || []).map((group: any) => {
+                          const selectedCount = selectedOptions.filter((item) => item.group.id === group.id).reduce((sum, item) => sum + item.quantity, 0);
+                          return (
+                            <div key={group.id} className="border-t border-blue-100 pt-2">
+                              <div className="mb-1 flex justify-between gap-2"><span className="text-xs font-semibold text-gray-800">{group.nome}</span><span className="text-[10px] text-gray-500">{group.minimo_selecoes > 0 ? "Obrigatório" : "Opcional"} · {selectedCount}/{group.maximo_selecoes}</span></div>
+                              <div className="space-y-1">
+                                {(group.opcoes || []).filter((option: any) => option.ativa !== false).map((option: any) => {
+                                  const selected = selectedOptions.some((item) => item.group.id === group.id && item.option.id === option.id);
+                                  return <button key={option.id} onClick={() => toggleOption(group, option)} className={`flex w-full items-center justify-between rounded-md border px-2 py-2 text-left text-xs ${selected ? "border-blue-500 bg-white" : "border-transparent bg-white/70"}`}><span>{selected ? "✓ " : ""}{option.nome}</span><span>{Number(option.preco_adicional || 0) > 0 ? `+ R$ ${formatMoney(option.preco_adicional)}` : ""}</span></button>;
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
 
                     <div className="mt-3 grid grid-cols-[92px_1fr] gap-2">
                       <input
@@ -747,12 +831,12 @@ export function SalaoPage() {
                     </div>
                     <button
                       onClick={() => void addProductToComanda()}
-                      disabled={!selectedProduct || addingItem || selectedComanda.status !== "aberta"}
+                      disabled={!selectedProduct || addingItem || configurationLoading || !configurationIsValid || selectedComanda.status !== "aberta"}
                       className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
                       style={{ backgroundColor: PRIMARY }}
                     >
                       {addingItem ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                      Adicionar a mesa
+                      {addingItem ? "Adicionando..." : "Adicionar a mesa"}
                     </button>
                   </div>
                 </div>
