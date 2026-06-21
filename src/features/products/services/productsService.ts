@@ -2,7 +2,7 @@ import api from "@/shared/lib/api";
 import type { ProductConfiguration, ProductStorePayload } from "../types/product";
 
 const STORE_PRODUCTS_CACHE_PREFIX = "admin-store-products:v1:";
-const ACTIVE_CATEGORIES_CACHE_PREFIX = "admin-active-categories:v3:";
+const ACTIVE_CATEGORIES_CACHE_PREFIX = "admin-active-categories:v4:";
 const CACHE_MAX_AGE = 5 * 60 * 1000;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
 
@@ -163,17 +163,17 @@ export const productsService = {
 
   async getActiveCategories(options: { forceRefresh?: boolean } = {}) {
     const lojaId = getStoreId();
-    // A tela de produtos deve usar somente as categorias que possuem produtos
-    // disponíveis na loja. A rota global inclui todo o catálogo de categorias.
+    // No Admin, "em uso" significa que o produto está vinculado à loja, inclusive
+    // quando está temporariamente inativo. Assim, o gestor ainda consegue filtrar
+    // e reativar o item. Produtos simples e configuráveis usam a mesma categoria
+    // final no vínculo produtos_loja.
     if (!lojaId) return [];
 
     const cacheKey = `${ACTIVE_CATEGORIES_CACHE_PREFIX}${lojaId}`;
     const cached = options.forceRefresh ? null : getSessionItem<any[]>(cacheKey);
     if (cached) return cached;
 
-    const endpoint = `/lojas/${encodeURIComponent(lojaId)}/categorias`;
-
-    const firstResponse = await api.get(endpoint, {
+    const firstResponse = await api.get("/categorias", {
       params: { ativa: true, page: 1, per_page: 100 },
     });
     const firstData = firstResponse.data?.data;
@@ -181,7 +181,7 @@ export const productsService = {
     const remainingResponses = totalPages > 1
       ? await Promise.all(
           Array.from({ length: totalPages - 1 }, (_, index) =>
-            api.get(endpoint, {
+            api.get("/categorias", {
               params: { ativa: true, page: index + 2, per_page: 100 },
             }),
           ),
@@ -192,8 +192,29 @@ export const productsService = {
       ...remainingResponses.flatMap((response) => toList(response.data)),
     ];
 
-    setSessionItem(cacheKey, categories);
-    return categories;
+    const categoriesById = new Map(categories.map((category) => [category.id, category]));
+    const usedCategoryIds = new Set<string>();
+    const storeProducts = await this.getAllStoreProducts();
+
+    storeProducts.forEach((product) => {
+      if (product.produto_ativo === false) return;
+
+      const categoryId = product.categoria_final_id || product.categoria_id;
+      let category = categoryId ? categoriesById.get(categoryId) : null;
+
+      while (category) {
+        if (usedCategoryIds.has(category.id)) break;
+        usedCategoryIds.add(category.id);
+        category = category.categoria_pai_id
+          ? categoriesById.get(category.categoria_pai_id)
+          : null;
+      }
+    });
+
+    const usedCategories = categories.filter((category) => usedCategoryIds.has(category.id));
+
+    setSessionItem(cacheKey, usedCategories);
+    return usedCategories;
   },
 
   async searchGlobalProducts(params: {
