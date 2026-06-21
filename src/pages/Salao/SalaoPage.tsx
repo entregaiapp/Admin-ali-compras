@@ -793,6 +793,20 @@ export function SalaoPage() {
                       </button>
                     ))}
                   </div>
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <KeyRound className="h-4 w-4 text-blue-800" />
+                      <span className="text-xs font-semibold text-blue-900">PIN da mesa</span>
+                      <span className="text-lg font-extrabold tracking-widest text-blue-950">{latestPin || selectedComanda.pin_atual || selectedComanda.pin || "----"}</span>
+                    </div>
+                    <button
+                      onClick={() => void regeneratePin(selectedComanda)}
+                      disabled={!['aberta', 'aguardando_conta'].includes(selectedComanda.status)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-white px-2 py-1 text-xs font-semibold text-blue-800 disabled:opacity-50"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" /> Novo PIN
+                    </button>
+                  </div>
                 <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-5">
                   <div className="order-2 lg:order-none">
                     <div className={comandaModule === "mesa" ? "flex flex-col gap-2 border-b border-gray-100 pb-4 sm:flex-row sm:items-center sm:justify-between" : "hidden"}>
