@@ -784,9 +784,9 @@ export function SalaoPage() {
                   <div className="sticky top-0 z-30 -mx-4 mb-4 flex gap-1 overflow-x-auto border-b border-gray-100 bg-white px-4 py-2 shadow-sm scrollbar-hide">
                     {[
                       ["mesa", Armchair, "Mesa"],
-                      ["participantes", UserCheck, "Participantes"],
-                      ["pedidos", ClipboardList, "Pedidos"],
                       ["adicionar", ShoppingCart, "Adicionar produto"],
+                      ["pedidos", ClipboardList, "Pedidos"],
+                      ["participantes", UserCheck, "Participantes"],
                     ].map(([id, Icon, label]) => (
                       <button key={String(id)} onClick={() => setComandaModule(id as typeof comandaModule)} className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] font-bold sm:min-h-11 sm:gap-2 sm:px-3 sm:py-2 sm:text-xs ${comandaModule === id ? "bg-[#122a4c] text-white shadow-sm" : "bg-slate-100 text-slate-600"}`}>
                         <Icon className="h-4 w-4" /> {label}
