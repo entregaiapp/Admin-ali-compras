@@ -350,10 +350,6 @@ export function ConfigurableProductEditor({ product, duplicate = false, categori
       showSystemNotice("Cadastre ao menos um tamanho.");
       return;
     }
-    if (!configuration.grupos.length) {
-      showSystemNotice("Cadastre ao menos um grupo de opções.");
-      return;
-    }
     for (const variation of configuration.variacoes) {
       if (variation.preco_promocional !== null && variation.preco_promocional !== undefined && variation.preco_promocional > variation.preco) {
         showSystemNotice(`O preço promocional do tamanho "${variation.nome}" não pode ser maior que o preço normal.`);
@@ -457,7 +453,7 @@ export function ConfigurableProductEditor({ product, duplicate = false, categori
               >
                 <span className="block text-sm font-black text-gray-900">Produto com adicionais</span>
                 <span className="mt-1 block text-xs text-gray-500">
-                  Hambúrguer, cachorro-quente, açaí ou qualquer item com opcionais e perguntas obrigatórias.
+                  Hambúrguer, cachorro-quente, açaí ou qualquer item com opcionais e perguntas obrigatórias. Também pode ficar sem grupos para exibir apenas o campo de observação ao cliente.
                 </span>
               </button>
               <button
@@ -769,6 +765,12 @@ export function ConfigurableProductEditor({ product, duplicate = false, categori
               </button>
             </section>
           ))}
+
+          {itemType === "adicionais" && configuration.grupos.length === 0 && (
+            <p className="mx-auto w-full max-w-[1500px] rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+              Este produto será adicionado pelo cliente com quantidade e campo de observação, sem adicionais.
+            </p>
+          )}
 
           <button
             onClick={() => setConfiguration((current) => ({
