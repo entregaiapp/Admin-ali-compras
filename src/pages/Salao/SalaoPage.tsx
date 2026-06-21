@@ -15,7 +15,6 @@ import {
   Search,
   ShoppingCart,
   UserCheck,
-  X,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { salaoService } from "@/features/salao/services/salaoService";
@@ -127,7 +126,6 @@ export function SalaoPage() {
   const [tab, setTab] = useState<"mesas" | "comandas" | "kds">("mesas");
   const [mesas, setMesas] = useState<any[]>([]);
   const [comandas, setComandas] = useState<any[]>([]);
-  const [openingRequests, setOpeningRequests] = useState<any[]>([]);
   const [kds, setKds] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -179,10 +177,9 @@ export function SalaoPage() {
     if (shouldShowLoading) setLoading(true);
     if (options.manual) setRefreshing(true);
     try {
-      const [tablesPayload, tabsPayload, requestsPayload, kdsPayload, productsPayload] = await Promise.all([
+      const [tablesPayload, tabsPayload, kdsPayload, productsPayload] = await Promise.all([
         salaoService.listMesas({ loja_id: user.loja_id, per_page: 100 }),
         salaoService.listComandas({ loja_id: user.loja_id, per_page: 100 }),
-        salaoService.listOpeningRequests({ loja_id: user.loja_id, status: "pendente" }),
         salaoService.listKds({ loja_id: user.loja_id }),
         options.includeProducts || !productsLoadedRef.current
           ? productsService.getStoreProductsPage({ page: 1, perPage: 100, activeOnly: true }, { forceRefresh: true })
@@ -190,7 +187,6 @@ export function SalaoPage() {
       ]);
       setMesas(unwrapList(tablesPayload));
       setComandas(unwrapList(tabsPayload).filter((item: any) => !["paga", "cancelada"].includes(item.status)));
-      setOpeningRequests(unwrapList(requestsPayload));
       setKds(unwrapList(kdsPayload));
       if (productsPayload) {
         setProducts(productsPayload.products || []);
@@ -300,35 +296,6 @@ export function SalaoPage() {
       await load();
     } catch (error: any) {
       showSystemNotice(error?.response?.data?.message || error?.message || "Nao foi possivel abrir a comanda.");
-    } finally {
-      setActionBusy("");
-    }
-  };
-
-  const approveOpeningRequest = async (request: any) => {
-    setActionBusy(`approve-${request.id}`);
-    try {
-      const result = await salaoService.approveOpeningRequest(request.id);
-      setSelectedComanda(result.comanda);
-      setComandaModule("mesa");
-      setLatestPin(result.comanda?.pin || "");
-      setTab("comandas");
-      showSystemNotice(`Solicitacao aprovada. PIN da mesa: ${result.comanda?.pin || "gerado"}`);
-      await load();
-    } catch (error: any) {
-      showSystemNotice(error?.response?.data?.message || error?.message || "Nao foi possivel aprovar a solicitacao.");
-    } finally {
-      setActionBusy("");
-    }
-  };
-
-  const refuseOpeningRequest = async (request: any) => {
-    setActionBusy(`refuse-${request.id}`);
-    try {
-      await salaoService.refuseOpeningRequest(request.id);
-      await load();
-    } catch (error: any) {
-      showSystemNotice(error?.response?.data?.message || error?.message || "Nao foi possivel recusar a solicitacao.");
     } finally {
       setActionBusy("");
     }
@@ -667,39 +634,6 @@ export function SalaoPage() {
           </div>
         ) : tab === "mesas" ? (
           <div className="space-y-4">
-            {openingRequests.length > 0 && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 sm:p-4">
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-amber-900">
-                  <UserCheck className="h-4 w-4" />
-                  Solicitações de abertura pendentes
-                </div>
-                <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                  {openingRequests.map((request) => (
-                    <div key={request.id} className="rounded-lg border border-amber-200 bg-white p-2.5 sm:p-3">
-                      <div className="font-semibold text-gray-900">Mesa {request.mesa?.numero}</div>
-                      <div className="text-sm text-gray-600">{request.nome_snapshot || "Cliente"}</div>
-                      <div className="mt-3 flex gap-2">
-                        <button
-                          onClick={() => void approveOpeningRequest(request)}
-                          className="inline-flex flex-1 items-center justify-center gap-1 rounded-md bg-emerald-600 px-2 py-2 text-xs font-semibold text-white"
-                        >
-                          <UserCheck className="h-3.5 w-3.5" />
-                          Aprovar
-                        </button>
-                        <button
-                          onClick={() => void refuseOpeningRequest(request)}
-                          className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border border-gray-200 px-2 py-2 text-xs font-semibold text-gray-700"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                          Recusar
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
             <div className="flex w-full max-w-sm gap-2">
               <input
                 value={newTableNumber}
