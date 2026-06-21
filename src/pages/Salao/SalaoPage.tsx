@@ -148,11 +148,17 @@ export function SalaoPage() {
   const [realtimeMesaId, setRealtimeMesaId] = useState("");
   const [qrDownloadMesa, setQrDownloadMesa] = useState<any | null>(null);
   const loadingRef = useRef(false);
+  const queuedManualRefreshRef = useRef(false);
+  const selectedComandaIdRef = useRef("");
   const hasLoadedRef = useRef(false);
   const productsLoadedRef = useRef(false);
   const soundEnabledRef = useRef(false);
   const audioContextRef = useRef<AudioContext | null>(null);
   const comandaDetailRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    selectedComandaIdRef.current = selectedComanda?.id || "";
+  }, [selectedComanda?.id]);
 
   const playRealtimeAlert = useCallback(() => {
     if (!soundEnabledRef.current) return;
@@ -171,23 +177,31 @@ export function SalaoPage() {
 
   const load = useCallback(async (options: { silent?: boolean; includeProducts?: boolean; manual?: boolean } = {}) => {
     if (!user?.loja_id) return;
-    if (loadingRef.current) return;
+    if (loadingRef.current) {
+      if (options.manual) queuedManualRefreshRef.current = true;
+      return;
+    }
     loadingRef.current = true;
     const shouldShowLoading = !options.silent && !hasLoadedRef.current;
     if (shouldShowLoading) setLoading(true);
     if (options.manual) setRefreshing(true);
     try {
-      const [tablesPayload, tabsPayload, kdsPayload, productsPayload] = await Promise.all([
+      const selectedComandaId = selectedComandaIdRef.current;
+      const [tablesPayload, tabsPayload, kdsPayload, productsPayload, selectedComandaPayload] = await Promise.all([
         salaoService.listMesas({ loja_id: user.loja_id, per_page: 100 }),
         salaoService.listComandas({ loja_id: user.loja_id, per_page: 100 }),
         salaoService.listKds({ loja_id: user.loja_id }),
         options.includeProducts || !productsLoadedRef.current
           ? productsService.getStoreProductsPage({ page: 1, perPage: 100, activeOnly: true }, { forceRefresh: true })
           : Promise.resolve(null),
+        selectedComandaId ? salaoService.getComanda(selectedComandaId).catch(() => null) : Promise.resolve(null),
       ]);
       setMesas(unwrapList(tablesPayload));
       setComandas(unwrapList(tabsPayload).filter((item: any) => !["paga", "cancelada"].includes(item.status)));
       setKds(unwrapList(kdsPayload));
+      if (selectedComandaPayload && selectedComandaIdRef.current === selectedComandaId) {
+        setSelectedComanda(selectedComandaPayload);
+      }
       if (productsPayload) {
         setProducts(productsPayload.products || []);
         productsLoadedRef.current = true;
@@ -201,6 +215,10 @@ export function SalaoPage() {
       setLoading(false);
       setRefreshing(false);
       loadingRef.current = false;
+      if (queuedManualRefreshRef.current) {
+        queuedManualRefreshRef.current = false;
+        void load({ manual: true, includeProducts: true });
+      }
     }
   }, [user?.loja_id]);
 

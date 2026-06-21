@@ -63,6 +63,7 @@ import {
 } from "@/features/orders/utils/orderUtils";
 import { DeliveryAssignmentModal } from "@/features/orders/components/DeliveryAssignmentModal";
 import { OrderItemsChecklistModal } from "@/features/orders/components/OrderItemsChecklistModal";
+import { ManualDeliveryOrderModal } from "@/features/orders/components/ManualDeliveryOrderModal";
 import { showSystemNotice } from "@/shared/components/SystemNoticeModal";
 import {
   MfaApprovalModal,
@@ -200,6 +201,8 @@ export function OrdersScreen() {
   const [primaryColor, setPrimaryColor] = useState(PRIMARY);
   const [storePrintData, setStorePrintData] = useState<any | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [manualOrderOpen, setManualOrderOpen] = useState(false);
+  const [manualOrderEnabled, setManualOrderEnabled] = useState(false);
   const [newOrdersCount, setNewOrdersCount] = useState(0);
   const [lastOrdersLoadedAt, setLastOrdersLoadedAt] = useState<string | null>(
     null,
@@ -234,6 +237,13 @@ export function OrdersScreen() {
     fetchOrders(1, true);
     fetchAuxiliaryData();
   }, [statusFilter, typeFilter, viewMode, archivedStartDate, archivedEndDate]);
+
+  useEffect(() => {
+    if (!user?.loja_id) return;
+    api.get(`/lojas/${user.loja_id}/configuracoes`)
+      .then((response) => setManualOrderEnabled((response.data?.data ?? response.data)?.permitir_criacao_pedidos_delivery_admin === true))
+      .catch(() => setManualOrderEnabled(false));
+  }, [user?.loja_id]);
 
   useEffect(() => {
     if (!user?.loja_id) {
@@ -1622,6 +1632,9 @@ export function OrdersScreen() {
 
   return (
     <div className="flex h-full">
+      {manualOrderOpen && user?.loja_id && (
+        <ManualDeliveryOrderModal lojaId={user.loja_id} onClose={() => setManualOrderOpen(false)} onCreated={() => fetchOrders(1, true)} />
+      )}
       {/* Left panel: list or bairros */}
       <div
         className={`flex flex-col ${selected ? "hidden lg:flex lg:w-1/2 xl:w-3/5" : "flex-1"}`}
@@ -1629,6 +1642,7 @@ export function OrdersScreen() {
         {/* Filters bar */}
         <div className="relative bg-white border-b border-gray-200 px-4 py-2">
           <div className="flex items-center justify-between gap-3">
+            {manualOrderEnabled && <button type="button" onClick={() => setManualOrderOpen(true)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">+ Criar pedido</button>}
             <button
               type="button"
               onClick={() => setFiltersOpen((open) => !open)}
