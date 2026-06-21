@@ -17,9 +17,9 @@ export function useProducts() {
   const [totalPages, setTotalPages] = useState(1);
   const requestId = useRef(0);
 
-  const fetchCategories = async () => {
+  const fetchCategories = async (options: { forceRefresh?: boolean } = {}) => {
     try {
-      const data = await productsService.getActiveCategories();
+      const data = await productsService.getActiveCategories(options);
       setCategories(data);
     } catch (error) {
       console.error("Error fetching categories:", error);
@@ -120,6 +120,7 @@ export function useProducts() {
   return {
     categories,
     categoryFilter,
+    fetchCategories,
     fetchProducts,
     filteredProducts: products,
     loading,

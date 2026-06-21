@@ -737,6 +737,7 @@ export function ProductsScreen() {
   const {
     categories: dbCategories,
     categoryFilter,
+    fetchCategories,
     fetchProducts,
     filteredProducts: filtered,
     loading,
@@ -805,7 +806,10 @@ export function ProductsScreen() {
           isNew={!!editingProduct.isNew}
           categories={dbCategories}
           onClose={() => setEditingProduct(null)} 
-          onSuccess={() => fetchProducts({ forceRefresh: true })}
+          onSuccess={() => {
+            fetchProducts({ forceRefresh: true });
+            fetchCategories({ forceRefresh: true });
+          }}
         />
       )}
 
@@ -815,7 +819,10 @@ export function ProductsScreen() {
           duplicate={configurableEditor.duplicate}
           categories={dbCategories}
           onClose={() => setConfigurableEditor(null)}
-          onSuccess={() => fetchProducts({ forceRefresh: true })}
+          onSuccess={() => {
+            fetchProducts({ forceRefresh: true });
+            fetchCategories({ forceRefresh: true });
+          }}
         />
       )}
 

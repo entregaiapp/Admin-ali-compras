@@ -2,7 +2,7 @@ import api from "@/shared/lib/api";
 import type { ProductConfiguration, ProductStorePayload } from "../types/product";
 
 const STORE_PRODUCTS_CACHE_PREFIX = "admin-store-products:v1:";
-const ACTIVE_CATEGORIES_CACHE_PREFIX = "admin-active-categories:v2:";
+const ACTIVE_CATEGORIES_CACHE_PREFIX = "admin-active-categories:v3:";
 const CACHE_MAX_AGE = 5 * 60 * 1000;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
 
@@ -49,11 +49,12 @@ const setSessionItem = (key: string, data: unknown) => {
   }
 };
 
-const getStoreId = () => {
+const getStoreId = (): string | null => {
   try {
-    return JSON.parse(localStorage.getItem("user") || "{}")?.loja_id || "current";
+    const lojaId = JSON.parse(localStorage.getItem("user") || "{}")?.loja_id;
+    return UUID_REGEX.test(lojaId) ? lojaId : null;
   } catch {
-    return "current";
+    return null;
   }
 };
 
@@ -160,15 +161,17 @@ export const productsService = {
     ];
   },
 
-  async getActiveCategories() {
+  async getActiveCategories(options: { forceRefresh?: boolean } = {}) {
     const lojaId = getStoreId();
+    // A tela de produtos deve usar somente as categorias que possuem produtos
+    // disponíveis na loja. A rota global inclui todo o catálogo de categorias.
+    if (!lojaId) return [];
+
     const cacheKey = `${ACTIVE_CATEGORIES_CACHE_PREFIX}${lojaId}`;
-    const cached = getSessionItem<any[]>(cacheKey);
+    const cached = options.forceRefresh ? null : getSessionItem<any[]>(cacheKey);
     if (cached) return cached;
 
-    const endpoint = UUID_REGEX.test(lojaId)
-      ? `/lojas/${encodeURIComponent(lojaId)}/categorias`
-      : "/categorias";
+    const endpoint = `/lojas/${encodeURIComponent(lojaId)}/categorias`;
 
     const firstResponse = await api.get(endpoint, {
       params: { ativa: true, page: 1, per_page: 100 },
