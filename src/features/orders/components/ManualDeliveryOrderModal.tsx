@@ -95,6 +95,27 @@ export function ManualDeliveryOrderModal({ lojaId, onClose, onCreated }: {
     return () => window.clearTimeout(timer);
   }, [contactQuery]);
 
+  useEffect(() => {
+    if (!configuring || !selectedVariation) return;
+    setSelectedOptions((current) => current.reduce<any[]>((next, selection) => {
+      const group = (configuring.grupos || []).find((item: any) => item.id === selection.grupo_id);
+      if (!group) return next;
+      const rule = (group.regras_variacao || []).find(
+        (item: any) => item.variacao_produto_loja_id === selectedVariation,
+      );
+      const maximum = Number(rule?.maximo_selecoes ?? group.maximo_selecoes ?? 99);
+      const groupSelections = next.filter((item) => item.grupo_id === group.id);
+      const used = group.permite_quantidade
+        ? groupSelections.reduce((sum, item) => sum + Number(item.quantidade || 1), 0)
+        : groupSelections.length;
+      if (used >= maximum) return next;
+      const quantity = group.permite_quantidade
+        ? Math.min(Number(selection.quantidade || 1), maximum - used)
+        : 1;
+      return quantity > 0 ? [...next, { ...selection, quantidade: quantity }] : next;
+    }, []));
+  }, [configuring, selectedVariation]);
+
   const filteredProducts = useMemo(() => {
     const search = productSearch.trim().toLocaleLowerCase("pt-BR");
     if (!search) return products;
@@ -139,15 +160,29 @@ export function ManualDeliveryOrderModal({ lojaId, onClose, onCreated }: {
 
   const optionSelection = (groupId: string, optionId: string) =>
     selectedOptions.find((selection) => selection.grupo_id === groupId && selection.opcao_id === optionId);
+  const getGroupLimits = (group: any) => {
+    const rule = (group.regras_variacao || []).find(
+      (item: any) => item.variacao_produto_loja_id === selectedVariation,
+    );
+    return {
+      minimum: Number(rule?.minimo_selecoes ?? group.minimo_selecoes ?? 0),
+      maximum: Number(rule?.maximo_selecoes ?? group.maximo_selecoes ?? 99),
+    };
+  };
+  const countGroupSelections = (group: any, selections = selectedOptions) => {
+    const groupSelections = selections.filter((selection) => selection.grupo_id === group.id);
+    return group.permite_quantidade
+      ? groupSelections.reduce((sum, selection) => sum + Number(selection.quantidade || 1), 0)
+      : groupSelections.length;
+  };
   const toggleOption = (group: any, option: any) => setSelectedOptions((current) => {
     const existing = current.find((selection) => selection.grupo_id === group.id && selection.opcao_id === option.id);
     if (existing) return current.filter((selection) => selection !== existing);
     if (group.tipo_selecao === "unica") {
       return [...current.filter((selection) => selection.grupo_id !== group.id), { grupo_id: group.id, opcao_id: option.id, quantidade: 1 }];
     }
-    const count = current.filter((selection) => selection.grupo_id === group.id)
-      .reduce((sum, selection) => sum + Number(selection.quantidade || 1), 0);
-    if (count >= Number(group.maximo_selecoes || 99)) return current;
+    const { maximum } = getGroupLimits(group);
+    if (countGroupSelections(group, current) >= maximum) return current;
     return [...current, { grupo_id: group.id, opcao_id: option.id, quantidade: 1 }];
   });
   const changeOptionQuantity = (group: any, option: any, delta: number) => setSelectedOptions((current) => {
@@ -155,9 +190,8 @@ export function ManualDeliveryOrderModal({ lojaId, onClose, onCreated }: {
     if (!selection) return current;
     const next = Number(selection.quantidade || 1) + delta;
     if (next < 1) return current.filter((item) => item !== selection);
-    const groupTotal = current.filter((item) => item.grupo_id === group.id)
-      .reduce((sum, item) => sum + Number(item.quantidade || 1), 0);
-    if (delta > 0 && groupTotal >= Number(group.maximo_selecoes || 99)) return current;
+    const { maximum } = getGroupLimits(group);
+    if (delta > 0 && countGroupSelections(group, current) >= maximum) return current;
     if (next > Number(option.quantidade_maxima || 99)) return current;
     return current.map((item) => item === selection ? { ...item, quantidade: next } : item);
   });
@@ -166,10 +200,10 @@ export function ManualDeliveryOrderModal({ lojaId, onClose, onCreated }: {
     if (!product) return;
     if ((configuring.variacoes || []).length && !selectedVariation) { setError("Selecione uma variação."); return; }
     for (const group of configuring.grupos || []) {
-      const count = selectedOptions.filter((selection) => selection.grupo_id === group.id)
-        .reduce((sum, selection) => sum + Number(selection.quantidade || 1), 0);
-      if (count < Number(group.minimo_selecoes || 0) || count > Number(group.maximo_selecoes || 99)) {
-        setError(`O grupo “${group.nome}” exige entre ${group.minimo_selecoes} e ${group.maximo_selecoes} seleções.`); return;
+      const { minimum, maximum } = getGroupLimits(group);
+      const count = countGroupSelections(group);
+      if (count < minimum || count > maximum) {
+        setError(`O grupo “${group.nome}” exige entre ${minimum} e ${maximum} seleções.`); return;
       }
     }
     const variation = (configuring.variacoes || []).find((item: any) => item.id === selectedVariation);
@@ -234,6 +268,6 @@ export function ManualDeliveryOrderModal({ lojaId, onClose, onCreated }: {
       </main>
       <footer className="flex items-center justify-between border-t bg-white px-5 py-4 sm:px-7"><button disabled={step===1||busy} onClick={()=>{setError("");setStep(step-1)}} className="inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 font-semibold text-slate-700 disabled:opacity-40"><ArrowLeft className="h-4 w-4"/> Voltar</button>{step<4?<button disabled={(step===2&&!lines.length)||(step===3&&!pickupAtStore&&(!address.rua||!address.numero||!address.bairro||!address.cidade||!address.estado))} onClick={()=>{setError("");setStep(step+1)}} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-5 py-2.5 font-semibold text-white disabled:opacity-40">Continuar <ArrowRight className="h-4 w-4"/></button>:<button disabled={busy||(payment==='dinheiro'&&!semTroco&&!trocoPara)} onClick={submit} className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-5 py-2.5 font-semibold text-white disabled:opacity-50">{busy?<Loader2 className="h-4 w-4 animate-spin"/>:<Check className="h-4 w-4"/>} Criar pedido</button>}</footer>
     </div>
-    {configuring&&<div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/50 p-3"><div className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl"><div className="flex justify-between border-b pb-4"><div><h3 className="text-lg font-bold">Configurar {configuring.produto?.nome}</h3><p className="text-sm text-slate-500">Escolha variação e opções obrigatórias.</p></div><button onClick={()=>setConfiguring(null)}><X/></button></div>{(configuring.variacoes||[]).length>0&&<div className="mt-5"><p className="mb-2 text-sm font-bold">Variação</p><div className="grid gap-2 sm:grid-cols-2">{configuring.variacoes.map((variation:any)=><button key={variation.id} onClick={()=>setSelectedVariation(variation.id)} className={`rounded-xl border-2 p-3 text-left ${selectedVariation===variation.id?'border-blue-600 bg-blue-50':'border-slate-200'}`}><b>{variation.nome}</b><span className="float-right text-sm">{money(effectivePrice(variation))}</span></button>)}</div></div>}{(configuring.grupos||[]).map((group:any)=>{const count=selectedOptions.filter(item=>item.grupo_id===group.id).reduce((sum,item)=>sum+Number(item.quantidade||1),0);return <section key={group.id} className="mt-5"><div className="flex justify-between"><p className="font-bold">{group.nome}</p><span className={`rounded-full px-2 py-0.5 text-xs ${count>=Number(group.minimo_selecoes||0)?'bg-emerald-100 text-emerald-700':'bg-amber-100 text-amber-700'}`}>{count}/{group.maximo_selecoes}</span></div><p className="mb-2 text-xs text-slate-500">Escolha de {group.minimo_selecoes} até {group.maximo_selecoes}</p><div className="space-y-2">{(group.opcoes||[]).map((option:any)=>{const selected=optionSelection(group.id,option.id);return <div key={option.id} className={`flex items-center justify-between rounded-xl border p-3 ${selected?'border-blue-500 bg-blue-50':''}`}><button onClick={()=>toggleOption(group,option)} className="flex flex-1 items-center gap-3 text-left"><span className={`h-5 w-5 rounded-${group.tipo_selecao==='unica'?'full':'md'} border-2 ${selected?'border-blue-600 bg-blue-600 shadow-[inset_0_0_0_3px_white]':''}`}/><span><b className="block text-sm">{option.nome}</b>{Number(option.preco_adicional||0)>0&&<small className="text-slate-500">+ {money(option.preco_adicional)}</small>}</span></button>{selected&&group.permite_quantidade&&<div className="flex items-center rounded-lg border bg-white"><button onClick={()=>changeOptionQuantity(group,option,-1)} className="p-1.5"><Minus className="h-3 w-3"/></button><b className="w-7 text-center text-sm">{selected.quantidade}</b><button onClick={()=>changeOptionQuantity(group,option,1)} className="p-1.5"><Plus className="h-3 w-3"/></button></div>}</div>})}</div></section>})}<label className="mt-5 block text-sm font-semibold text-slate-700">Observação do item<textarea value={configurationNotes} onChange={(event)=>setConfigurationNotes(event.target.value)} maxLength={500} placeholder="Ex.: sem cebola, molho separado..." className="mt-1 min-h-20 w-full resize-y rounded-xl border border-slate-200 p-3 font-normal outline-none focus:border-blue-500"/></label><div className="mt-6 flex justify-end gap-2 border-t pt-4"><button onClick={()=>setConfiguring(null)} className="rounded-lg border px-4 py-2">Cancelar</button><button onClick={saveConfiguredLine} className="rounded-lg bg-blue-600 px-5 py-2 font-semibold text-white">Adicionar ao pedido</button></div></div></div>}
+    {configuring&&<div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/50 p-3"><div className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl"><div className="flex justify-between border-b pb-4"><div><h3 className="text-lg font-bold">Configurar {configuring.produto?.nome}</h3><p className="text-sm text-slate-500">Escolha variação e opções obrigatórias.</p></div><button onClick={()=>setConfiguring(null)}><X/></button></div>{(configuring.variacoes||[]).length>0&&<div className="mt-5"><p className="mb-2 text-sm font-bold">Variação</p><div className="grid gap-2 sm:grid-cols-2">{configuring.variacoes.map((variation:any)=><button key={variation.id} onClick={()=>setSelectedVariation(variation.id)} className={`rounded-xl border-2 p-3 text-left ${selectedVariation===variation.id?'border-blue-600 bg-blue-50':'border-slate-200'}`}><b>{variation.nome}</b><span className="float-right text-sm">{money(effectivePrice(variation))}</span></button>)}</div></div>}{(configuring.grupos||[]).map((group:any)=>{const limits=getGroupLimits(group);const count=countGroupSelections(group);return <section key={group.id} className="mt-5"><div className="flex justify-between"><p className="font-bold">{group.nome}</p><span className={`rounded-full px-2 py-0.5 text-xs ${count>=limits.minimum?'bg-emerald-100 text-emerald-700':'bg-amber-100 text-amber-700'}`}>{count}/{limits.maximum}</span></div><p className="mb-2 text-xs text-slate-500">Escolha de {limits.minimum} até {limits.maximum}</p><div className="space-y-2">{(group.opcoes||[]).map((option:any)=>{const selected=optionSelection(group.id,option.id);const limitReached=!selected&&count>=limits.maximum;return <div key={option.id} className={`flex items-center justify-between rounded-xl border p-3 ${selected?'border-blue-500 bg-blue-50':''}`}><button disabled={limitReached} onClick={()=>toggleOption(group,option)} className="flex flex-1 items-center gap-3 text-left disabled:cursor-not-allowed disabled:opacity-45"><span className={`h-5 w-5 rounded-${group.tipo_selecao==='unica'?'full':'md'} border-2 ${selected?'border-blue-600 bg-blue-600 shadow-[inset_0_0_0_3px_white]':''}`}/><span><b className="block text-sm">{option.nome}</b>{Number(option.preco_adicional||0)>0&&<small className="text-slate-500">+ {money(option.preco_adicional)}</small>}</span></button>{selected&&group.permite_quantidade&&<div className="flex items-center rounded-lg border bg-white"><button onClick={()=>changeOptionQuantity(group,option,-1)} className="p-1.5"><Minus className="h-3 w-3"/></button><b className="w-7 text-center text-sm">{selected.quantidade}</b><button disabled={count>=limits.maximum} onClick={()=>changeOptionQuantity(group,option,1)} className="p-1.5 disabled:cursor-not-allowed disabled:opacity-40"><Plus className="h-3 w-3"/></button></div>}</div>})}</div></section>})}<label className="mt-5 block text-sm font-semibold text-slate-700">Observação do item<textarea value={configurationNotes} onChange={(event)=>setConfigurationNotes(event.target.value)} maxLength={500} placeholder="Ex.: sem cebola, molho separado..." className="mt-1 min-h-20 w-full resize-y rounded-xl border border-slate-200 p-3 font-normal outline-none focus:border-blue-500"/></label><div className="mt-6 flex justify-end gap-2 border-t pt-4"><button onClick={()=>setConfiguring(null)} className="rounded-lg border px-4 py-2">Cancelar</button><button onClick={saveConfiguredLine} className="rounded-lg bg-blue-600 px-5 py-2 font-semibold text-white">Adicionar ao pedido</button></div></div></div>}
   </div>;
 }
