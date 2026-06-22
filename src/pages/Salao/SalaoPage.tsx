@@ -8,6 +8,7 @@ import {
   Printer,
   KeyRound,
   Loader2,
+  MessageSquareText,
   Plus,
   QrCode,
   RefreshCw,
@@ -1026,6 +1027,19 @@ export function SalaoPage() {
                     {getSalaoStatusStyle(item.status).label}
                   </span>
                 </div>
+                {String(item.observacoes || "").trim() && (
+                  <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-white/80 px-3 py-2 text-sm text-amber-950">
+                    <MessageSquareText className="mt-0.5 h-4 w-4 flex-none text-amber-700" />
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-bold uppercase tracking-wide text-amber-700">
+                        Observação
+                      </div>
+                      <p className="mt-0.5 whitespace-pre-wrap break-words font-medium">
+                        {String(item.observacoes).trim()}
+                      </p>
+                    </div>
+                  </div>
+                )}
                 <div className="mt-4 flex flex-wrap gap-2">
                   {["recebido", "preparando", "pronto", "entregue"].map((status) => (
                     <button
