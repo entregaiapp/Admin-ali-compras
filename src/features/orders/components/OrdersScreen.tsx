@@ -226,9 +226,10 @@ export function OrdersScreen() {
     salao: 0,
   });
   const [lastOrdersLoadedAt, setLastOrdersLoadedAt] = useState<Record<OrderType, string>>(() => {
-    const mountedAt = new Date().toISOString();
-    return { entrega: mountedAt, retirada: mountedAt, salao: mountedAt };
+    const initialCursor = new Date(0).toISOString();
+    return { entrega: initialCursor, retirada: initialCursor, salao: initialCursor };
   });
+  const [newOrderCursorsReady, setNewOrderCursorsReady] = useState(false);
   const [checkingNewOrders, setCheckingNewOrders] = useState(false);
   const [archivedStartDate, setArchivedStartDate] = useState("");
   const [archivedEndDate, setArchivedEndDate] = useState("");
@@ -275,6 +276,31 @@ export function OrdersScreen() {
       setManualOrderEnabled(config?.permitir_criacao_pedidos_delivery_admin === true);
       setSalaoEnabled(Array.isArray(modules) && modules.some((module: any) => module.slug === "salao" && module.enabled === true));
     });
+  }, [user?.loja_id]);
+
+  useEffect(() => {
+    if (!user?.loja_id) return;
+
+    const types: OrderType[] = ["entrega", "retirada", "salao"];
+    Promise.all(
+      types.map((type) => api.get("/pedidos/novos/contagem", {
+        params: { tipo_pedido: type, arquivado: "false" },
+      })),
+    ).then((responses) => {
+      const initializedAt = new Date().toISOString();
+      setLastOrdersLoadedAt((current) => {
+        const next = { ...current };
+        types.forEach((type, index) => {
+          const checkedAt = responses[index].data?.data?.checked_at;
+          next[type] = checkedAt || initializedAt;
+        });
+        return next;
+      });
+    }).catch((error) => {
+      console.error("Error initializing new-order cursors:", error);
+      const now = new Date().toISOString();
+      setLastOrdersLoadedAt({ entrega: now, retirada: now, salao: now });
+    }).finally(() => setNewOrderCursorsReady(true));
   }, [user?.loja_id]);
 
   useEffect(() => {
@@ -412,7 +438,7 @@ export function OrdersScreen() {
         const activeType = typeFilter.toLowerCase() as OrderType;
         setLastOrdersLoadedAt((current) => ({
           ...current,
-          [activeType]: rawData?.latest_created_at || new Date().toISOString(),
+          [activeType]: rawData?.checked_at || new Date().toISOString(),
         }));
         setNewOrdersCount((current) => ({ ...current, [activeType]: 0 }));
       }
@@ -450,6 +476,8 @@ export function OrdersScreen() {
   };
 
   useEffect(() => {
+    if (!newOrderCursorsReady) return;
+
     const intervalId = window.setInterval(() => {
       checkNewOrders();
     }, 60000);
@@ -463,7 +491,27 @@ export function OrdersScreen() {
     viewMode,
     lastOrdersLoadedAt,
     salaoEnabled,
+    newOrderCursorsReady,
   ]);
+
+  const refreshCurrentOrderTab = async () => {
+    setOrders([]);
+    setPage(1);
+    await Promise.all([fetchOrders(1, true), fetchAuxiliaryData()]);
+  };
+
+  const handleNewOrdersButton = () => {
+    const activeType = typeFilter.toLowerCase() as OrderType;
+    if (newOrdersCount[activeType] > 0) {
+      void refreshCurrentOrderTab();
+      return;
+    }
+
+    const nextType = (["entrega", "retirada", ...(salaoEnabled ? ["salao"] : [])] as OrderType[])
+      .find((type) => newOrdersCount[type] > 0);
+    if (!nextType) return;
+    setTypeFilter(({ entrega: "Entrega", retirada: "Retirada", salao: "Salao" } as const)[nextType]);
+  };
 
   const handleLoadMore = () => {
     fetchOrders(page + 1);
@@ -1340,6 +1388,10 @@ export function OrdersScreen() {
   const availableOrderTabs = ORDER_TABS.filter(
     (tab) => tab.value !== "Salao" || salaoEnabled,
   );
+  const totalNewOrdersCount = availableOrderTabs.reduce(
+    (total, tab) => total + newOrdersCount[tab.value.toLowerCase() as OrderType],
+    0,
+  );
   const selectedPayment = getPreferredOrderPayment(selected, selectedPayments);
   const selectedIsPaid = isOrderPaid(selected, selectedPayments);
   const selectedIsPendingCash = isOrderPendingCash(selected, selectedPayments);
@@ -1680,9 +1732,7 @@ export function OrdersScreen() {
                       if (viewMode === "bairros") setViewMode("lista");
                     }
                     if (active && count > 0) {
-                      setOrders([]);
-                      setPage(1);
-                      void Promise.all([fetchOrders(1, true), fetchAuxiliaryData()]);
+                      void refreshCurrentOrderTab();
                     } else {
                       setTypeFilter(tab.value);
                     }
@@ -1706,12 +1756,28 @@ export function OrdersScreen() {
                 </button>
               );
             })}
+            <button
+              type="button"
+              disabled={totalNewOrdersCount === 0}
+              onClick={handleNewOrdersButton}
+              className="relative ml-auto my-1.5 inline-flex h-9 w-9 flex-none items-center justify-center rounded-full text-white shadow-sm transition-all hover:opacity-90 disabled:cursor-default disabled:opacity-45"
+              style={{ backgroundColor: primaryColor }}
+              title={totalNewOrdersCount > 0 ? `${totalNewOrdersCount} pedido${totalNewOrdersCount === 1 ? " novo" : "s novos"}` : "Nenhum pedido novo"}
+              aria-label={totalNewOrdersCount > 0 ? `Atualizar ${totalNewOrdersCount} pedidos novos` : "Nenhum pedido novo"}
+            >
+              <RefreshCw className={`h-4 w-4 ${checkingNewOrders ? "animate-spin" : ""}`} />
+              {totalNewOrdersCount > 0 && (
+                <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-500 px-1 text-[10px] font-bold text-white">
+                  {totalNewOrdersCount > 99 ? "99+" : totalNewOrdersCount}
+                </span>
+              )}
+            </button>
           </div>
         </div>
         {/* Filters bar */}
         <div className="relative bg-white border-b border-gray-200 px-4 py-2">
           <div className="flex items-center justify-between gap-3">
-            {manualOrderEnabled && typeFilter !== "Salao" && <button type="button" onClick={() => setManualOrderOpen(true)} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white">+ Criar pedido</button>}
+            {manualOrderEnabled && typeFilter !== "Salao" && <button type="button" onClick={() => setManualOrderOpen(true)} className="rounded-lg px-3 py-2 text-sm font-semibold text-white" style={{ backgroundColor: primaryColor }}>+ Criar pedido</button>}
             <button
               type="button"
               onClick={() => setFiltersOpen((open) => !open)}
