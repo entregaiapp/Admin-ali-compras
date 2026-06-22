@@ -87,6 +87,7 @@ export const productsService = {
     active?: boolean;
     activeOnly?: boolean;
     promoOnly?: boolean;
+    purchaseMode?: 'simples' | 'configuravel';
   }, options: { forceRefresh?: boolean } = {}) {
     const active =
       params.active !== undefined
@@ -100,6 +101,7 @@ export const productsService = {
       categoryId: params.categoryId || "",
       active,
       promoOnly: Boolean(params.promoOnly),
+      purchaseMode: params.purchaseMode || '',
       page: params.page,
       perPage: params.perPage,
     })}`;
@@ -111,6 +113,7 @@ export const productsService = {
         busca: params.search || undefined,
         categoria_id: params.categoryId || undefined,
         ativo: active,
+        modo_compra: params.purchaseMode || undefined,
         promocao_ativa: params.promoOnly || undefined,
         page: params.page,
         per_page: params.perPage,

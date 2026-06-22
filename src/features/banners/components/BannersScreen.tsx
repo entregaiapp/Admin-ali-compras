@@ -150,6 +150,7 @@ function ProductPickerModal({
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [categoryId, setCategoryId] = useState('');
+  const [purchaseMode, setPurchaseMode] = useState<'all' | 'simples' | 'configuravel'>('all');
   const [promoOnly, setPromoOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [products, setProducts] = useState<any[]>([]);
@@ -195,6 +196,7 @@ function ProductPickerModal({
         const result = await productsService.getStoreProductsPage({
           search: debouncedQuery,
           categoryId,
+          purchaseMode: purchaseMode === 'all' ? undefined : purchaseMode,
           promoOnly,
           page,
           perPage,
@@ -220,7 +222,7 @@ function ProductPickerModal({
     return () => {
       ignore = true;
     };
-  }, [categoryId, debouncedQuery, page, perPage, promoOnly, rememberProducts]);
+  }, [categoryId, debouncedQuery, page, perPage, promoOnly, purchaseMode, rememberProducts]);
 
   useEffect(() => {
     const missingIds = selectedIds.filter((id) => !productById[id]);
@@ -246,7 +248,7 @@ function ProductPickerModal({
 
   useEffect(() => {
     setPage(1);
-  }, [categoryId, debouncedQuery, promoOnly]);
+  }, [categoryId, debouncedQuery, promoOnly, purchaseMode]);
 
   const toggle = (productId: string) => {
     onChange(selectedSet.has(productId)
@@ -277,7 +279,7 @@ function ProductPickerModal({
 
         <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[1fr_300px]">
           <div className="flex min-h-0 flex-col border-r border-gray-100">
-            <div className="grid gap-3 border-b border-gray-100 p-4 md:grid-cols-[1fr_240px]">
+            <div className="grid gap-3 border-b border-gray-100 p-4 md:grid-cols-[1fr_240px_220px]">
               <div className="flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2">
                 <Search className="h-4 w-4 text-gray-400" />
                 <input
@@ -299,7 +301,16 @@ function ProductPickerModal({
                   </option>
                 ))}
               </select>
-              <label className="flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 md:col-span-2">
+              <select
+                value={purchaseMode}
+                onChange={(event) => setPurchaseMode(event.target.value as 'all' | 'simples' | 'configuravel')}
+                className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none"
+              >
+                <option value="all">Todos os tipos de produto</option>
+                <option value="simples">Produtos simples</option>
+                <option value="configuravel">Produtos configuráveis</option>
+              </select>
+              <label className="flex items-center gap-2 rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 md:col-span-3">
                 <input
                   type="checkbox"
                   checked={promoOnly}
@@ -358,6 +369,9 @@ function ProductPickerModal({
                         )}
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-sm font-semibold text-gray-900">{product.nome}</div>
+                          {product.modo_compra === 'configuravel' && (
+                            <span className="mt-1 inline-flex rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700">Configurável</span>
+                          )}
                           <div className="truncate text-xs text-gray-500">{product.marca || 'Sem marca'} · {getProductCategoryLabel(product)}</div>
                         </div>
                         <div className="text-sm font-bold text-gray-800">

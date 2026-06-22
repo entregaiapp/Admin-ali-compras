@@ -8,6 +8,16 @@ import { showSystemNotice } from '@/shared/components/SystemNoticeModal';
 
 const PRIMARY = '#122a4c';
 
+const isConfigurableProduct = (product: { modo_compra?: string | null }) => product.modo_compra === 'configuravel';
+
+type PromotionTarget = {
+  id: string;
+  name: string;
+  price: string;
+  promoPrice: string;
+  configurable: boolean;
+};
+
 export function PromotionsScreen() {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
@@ -15,7 +25,7 @@ export function PromotionsScreen() {
   const [addPromoSearch, setAddPromoSearch] = useState('');
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editingPrice, setEditingPrice] = useState<{ id: string, name: string, price: string, promoPrice: string } | null>(null);
+  const [editingPrice, setEditingPrice] = useState<PromotionTarget | null>(null);
   const [showAddPromo, setShowAddPromo] = useState(false);
   const [allStoreProducts, setAllStoreProducts] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
@@ -234,6 +244,9 @@ export function PromotionsScreen() {
                            )}
                         </div>
                         <h3 className="font-bold text-gray-900 text-sm truncate">{product.nome}</h3>
+                        {isConfigurableProduct(product) && (
+                          <span className="mt-1 inline-flex rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">Configurável</span>
+                        )}
                         <p className="text-xs text-gray-400 truncate">{product.marca || 'Sem marca'}</p>
                       </div>
                     </div>
@@ -255,7 +268,8 @@ export function PromotionsScreen() {
                            id: product.id, 
                            name: product.nome, 
                            price: price.toFixed(2), 
-                           promoPrice: promoPrice.toFixed(2) 
+                           promoPrice: promoPrice.toFixed(2),
+                           configurable: isConfigurableProduct(product),
                         })}
                         className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-50 hover:text-primary hover:border-primary/30 transition-all"
                       >
@@ -352,7 +366,8 @@ export function PromotionsScreen() {
                           id: p.id, 
                           name: p.nome, 
                           price: parseFloat(p.preco || 0).toFixed(2), 
-                          promoPrice: '' 
+                          promoPrice: '',
+                          configurable: isConfigurableProduct(p),
                        })}
                        className="w-full flex items-center gap-4 p-3 rounded-xl transition-all hover:bg-gray-50 border border-transparent hover:border-gray-100 group"
                     >
@@ -365,6 +380,9 @@ export function PromotionsScreen() {
                        </div>
                        <div className="flex-1 min-w-0 text-left">
                           <div className="font-bold text-gray-800 text-sm truncate">{p.nome}</div>
+                          {isConfigurableProduct(p) && (
+                            <span className="mt-1 inline-flex rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">Configurável</span>
+                          )}
                           <div className="text-xs text-gray-400">{p.marca || 'Sem marca'}</div>
                        </div>
                        <div className="text-right">
@@ -406,6 +424,11 @@ export function PromotionsScreen() {
                     </div>
                     <div className="text-xs text-gray-700 font-bold line-clamp-1 flex-1">{editingPrice.name}</div>
                  </div>
+                 {editingPrice.configurable && (
+                   <p className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                     Esta promoção será aplicada ao preço base do item configurável. Preços específicos de tamanhos e adicionais continuam configuráveis no editor do item.
+                   </p>
+                 )}
                  
                  <div className="space-y-4">
                     <div>
