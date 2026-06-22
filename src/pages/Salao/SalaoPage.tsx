@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Armchair,
+  CircleAlert,
   ChefHat,
   ClipboardList,
   CreditCard,
@@ -70,6 +71,24 @@ const getSalaoStatusStyle = (status: unknown) =>
     badge: "border-gray-300 bg-gray-100 text-gray-700",
     card: "border-gray-200 bg-white",
   };
+
+const getMesaPendingAction = (mesa: any, comanda?: any) => {
+  const activeComanda = mesa?.comanda_aberta || comanda;
+
+  if (mesa?.solicitacao_abertura || mesa?.destaque === "abertura_pendente") {
+    return { label: "Aprovar abertura", className: "border-amber-200 bg-amber-50 text-amber-800" };
+  }
+  if (activeComanda?.status === "aguardando_conta" || mesa?.destaque === "aguardando_conta") {
+    return { label: "Conta solicitada", className: "border-blue-200 bg-blue-50 text-blue-800" };
+  }
+  if (activeComanda?.status === "fechada" || mesa?.destaque === "aguardando_pagamento") {
+    return { label: "Confirmar pagamento", className: "border-violet-200 bg-violet-50 text-violet-800" };
+  }
+  if (Number(activeComanda?.novos_itens || 0) > 0 || mesa?.destaque === "novo_pedido") {
+    return { label: "Novo pedido no KDS", className: "border-emerald-200 bg-emerald-50 text-emerald-800" };
+  }
+  return null;
+};
 
 const resolveClientBaseUrl = () => {
   const configured = import.meta.env.VITE_CLIENTE_URL?.trim();
@@ -621,6 +640,19 @@ export function SalaoPage() {
     productName(product).toLowerCase().includes(productSearch.trim().toLowerCase()),
   );
   const selectedProduct = products.find((product) => product.id === selectedProductId);
+  const mesasById = useMemo(
+    () => new Map(mesas.map((mesa) => [mesa.id, mesa])),
+    [mesas],
+  );
+  const pendingMesas = useMemo(
+    () => mesas.filter((mesa) => Boolean(getMesaPendingAction(mesa))),
+    [mesas],
+  );
+  const selectedMesa = useMemo(() => {
+    if (!selectedComanda) return null;
+    const mesaId = selectedComanda.mesa_id || selectedComanda.mesa?.id;
+    return mesasById.get(mesaId) || { ...selectedComanda.mesa, loja_id: user?.loja_id };
+  }, [mesasById, selectedComanda, user?.loja_id]);
   const activeTabClass = "bg-white text-gray-900 shadow-sm";
   const tableStatusClass: Record<string, string> = {
     livre: "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200",
@@ -649,10 +681,10 @@ export function SalaoPage() {
         </div>
         <div className="mt-3 flex gap-1 overflow-x-auto rounded-xl bg-gray-100 p-1 scrollbar-hide">
           {[
-            ["mesas", Armchair, "Mesas"],
-            ["comandas", ClipboardList, "Comandas"],
-            ["kds", ChefHat, "KDS"],
-          ].map(([id, Icon, label]) => (
+            ["mesas", Armchair, "Mesas", pendingMesas.length],
+            ["comandas", ClipboardList, "Comandas", pendingMesas.length],
+            ["kds", ChefHat, "KDS", 0],
+          ].map(([id, Icon, label, pendingCount]) => (
             <button
               key={String(id)}
               onClick={() => setTab(id as any)}
@@ -660,6 +692,11 @@ export function SalaoPage() {
             >
               <Icon className="h-4 w-4" />
               {label}
+              {Number(pendingCount) > 0 && (
+                <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-extrabold text-amber-800">
+                  {pendingCount}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -691,11 +728,29 @@ export function SalaoPage() {
               </button>
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-2 sm:gap-3 xl:grid-cols-4">
-              {mesas.map((mesa) => (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+              {mesas.map((mesa) => {
+                const pendingAction = getMesaPendingAction(mesa);
+                const hasOpenComanda = Boolean(mesa.comanda_aberta);
+                const openMesa = () => {
+                  if (!mesa.comanda_aberta) return;
+                  setTab("comandas");
+                  void selectComanda(mesa.comanda_aberta);
+                };
+
+                return (
                 <div
                   key={mesa.id}
-                  className={`rounded-lg border bg-white p-3 shadow-sm transition-all sm:p-4 ${
+                  role={hasOpenComanda ? "button" : undefined}
+                  tabIndex={hasOpenComanda ? 0 : undefined}
+                  onClick={openMesa}
+                  onKeyDown={(event) => {
+                    if (hasOpenComanda && (event.key === "Enter" || event.key === " ")) {
+                      event.preventDefault();
+                      openMesa();
+                    }
+                  }}
+                  className={`min-h-32 rounded-xl border bg-white p-3 shadow-sm transition-all ${
                     realtimeMesaId === mesa.id
                       ? "border-emerald-500 ring-4 ring-emerald-200 animate-pulse"
                       :
@@ -706,76 +761,50 @@ export function SalaoPage() {
                         : mesa.destaque === "aguardando_conta" || mesa.destaque === "aguardando_pagamento"
                           ? "border-blue-300 ring-2 ring-blue-100"
                           : "border-gray-200"
-                  }`}
+                  } ${hasOpenComanda ? "cursor-pointer hover:border-blue-300 hover:shadow-md" : ""}`}
                 >
                   <div className="flex items-start justify-between">
                     <div>
-                      <div className="text-sm text-gray-500">Mesa</div>
-                      <div className="text-xl font-semibold text-gray-900 sm:text-2xl">{mesa.numero}</div>
+                      <div className="text-xs text-gray-500">Mesa</div>
+                      <div className="text-xl font-semibold text-gray-900">{mesa.numero}</div>
                     </div>
-                    <span className={`rounded-full px-3 py-1.5 text-xs font-extrabold uppercase tracking-wide ${tableStatusClass[mesa.status] || "bg-gray-100 text-gray-700"}`}>
+                    <span className={`rounded-full px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide ${tableStatusClass[mesa.status] || "bg-gray-100 text-gray-700"}`}>
                       {mesa.status?.replace(/_/g, " ")}
                     </span>
                   </div>
-                  {mesa.solicitacao_abertura && (
-                    <div className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                      Cliente solicitou a abertura: {mesa.solicitacao_abertura.nome_snapshot || "Cliente"}
+                  {pendingAction && (
+                    <div className={`mt-2 inline-flex max-w-full items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-bold ${pendingAction.className}`}>
+                      <CircleAlert className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">Ação pendente: {pendingAction.label}</span>
                     </div>
                   )}
                   {mesa.comanda_aberta && (
                     <div className="mt-3 rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-700">
-                      <div>{mesa.comanda_aberta.numero_comanda} · R$ {formatMoney(mesa.comanda_aberta.total)}</div>
-                      {mesa.comanda_aberta.novos_itens > 0 && <div className="font-semibold text-emerald-700">Novo pedido no KDS</div>}
-                      {mesa.comanda_aberta.status === "aguardando_conta" && <div className="font-semibold text-blue-700">Conta solicitada</div>}
-                      {mesa.comanda_aberta.status === "fechada" && <div className="font-semibold text-blue-700">Aguardando pagamento</div>}
+                      <div>R$ {formatMoney(mesa.comanda_aberta.total)}</div>
                     </div>
                   )}
+                  {!mesa.comanda_aberta && (
                   <div className="mt-3 space-y-1.5 sm:mt-4 sm:space-y-2">
                     <button
                       onClick={() => void openComanda(mesa)}
-                      disabled={Boolean(mesa.comanda_aberta) || actionBusy === `open-${mesa.id}`}
-                      className="min-h-10 w-full rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-semibold disabled:opacity-50 sm:min-h-11 sm:py-2 sm:text-sm"
+                      disabled={actionBusy === `open-${mesa.id}`}
+                      className="min-h-9 w-full rounded-lg border border-gray-200 px-2 py-1 text-xs font-semibold hover:bg-gray-50 disabled:opacity-50"
                     >
-                      {actionBusy === `open-${mesa.id}` ? <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Abrindo...</span> : mesa.comanda_aberta ? `Comanda ${mesa.comanda_aberta.numero_comanda}` : "Abrir comanda"}
+                      {actionBusy === `open-${mesa.id}` ? <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Abrindo...</span> : "Abrir comanda"}
                     </button>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        onClick={() => setQrDownloadMesa(mesa)}
-                        disabled={actionBusy === `qr-${mesa.id}` || actionBusy === `print-qr-${mesa.id}`}
-                        className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-blue-100 bg-blue-50 px-2 py-1.5 text-xs font-semibold text-blue-700 disabled:opacity-60 sm:min-h-11 sm:gap-2 sm:px-3 sm:py-2 sm:text-sm"
-                      >
-                        {actionBusy === `qr-${mesa.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                        {actionBusy === `qr-${mesa.id}` ? "Gerando..." : "Baixar QR"}
-                      </button>
-                      <button
-                        onClick={() => void printQrCode(mesa)}
-                        disabled={actionBusy === `qr-${mesa.id}` || actionBusy === `print-qr-${mesa.id}`}
-                        className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-60 sm:min-h-11 sm:gap-2 sm:px-3 sm:py-2 sm:text-sm"
-                      >
-                        {actionBusy === `print-qr-${mesa.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
-                        {actionBusy === `print-qr-${mesa.id}` ? "Preparando..." : "Imprimir QR"}
-                      </button>
-                    </div>
-                    {mesa.comanda_aberta && (
-                      <button
-                        onClick={() => {
-                          setTab("comandas");
-                          void selectComanda(mesa.comanda_aberta);
-                        }}
-                        className="min-h-10 w-full rounded-xl border border-gray-200 px-3 py-1.5 text-xs font-semibold sm:min-h-11 sm:py-2 sm:text-sm"
-                      >
-                        Ver comanda
-                      </button>
-                    )}
                   </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ) : tab === "comandas" ? (
           <div className="grid gap-3 xl:grid-cols-[minmax(260px,360px)_1fr] xl:gap-4">
             <div className="space-y-3">
-              {comandas.map((comanda) => (
+              {comandas.map((comanda) => {
+                const pendingAction = getMesaPendingAction(mesasById.get(comanda.mesa_id || comanda.mesa?.id), comanda);
+                return (
                 <button
                   key={comanda.id}
                   onClick={() => void selectComanda(comanda)}
@@ -795,8 +824,15 @@ export function SalaoPage() {
                       </span>
                     </div>
                   </div>
+                  {pendingAction && (
+                    <div className={`mt-2 inline-flex max-w-full items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-bold ${pendingAction.className}`}>
+                      <CircleAlert className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">Ação pendente: {pendingAction.label}</span>
+                    </div>
+                  )}
                 </button>
-              ))}
+                );
+              })}
             </div>
 
             <div ref={comandaDetailRef} className="scroll-mt-4 rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4">
@@ -857,6 +893,31 @@ export function SalaoPage() {
                           <RefreshCw className="h-3.5 w-3.5" />
                           Gerar novo PIN
                         </button>
+                      </div>
+                      <div className={comandaModule === "mesa" ? "rounded-lg border border-gray-100 bg-gray-50 p-2.5 sm:p-3" : "hidden"}>
+                        <div className="mb-1 flex items-center gap-2 text-sm font-semibold text-gray-900">
+                          <QrCode className="h-4 w-4" />
+                          QR Code da mesa
+                        </div>
+                        <p className="text-xs text-gray-500">Baixe ou imprima o acesso ao cardápio desta mesa.</p>
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          <button
+                            onClick={() => selectedMesa && setQrDownloadMesa(selectedMesa)}
+                            disabled={!selectedMesa || actionBusy === `qr-${selectedMesa?.id}` || actionBusy === `print-qr-${selectedMesa?.id}`}
+                            className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-blue-100 bg-blue-50 px-2 py-1.5 text-xs font-semibold text-blue-700 disabled:opacity-60"
+                          >
+                            {actionBusy === `qr-${selectedMesa?.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                            {actionBusy === `qr-${selectedMesa?.id}` ? "Gerando..." : "Baixar"}
+                          </button>
+                          <button
+                            onClick={() => selectedMesa && void printQrCode(selectedMesa)}
+                            disabled={!selectedMesa || actionBusy === `qr-${selectedMesa?.id}` || actionBusy === `print-qr-${selectedMesa?.id}`}
+                            className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-60"
+                          >
+                            {actionBusy === `print-qr-${selectedMesa?.id}` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+                            {actionBusy === `print-qr-${selectedMesa?.id}` ? "Preparando..." : "Imprimir"}
+                          </button>
+                        </div>
                       </div>
                       <div className={comandaModule === "participantes" ? "rounded-lg border border-gray-100 bg-gray-50 p-2.5 md:col-span-2 sm:p-3" : "hidden"}>
                         <div className="mb-2 text-sm font-semibold text-gray-900">Participantes</div>
