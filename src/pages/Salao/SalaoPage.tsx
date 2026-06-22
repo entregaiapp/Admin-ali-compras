@@ -155,6 +155,8 @@ export function SalaoPage() {
   const productsLoadedRef = useRef(false);
   const soundEnabledRef = useRef(false);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const realtimeRefreshTimeoutRef = useRef<number | null>(null);
+  const lastRealtimeAlertAtRef = useRef(0);
   const comandaDetailRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -259,8 +261,16 @@ export function SalaoPage() {
           setRealtimeMesaId(payload.mesaId);
           window.setTimeout(() => setRealtimeMesaId((current) => current === payload.mesaId ? "" : current), 6000);
         }
-        playRealtimeAlert();
-        void load({ silent: true });
+        const now = Date.now();
+        if (now - lastRealtimeAlertAtRef.current >= 1200) {
+          lastRealtimeAlertAtRef.current = now;
+          playRealtimeAlert();
+        }
+        if (realtimeRefreshTimeoutRef.current) window.clearTimeout(realtimeRefreshTimeoutRef.current);
+        realtimeRefreshTimeoutRef.current = window.setTimeout(() => {
+          realtimeRefreshTimeoutRef.current = null;
+          void load({ silent: true });
+        }, 150);
       })
       .subscribe((status) => {
         if (status === "SUBSCRIBED") void load({ silent: true });
@@ -275,6 +285,7 @@ export function SalaoPage() {
       window.removeEventListener("focus", reconcile);
       window.removeEventListener("online", reconcile);
       document.removeEventListener("visibilitychange", reconcile);
+      if (realtimeRefreshTimeoutRef.current) window.clearTimeout(realtimeRefreshTimeoutRef.current);
       void realtime.removeChannel(channel);
     };
   }, [load, playRealtimeAlert, user?.loja_id]);
