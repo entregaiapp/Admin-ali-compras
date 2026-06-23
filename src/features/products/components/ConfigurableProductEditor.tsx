@@ -58,6 +58,61 @@ function InfoHint({ text }: { text: string }) {
   );
 }
 
+function ConfigurationOptionImageUpload({
+  file,
+  imageUrl,
+  disabled,
+  onSelect,
+}: {
+  file?: File;
+  imageUrl?: string | null;
+  disabled: boolean;
+  onSelect: (file: File | null) => void;
+}) {
+  const [previewUrl, setPreviewUrl] = useState(imageUrl || "");
+
+  useEffect(() => {
+    if (!file) {
+      setPreviewUrl(imageUrl || "");
+      return;
+    }
+    const objectUrl = URL.createObjectURL(file);
+    setPreviewUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [file, imageUrl]);
+
+  return (
+    <label className={`flex w-52 items-center gap-2 rounded border border-dashed p-2 text-xs ${disabled ? "cursor-not-allowed border-gray-200 text-gray-400" : "cursor-pointer border-gray-300 text-gray-700 hover:bg-gray-50"}`}>
+      {previewUrl ? (
+        <img
+          src={previewUrl}
+          alt="Pré-visualização da imagem do card"
+          className="h-12 w-12 flex-shrink-0 rounded object-cover"
+          onError={() => setPreviewUrl("")}
+        />
+      ) : (
+        <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded bg-gray-100 text-gray-400">
+          <ImagePlus className="h-5 w-5" />
+        </span>
+      )}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{file?.name || (imageUrl ? "Imagem enviada" : "Enviar imagem")}</span>
+        <span className="mt-0.5 block text-[10px] text-gray-400">Pré-visualização</span>
+      </span>
+      <input
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/gif"
+        disabled={disabled}
+        className="sr-only"
+        onChange={(event) => {
+          onSelect(event.target.files?.[0] || null);
+          event.target.value = "";
+        }}
+      />
+    </label>
+  );
+}
+
 function normalizeGroupRules(group: ConfigurableGroup): ConfigurableGroup {
   if (group.tipo_selecao !== "fracionada") return group;
   return {
@@ -696,29 +751,31 @@ export function ConfigurableProductEditor({ product, duplicate = false, categori
                 </div>
               )}
 
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[1540px] text-xs">
-                  <thead>
-                    <tr className="text-left text-gray-500">
-                      <th className="p-2">Opção</th>
-                      <th className="p-2">Descrição</th>
-                      <th className="p-2">Uso <InfoHint text="Define se a opção aparece só como adicional, como card de produto, ou nas duas formas." /></th>
-                      <th className="p-2">Categoria do card <InfoHint text="Categoria onde o card de produto dessa opção será listado. Se vazio, usa a categoria do item principal." /></th>
-                      <th className="p-2">Imagem do card <InfoHint text="Imagem usada no card individual gerado por essa opção-produto." /></th>
-                      {group.tipo_selecao !== "fracionada" && (
-                        <th className="p-2">Qtd. máx. <InfoHint text="Máximo de unidades dessa mesma opção quando o grupo permite quantidade." /></th>
-                      )}
-                      <th className="p-2">Preço padrão</th>
-                      <th className="p-2">Promo padrão</th>
-                      <th className="p-2">Promo até</th>
-                      {configuration.variacoes.map((variation) => <th key={variation.id || variation.chave_cliente} className="p-2">{variation.nome}</th>)}
-                      <th className="p-2">Status</th>
-                      <th />
-                    </tr>
-                  </thead>
-                  <tbody>
+              <div className="space-y-2">
+                <div className="space-y-2">
                     {group.opcoes.map((item, optionIndex) => (
-                      <tr key={item.id || optionIndex} className="border-t align-top">
+                      <div key={item.id || optionIndex} className="overflow-x-auto rounded-lg border border-gray-200">
+                        <table className="w-full min-w-[1540px] text-xs">
+                          <thead>
+                            <tr className="text-left text-gray-500">
+                              <th className="p-2">Opção</th>
+                              <th className="p-2">Descrição</th>
+                              <th className="p-2">Uso <InfoHint text="Define se a opção aparece só como adicional, como card de produto, ou nas duas formas." /></th>
+                              <th className="p-2">Categoria do card <InfoHint text="Categoria onde o card de produto dessa opção será listado. Se vazio, usa a categoria do item principal." /></th>
+                              <th className="p-2">Imagem do card <InfoHint text="Imagem usada no card individual gerado por essa opção-produto." /></th>
+                              {group.tipo_selecao !== "fracionada" && (
+                                <th className="p-2">Qtd. máx. <InfoHint text="Máximo de unidades dessa mesma opção quando o grupo permite quantidade." /></th>
+                              )}
+                              <th className="p-2">Preço padrão</th>
+                              <th className="p-2">Promo padrão</th>
+                              <th className="p-2">Promo até</th>
+                              {configuration.variacoes.map((variation) => <th key={variation.id || variation.chave_cliente} className="p-2">{variation.nome}</th>)}
+                              <th className="p-2">Status</th>
+                              <th />
+                            </tr>
+                          </thead>
+                          <tbody>
+                      <tr className="align-top">
                         <td className="p-2"><input value={item.nome} onChange={(event) => updateOption(groupIndex, optionIndex, { nome: event.target.value })} className="w-44 rounded border p-2" /></td>
                         <td className="p-2"><textarea value={item.descricao || ""} onChange={(event) => updateOption(groupIndex, optionIndex, { descricao: event.target.value })} placeholder="Descrição do sabor/opção" className="h-20 w-56 rounded border p-2" /></td>
                         <td className="p-2">
@@ -747,22 +804,12 @@ export function ConfigurableProductEditor({ product, duplicate = false, categori
                           {(item.tipo_item || "adicional") === "adicional" ? (
                             <span className="text-[11px] text-gray-400">Disponível para opção-produto</span>
                           ) : (
-                            <label className={`flex w-48 cursor-pointer items-center gap-2 rounded border border-dashed p-2 text-xs ${canManageImages ? "border-gray-300 text-gray-700 hover:bg-gray-50" : "cursor-not-allowed border-gray-200 text-gray-400"}`}>
-                              <ImagePlus className="h-4 w-4 flex-shrink-0" />
-                              <span className="min-w-0 flex-1 truncate">
-                                {optionImageFiles.get(optionImageKey(groupIndex, optionIndex))?.name || (item.imagem_url ? "Imagem enviada" : "Enviar imagem")}
-                              </span>
-                              <input
-                                type="file"
-                                accept="image/jpeg,image/png,image/webp,image/gif"
-                                disabled={!canManageImages}
-                                className="sr-only"
-                                onChange={(event) => {
-                                  selectOptionImage(groupIndex, optionIndex, event.target.files?.[0] || null);
-                                  event.target.value = "";
-                                }}
-                              />
-                            </label>
+                            <ConfigurationOptionImageUpload
+                              file={optionImageFiles.get(optionImageKey(groupIndex, optionIndex))}
+                              imageUrl={item.imagem_url}
+                              disabled={!canManageImages}
+                              onSelect={(file) => selectOptionImage(groupIndex, optionIndex, file)}
+                            />
                           )}
                         </td>
                         {group.tipo_selecao !== "fracionada" && (
@@ -806,9 +853,11 @@ export function ConfigurableProductEditor({ product, duplicate = false, categori
                         </td>
                         <td className="p-2"><button onClick={() => updateGroup(groupIndex, { opcoes: group.opcoes.filter((_, currentIndex) => currentIndex !== optionIndex) })} className="text-red-500"><Trash2 className="h-4 w-4" /></button></td>
                       </tr>
+                          </tbody>
+                        </table>
+                      </div>
                     ))}
-                  </tbody>
-                </table>
+                </div>
               </div>
               <button
                 onClick={() => updateGroup(groupIndex, {
