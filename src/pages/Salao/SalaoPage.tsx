@@ -28,6 +28,26 @@ import { SalaoProductConfiguratorModal } from "./SalaoProductConfiguratorModal";
 const PRIMARY = "#122a4c";
 
 const SALAO_STATUS_STYLES: Record<string, { label: string; badge: string; card: string }> = {
+  aberta: {
+    label: "Aberta",
+    badge: "border-emerald-300 bg-emerald-100 text-emerald-900",
+    card: "border-emerald-200 bg-emerald-50",
+  },
+  aguardando_conta: {
+    label: "Conta solicitada",
+    badge: "border-blue-300 bg-blue-100 text-blue-900",
+    card: "border-blue-300 bg-blue-50",
+  },
+  fechada: {
+    label: "Conta fechada",
+    badge: "border-violet-300 bg-violet-100 text-violet-900",
+    card: "border-violet-300 bg-violet-50",
+  },
+  paga: {
+    label: "Paga",
+    badge: "border-emerald-300 bg-emerald-100 text-emerald-900",
+    card: "border-emerald-200 bg-emerald-50",
+  },
   rascunho: {
     label: "Rascunho",
     badge: "border-slate-300 bg-slate-100 text-slate-700",
@@ -452,6 +472,10 @@ export function SalaoPage() {
 
   const addProductToComanda = async () => {
     if (!selectedComanda?.id || !selectedProductId) return;
+    if (!["aberta", "aguardando_conta"].includes(selectedComanda.status)) {
+      showSystemNotice("Comanda não pode receber novos produtos neste status.");
+      return;
+    }
     const quantity = Number(itemQuantity.replace(",", "."));
     if (!Number.isFinite(quantity) || quantity <= 0) {
       showSystemNotice("Informe uma quantidade valida.");
@@ -505,6 +529,11 @@ export function SalaoPage() {
     notes: string;
   }) => {
     if (!selectedComanda?.id || !configuringProduct) return;
+    if (!["aberta", "aguardando_conta"].includes(selectedComanda.status)) {
+      setConfiguringProduct(null);
+      showSystemNotice("Comanda não pode receber novos produtos neste status.");
+      return;
+    }
     setAddingItem(true);
     try {
       const updated = await salaoService.addItem(selectedComanda.id, {
@@ -683,6 +712,9 @@ export function SalaoPage() {
     const mesaId = selectedComanda.mesa_id || selectedComanda.mesa?.id;
     return mesasById.get(mesaId) || { ...selectedComanda.mesa, loja_id: user?.loja_id };
   }, [mesasById, selectedComanda, user?.loja_id]);
+  const canAdminAddItems = selectedComanda
+    ? ["aberta", "aguardando_conta"].includes(selectedComanda.status)
+    : false;
   const activeTabClass = "bg-white text-gray-900 shadow-sm";
   const tableStatusClass: Record<string, string> = {
     livre: "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200",
@@ -829,7 +861,10 @@ export function SalaoPage() {
           <div className="grid gap-3 xl:grid-cols-[minmax(260px,360px)_1fr] xl:gap-4">
             <div className="space-y-3">
               {comandas.map((comanda) => {
-                const pendingAction = getMesaPendingAction(mesasById.get(comanda.mesa_id || comanda.mesa?.id), comanda);
+                const mesaDaComanda = mesasById.get(comanda.mesa_id || comanda.mesa?.id);
+                const pendingAction = getMesaPendingAction(mesaDaComanda, comanda);
+                const cardStatus = mesaDaComanda?.status || comanda.mesa?.status || comanda.status;
+                const cardStatusClass = tableStatusClass[cardStatus] || getSalaoStatusStyle(comanda.status).badge;
                 return (
                 <button
                   key={comanda.id}
@@ -845,8 +880,8 @@ export function SalaoPage() {
                     </div>
                     <div className="text-right">
                       <div className="font-semibold text-gray-900">R$ {formatMoney(comanda.total)}</div>
-                      <span className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-xs font-bold ${getSalaoStatusStyle(comanda.status).badge}`}>
-                        {getSalaoStatusStyle(comanda.status).label}
+                      <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-bold uppercase ${cardStatusClass}`}>
+                        {String(cardStatus || "sem status").replace(/_/g, " ")}
                       </span>
                     </div>
                   </div>
@@ -1077,12 +1112,12 @@ export function SalaoPage() {
                     </div>
                     <button
                       onClick={() => void addProductToComanda()}
-                      disabled={!selectedProduct || addingItem || configurationLoading || selectedComanda.status !== "aberta"}
+                      disabled={!selectedProduct || addingItem || configurationLoading || !canAdminAddItems}
                       className="mt-2 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-white disabled:opacity-50 sm:mt-3 sm:min-h-12 sm:px-4 sm:text-sm"
                       style={{ backgroundColor: PRIMARY }}
                     >
                       {addingItem ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                      {addingItem ? "Adicionando..." : "Adicionar a mesa"}
+                      {addingItem ? "Adicionando..." : selectedComanda.status === "aguardando_conta" ? "Adicionar pelo admin" : "Adicionar a mesa"}
                     </button>
                   </div>
                 </div>
