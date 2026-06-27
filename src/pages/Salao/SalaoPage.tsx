@@ -1064,7 +1064,7 @@ export function SalaoPage() {
                         handleMesaClick();
                       }
                     }}
-                    className={`min-h-32 rounded-xl border p-3 shadow-sm transition-all ${
+                    className={`relative min-h-32 rounded-xl border p-3 pb-11 shadow-sm transition-all ${
                       realtimeMesaId === mesa.id
                         ? "border-emerald-500 bg-emerald-100 ring-4 ring-emerald-200 animate-pulse"
                         : pendingAction?.cardClass || "border-gray-200 bg-white"
@@ -1118,26 +1118,24 @@ export function SalaoPage() {
                         </button>
                       </div>
                     )}
-                    <div className="mt-2 rounded-lg border border-red-100 bg-red-50 p-2">
-                      <div className="mb-1 text-[10px] font-extrabold uppercase text-red-700">
-                        Área crítica
-                      </div>
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setDeleteMesaTarget(mesa);
-                        }}
-                        disabled={actionBusy === `delete-${mesa.id}`}
-                        className="inline-flex min-h-9 w-full items-center justify-center gap-1.5 rounded-md border border-red-200 bg-white px-2 py-1 text-xs font-bold text-red-700 hover:bg-red-100 disabled:opacity-60"
-                      >
-                        {actionBusy === `delete-${mesa.id}` ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Trash2 className="h-4 w-4" />
-                        )}
-                        Excluir mesa
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      title="Área crítica: excluir mesa"
+                      aria-label="Área crítica: excluir mesa"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setDeleteMesaTarget(mesa);
+                      }}
+                      onKeyDown={(event) => event.stopPropagation()}
+                      disabled={actionBusy === `delete-${mesa.id}`}
+                      className="absolute bottom-3 right-3 inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-200 bg-white text-red-700 hover:bg-red-50 disabled:opacity-60"
+                    >
+                      {actionBusy === `delete-${mesa.id}` ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                    </button>
                   </div>
                 );
               })}

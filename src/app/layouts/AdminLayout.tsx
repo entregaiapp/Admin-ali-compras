@@ -6,9 +6,9 @@ import {
   ChevronRight, Key, Bike, UtensilsCrossed
 } from 'lucide-react';
 import api from '@/shared/lib/api';
-import logoSymbol from '@/assets/brand/logo-entregai.svg';
 
 const PRIMARY = '#122a4c';
+const LOGO_REAL = '/icons/pwa-logo-192x192.png';
 
 const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', slug: 'dashboard' },
@@ -198,8 +198,8 @@ export function AdminLayout() {
       >
         {/* Logo */}
         <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10">
-          <div className="w-9 h-9 rounded-lg bg-white flex items-center justify-center flex-shrink-0 p-1.5">
-            <img src={logoSymbol} alt="" className="h-full w-full object-contain" />
+          <div className="w-12 h-12 rounded-xl bg-white flex items-center justify-center flex-shrink-0 p-1.5">
+            <img src={LOGO_REAL} alt="" className="h-full w-full object-contain" />
           </div>
           <div>
             <div className="text-white font-semibold text-sm leading-tight truncate max-w-[140px]">{storeName}</div>

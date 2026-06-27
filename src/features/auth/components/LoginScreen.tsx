@@ -7,9 +7,9 @@ import { authService } from '../services/authService';
 import { MfaLoginStep } from './MfaLoginStep';
 import type { LoginResponse } from '../types/auth';
 import logoName from '@/assets/brand/nome-entregai.svg';
-import logoSymbol from '@/assets/brand/logo-entregai.svg';
 
 const PRIMARY = '#122a4c';
+const LOGO_REAL = '/icons/pwa-logo-192x192.png';
 const PLATFORM_BRANDING = {
   nome: 'Entregaí Admin',
   slogan: 'Gestão completa da operação da sua loja',
@@ -176,8 +176,8 @@ export function LoginScreen() {
       >
         <div className="max-w-lg">
           <div className="mb-10">
-            <div className="h-24 w-24 rounded-2xl bg-white flex items-center justify-center border border-white/15 p-3 shadow-sm">
-              <img src={logoSymbol} alt="" className="h-full w-full object-contain" />
+            <div className="h-32 w-32 rounded-3xl bg-white flex items-center justify-center border border-white/15 p-2 shadow-sm">
+              <img src={LOGO_REAL} alt="" className="h-full w-full object-contain" />
             </div>
           </div>
           <div className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium text-white/80 border border-white/15 bg-white/10 mb-5">
@@ -198,7 +198,7 @@ export function LoginScreen() {
         <div className="w-full max-w-md">
           {/* Mobile logo */}
           <div className="flex items-center gap-3 mb-8 lg:hidden">
-            <img src={logoSymbol} alt="" className="h-10 w-10 object-contain" />
+            <img src={LOGO_REAL} alt="" className="h-16 w-16 object-contain" />
             <div className="min-w-0">
               <img src={logoName} alt="Entregaí" className="h-8 w-auto object-contain" />
               <div className="text-gray-500 text-sm line-clamp-1">{PLATFORM_BRANDING.slogan}</div>
