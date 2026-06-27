@@ -555,6 +555,20 @@ export function OrdersScreen() {
       const response = await api.get(`/pedidos/${orderId}/pagamentos`);
       const payments = getApiList(response.data);
       setSelectedPayments(payments);
+      const preferredPayment = getPreferredOrderPayment({ id: orderId }, payments);
+      if (preferredPayment) {
+        setOrders((previous) =>
+          previous.map((order) =>
+            order.id === orderId
+              ? {
+                  ...order,
+                  pagamento: preferredPayment,
+                  payment_status: preferredPayment.status || order.payment_status,
+                }
+              : order,
+          ),
+        );
+      }
       return payments;
     } catch (error) {
       console.error("Error fetching order payments:", error);
@@ -564,6 +578,20 @@ export function OrdersScreen() {
         });
         const payments = getApiList(response.data);
         setSelectedPayments(payments);
+        const preferredPayment = getPreferredOrderPayment({ id: orderId }, payments);
+        if (preferredPayment) {
+          setOrders((previous) =>
+            previous.map((order) =>
+              order.id === orderId
+                ? {
+                    ...order,
+                    pagamento: preferredPayment,
+                    payment_status: preferredPayment.status || order.payment_status,
+                  }
+                : order,
+            ),
+          );
+        }
         return payments;
       } catch (fallbackError) {
         console.error("Error fetching order payments fallback:", fallbackError);
@@ -2143,9 +2171,15 @@ export function OrdersScreen() {
                         text: "#d97706",
                       };
                     const isEntrega = isDeliveryOrder(order);
+                    const orderPayments =
+                      selected?.id === order.id ? selectedPayments : [];
+                    const orderCanProceed = canOrderProceedForFulfillment(
+                      order,
+                      orderPayments,
+                    );
                     const canSelectForDelivery =
                       isEntrega &&
-                      canOrderProceedForFulfillment(order) &&
+                      orderCanProceed &&
                       !assignedOrderIds.has(order.id) &&
                       !hasPendingCancellationRequest(order) &&
                       !["entregue", "nao_entregue", "cancelado"].includes(
@@ -2243,7 +2277,7 @@ export function OrdersScreen() {
                                     Arquivado
                                   </span>
                                 )}
-                                {!canOrderProceedForFulfillment(order) && (
+                                {!orderCanProceed && (
                                   <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
                                     Pagamento pendente
                                   </span>
@@ -2540,8 +2574,14 @@ export function OrdersScreen() {
                             bg: "#eee",
                             text: "#666",
                           };
+                        const orderPayments =
+                          selected?.id === order.id ? selectedPayments : [];
+                        const orderCanProceed = canOrderProceedForFulfillment(
+                          order,
+                          orderPayments,
+                        );
                         const canSelectForDelivery =
-                          canOrderProceedForFulfillment(order) &&
+                          orderCanProceed &&
                           !assignedOrderIds.has(order.id) &&
                           !hasPendingCancellationRequest(order) &&
                           !["entregue", "nao_entregue", "cancelado"].includes(
@@ -2633,7 +2673,7 @@ export function OrdersScreen() {
                                 >
                                   {statusDisplay}
                                 </span>
-                                {!canOrderProceedForFulfillment(order) && (
+                                {!orderCanProceed && (
                                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
                                     Pagamento pendente
                                   </span>

@@ -1064,7 +1064,7 @@ export function SalaoPage() {
                         handleMesaClick();
                       }
                     }}
-                    className={`relative min-h-32 rounded-xl border p-3 pb-11 shadow-sm transition-all ${
+                    className={`relative min-h-32 rounded-xl border p-3 pb-14 shadow-sm transition-all ${
                       realtimeMesaId === mesa.id
                         ? "border-emerald-500 bg-emerald-100 ring-4 ring-emerald-200 animate-pulse"
                         : pendingAction?.cardClass || "border-gray-200 bg-white"
