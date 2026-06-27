@@ -200,10 +200,12 @@ const getPaymentOnDeliveryMethod = (payment: any) =>
   ).toLowerCase();
 
 const isPaymentOnDelivery = (payment: any) => {
-  const method = cleanText(payment?.forma_pagamento || payment?.method).toLowerCase();
+  const method = cleanText(payment?.forma_pagamento || payment?.method || payment?.payment).toLowerCase();
   const metadataType = cleanText(payment?.metadata?.tipo).toLowerCase();
   const hasGateway = Boolean(payment?.gateway || payment?.gateway_pagamento_id || payment?.gatewayPaymentId);
-  const cardWithoutGateway = ["cartao_credito", "cartao_debito"].includes(method) && !hasGateway;
+  const cardWithoutGateway =
+    ["cartao_credito", "cartao_debito", "cartão de crédito", "cartão de débito"].includes(method) &&
+    !hasGateway;
   return (
     method === "dinheiro" ||
     metadataType === "pagamento_entrega" ||
@@ -213,7 +215,8 @@ const isPaymentOnDelivery = (payment: any) => {
 };
 
 export const isPendingCashPayment = (payment: any) =>
-  isPaymentOnDelivery(payment) && cleanText(payment?.status).toLowerCase() === "pendente";
+  isPaymentOnDelivery(payment) &&
+  cleanText(payment?.status || payment?.payment_status || payment?.paymentStatus).toLowerCase() === "pendente";
 
 export const getPreferredOrderPayment = (order: any, payments: any[] = []) =>
   payments.find(isApprovedPayment) ||
