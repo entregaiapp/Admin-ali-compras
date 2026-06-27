@@ -1582,10 +1582,20 @@ export function OrdersScreen() {
             ),
           },
           {
-            key: "conferir",
+            key: "entregues",
+            title: "Entregues",
+            description: "Finalizados prontos para arquivar",
+            orders: filtered.filter(
+              (order) => order.status === "entregue" && isOrderPaid(order),
+            ),
+          },
+          {
+            key: "entregues_aguardando_pagamento",
             title: "Entregues aguardando pagamento",
-            description: "Finalizados que ainda não podem ser arquivados",
-            orders: filtered.filter((order) => order.status === "entregue"),
+            description: "Finalizados com pagamento pendente",
+            orders: filtered.filter(
+              (order) => order.status === "entregue" && !isOrderPaid(order),
+            ),
           },
           {
             key: "nao_entregues",

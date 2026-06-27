@@ -189,6 +189,7 @@ export const formatPaymentStatus = (value: unknown) => {
 };
 
 export const isApprovedPayment = (payment: any) =>
+  Boolean(payment?.pago_em || payment?.paidAt) ||
   cleanText(payment?.status).toLowerCase() === "aprovado";
 
 export const isPendingCashPayment = (payment: any) =>
