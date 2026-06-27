@@ -192,9 +192,28 @@ export const isApprovedPayment = (payment: any) =>
   Boolean(payment?.pago_em || payment?.paidAt) ||
   cleanText(payment?.status).toLowerCase() === "aprovado";
 
+const getPaymentOnDeliveryMethod = (payment: any) =>
+  cleanText(
+    payment?.pagamento_entrega_tipo ||
+      payment?.paymentOnDeliveryMethod ||
+      payment?.metadata?.pagamento_entrega_tipo,
+  ).toLowerCase();
+
+const isPaymentOnDelivery = (payment: any) => {
+  const method = cleanText(payment?.forma_pagamento || payment?.method).toLowerCase();
+  const metadataType = cleanText(payment?.metadata?.tipo).toLowerCase();
+  const hasGateway = Boolean(payment?.gateway || payment?.gateway_pagamento_id || payment?.gatewayPaymentId);
+  const cardWithoutGateway = ["cartao_credito", "cartao_debito"].includes(method) && !hasGateway;
+  return (
+    method === "dinheiro" ||
+    metadataType === "pagamento_entrega" ||
+    cardWithoutGateway ||
+    ["dinheiro", "cartao"].includes(getPaymentOnDeliveryMethod(payment))
+  );
+};
+
 export const isPendingCashPayment = (payment: any) =>
-  cleanText(payment?.forma_pagamento || payment?.method).toLowerCase() === "dinheiro" &&
-  cleanText(payment?.status).toLowerCase() === "pendente";
+  isPaymentOnDelivery(payment) && cleanText(payment?.status).toLowerCase() === "pendente";
 
 export const getPreferredOrderPayment = (order: any, payments: any[] = []) =>
   payments.find(isApprovedPayment) ||
@@ -208,13 +227,12 @@ export const isOrderPaid = (order: any, payments: any[] = []) =>
   cleanText(order?.payment_status).toLowerCase() === "aprovado";
 
 export const isOrderPendingCash = (order: any, payments: any[] = []) =>
-  payments.some(isPendingCashPayment) || isPendingCashPayment(order?.pagamento);
+  payments.some(isPendingCashPayment) || isPendingCashPayment(order?.pagamento) || isPendingCashPayment(order);
 
 export const getOrderPaymentMethod = (order: any, payment?: any) => {
   const paymentOnDeliveryMethod = cleanText(
-    payment?.pagamento_entrega_tipo ||
-      payment?.paymentOnDeliveryMethod ||
-      order?.pagamento?.pagamento_entrega_tipo ||
+    getPaymentOnDeliveryMethod(payment) ||
+      getPaymentOnDeliveryMethod(order?.pagamento) ||
       order?.pagamento?.paymentOnDeliveryMethod,
   ).toLowerCase();
   const method = firstText(
