@@ -227,7 +227,7 @@ export const getOrderPaymentMethod = (order: any, payment?: any) => {
   );
 
   if (cleanText(method).toLowerCase() === "dinheiro" && paymentOnDeliveryMethod === "cartao") {
-    return "Cartão na entrega";
+    return "Cartão";
   }
 
   return formatPaymentMethod(method);

@@ -130,7 +130,7 @@ const formatCashChangeInfo = (payment: any) => {
     return "";
   }
 
-  if ((payment?.pagamento_entrega_tipo || payment?.paymentOnDeliveryMethod) === "cartao") {
+  if (isCardOnDeliveryPayment(payment)) {
     return "Cobrar com cartão na entrega";
   }
 
@@ -142,6 +142,8 @@ const formatCashChangeInfo = (payment: any) => {
 
   return "";
 };
+const isCardOnDeliveryPayment = (payment: any) =>
+  (payment?.pagamento_entrega_tipo || payment?.paymentOnDeliveryMethod) === "cartao";
 const canOrderProceedForFulfillment = (order: any, payments: any[] = []) =>
   isOrderPaid(order, payments) ||
   isOrderPendingCash(order, payments) ||
@@ -867,6 +869,8 @@ export function OrdersScreen() {
       const orderPayments = selected?.id === id ? selectedPayments : [];
       const orderIsPaid = isOrderPaid(order, orderPayments);
       const orderHasPendingCash = isOrderPendingCash(order, orderPayments);
+      const orderPayment = getPreferredOrderPayment(order, orderPayments);
+      const orderHasCardOnDelivery = isCardOnDeliveryPayment(orderPayment);
 
       if (!orderIsPaid && !orderHasPendingCash) {
         showSystemNotice(
@@ -878,7 +882,8 @@ export function OrdersScreen() {
       if (
         orderType === "retirada" &&
         nextStatus === "entregue" &&
-        orderHasPendingCash
+        orderHasPendingCash &&
+        !orderHasCardOnDelivery
       ) {
         showSystemNotice(
           "Confirme o recebimento do dinheiro antes de concluir a retirada.",
@@ -1494,8 +1499,7 @@ export function OrdersScreen() {
     selectedPayment,
   );
   const selectedCashChangeInfo = formatCashChangeInfo(selectedPayment);
-  const selectedIsCardOnDelivery =
-    (selectedPayment?.pagamento_entrega_tipo || selectedPayment?.paymentOnDeliveryMethod) === "cartao";
+  const selectedIsCardOnDelivery = isCardOnDeliveryPayment(selectedPayment);
   const selectedStatusUpdating = updatingStatusOrderId === selected?.id;
   const selectedCancelling = cancellingOrderId === selected?.id;
   const selectedArchiving = archivingOrderId === selected?.id;
@@ -1533,7 +1537,7 @@ export function OrdersScreen() {
     selectedIsDelivery && selectedStatusLabel === "Saiu para Entrega";
   const selectedCanProceed = selectedIsPaid || selectedIsPendingCash || selected?.origem_checkout === "admin_dashboard";
   const selectedPickupNeedsCashConfirmation =
-    selectedIsPickup && selectedIsPendingCash && selectedStatusLabel === "Pronto";
+    selectedIsPickup && selectedIsPendingCash && !selectedIsCardOnDelivery && selectedStatusLabel === "Pronto";
   const selectedCanTakeSalaoToTable =
     Boolean(selected) &&
     canTakeSalaoOrderToTable(selected) &&
@@ -2157,6 +2161,24 @@ export function OrdersScreen() {
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-start gap-3 flex-1 min-w-0">
+                            {canSelectForDelivery && (
+                              <span
+                                aria-hidden="true"
+                                className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border"
+                                style={{
+                                  borderColor: isSelectedForDelivery
+                                    ? primaryColor
+                                    : "#cbd5e1",
+                                  backgroundColor: isSelectedForDelivery
+                                    ? primaryColor
+                                    : "#fff",
+                                }}
+                              >
+                                {isSelectedForDelivery && (
+                                  <CheckCircle2 className="h-3.5 w-3.5 text-white" />
+                                )}
+                              </span>
+                            )}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-sm font-semibold text-gray-800">
@@ -2527,6 +2549,24 @@ export function OrdersScreen() {
                                   } as any)
                             }
                           >
+                            {canSelectForDelivery && (
+                              <span
+                                aria-hidden="true"
+                                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border"
+                                style={{
+                                  borderColor: isSelectedForDelivery
+                                    ? primaryColor
+                                    : "#cbd5e1",
+                                  backgroundColor: isSelectedForDelivery
+                                    ? primaryColor
+                                    : "#fff",
+                                }}
+                              >
+                                {isSelectedForDelivery && (
+                                  <CheckCircle2 className="h-3.5 w-3.5 text-white" />
+                                )}
+                              </span>
+                            )}
                             <div
                               className="w-5 h-5 rounded-full flex items-center justify-center text-white flex-shrink-0"
                               style={{
@@ -3184,11 +3224,13 @@ export function OrdersScreen() {
               {!selectedIsPaid && (
                 <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                   {selectedIsPendingCash
-                    ? "Pagamento em dinheiro pendente de recebimento."
+                    ? selectedIsCardOnDelivery
+                      ? "Pagamento em cartão pendente de recebimento."
+                      : "Pagamento em dinheiro pendente de recebimento."
                     : "Pagamento pendente"}
                 </div>
               )}
-              {selectedIsPickup && selectedIsPendingCash && (
+              {selectedIsPickup && selectedIsPendingCash && !selectedIsCardOnDelivery && (
                 <button
                   type="button"
                   onClick={confirmCashPayment}
