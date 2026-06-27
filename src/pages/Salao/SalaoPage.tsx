@@ -1345,33 +1345,43 @@ export function SalaoPage() {
                             Participantes
                           </div>
                           <div className="space-y-1">
-                            {arrayOrEmpty<any>(
-                              selectedComanda.participantes,
-                            ).map((participant) => (
-                              <div
-                                key={participant.id}
-                                className="flex items-center justify-between gap-2 text-xs"
-                              >
-                                <span className="truncate text-gray-700">
-                                  {participant.nome_snapshot ||
-                                    participant.nome}
-                                </span>
-                                {participant.status === "bloqueado" ? (
-                                  <button
-                                    onClick={() =>
-                                      void unblockParticipant(participant)
-                                    }
-                                    className="rounded-md bg-red-50 px-2 py-1 font-semibold text-red-700"
-                                  >
-                                    Desbloquear PIN
-                                  </button>
-                                ) : (
-                                  <span className="rounded-full bg-white px-2 py-1 capitalize text-gray-500">
-                                    {participant.status || "ativo"}
+                            {arrayOrEmpty<any>(selectedComanda.participantes)
+                              .length === 0 ? (
+                              <p className="rounded-md bg-white px-3 py-2 text-xs text-gray-500">
+                                Nenhum cliente entrou com PIN ainda.
+                              </p>
+                            ) : (
+                              arrayOrEmpty<any>(
+                                selectedComanda.participantes,
+                              ).map((participant) => (
+                                <div
+                                  key={participant.id}
+                                  className="flex items-center justify-between gap-2 text-xs"
+                                >
+                                  <span className="truncate text-gray-700">
+                                    {participant.nome_snapshot ||
+                                      participant.nome}
                                   </span>
-                                )}
-                              </div>
-                            ))}
+                                  {participant.status === "bloqueado" ? (
+                                    <button
+                                      onClick={() =>
+                                        void unblockParticipant(participant)
+                                      }
+                                      className="rounded-md bg-red-50 px-2 py-1 font-semibold text-red-700"
+                                    >
+                                      Desbloquear PIN
+                                    </button>
+                                  ) : (
+                                    <span className="rounded-full bg-white px-2 py-1 capitalize text-gray-500">
+                                      {(participant.status || "ativo").replace(
+                                        /_/g,
+                                        " ",
+                                      )}
+                                    </span>
+                                  )}
+                                </div>
+                              ))
+                            )}
                           </div>
                         </div>
                       </div>
