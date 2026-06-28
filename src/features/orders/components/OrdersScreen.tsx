@@ -279,6 +279,7 @@ export function OrdersScreen() {
   const [storePrintData, setStorePrintData] = useState<any | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [manualOrderOpen, setManualOrderOpen] = useState(false);
+  const [manualOrderCreationAllowed, setManualOrderCreationAllowed] = useState(false);
   const [salaoEnabled, setSalaoEnabled] = useState(false);
   const [newOrdersCount, setNewOrdersCount] = useState<Record<OrderType, number>>({
     entrega: 0,
@@ -358,6 +359,8 @@ export function OrdersScreen() {
     if (!user?.loja_id) {
       setPrimaryColor(PRIMARY);
       setStorePrintData(null);
+      setManualOrderCreationAllowed(false);
+      setManualOrderOpen(false);
       return;
     }
 
@@ -378,6 +381,10 @@ export function OrdersScreen() {
           : {};
 
       setPrimaryColor(config.cor_primaria || PRIMARY);
+      setManualOrderCreationAllowed(config.permitir_criacao_pedidos_delivery_admin === true);
+      if (config.permitir_criacao_pedidos_delivery_admin !== true) {
+        setManualOrderOpen(false);
+      }
       setStorePrintData({
         ...store,
         slogan: config.slogan,
@@ -1563,6 +1570,7 @@ export function OrdersScreen() {
   const availableOrderTabs = ORDER_TABS.filter(
     (tab) => tab.value !== "Salao" || salaoEnabled,
   );
+  const canCreateManualOrder = typeFilter !== "Salao" && manualOrderCreationAllowed;
   const totalNewOrdersCount = availableOrderTabs.reduce(
     (total, tab) => total + newOrdersCount[tab.value.toLowerCase() as OrderType],
     0,
@@ -1920,8 +1928,8 @@ export function OrdersScreen() {
 
   return (
     <div className="flex h-full">
-      {manualOrderOpen && user?.loja_id && (
-        <ManualDeliveryOrderModal lojaId={user.loja_id} onClose={() => setManualOrderOpen(false)} onCreated={() => fetchOrders(1, true)} />
+      {manualOrderOpen && canCreateManualOrder && user?.loja_id && (
+        <ManualDeliveryOrderModal lojaId={user.loja_id} primaryColor={primaryColor} onClose={() => setManualOrderOpen(false)} onCreated={() => fetchOrders(1, true)} />
       )}
       {/* Left panel: list or bairros */}
       <div
@@ -1990,7 +1998,7 @@ export function OrdersScreen() {
         {/* Filters bar */}
         <div className="relative bg-white border-b border-gray-200 px-4 py-2">
           <div className="flex items-center justify-between gap-3">
-            {typeFilter !== "Salao" && <button type="button" onClick={() => setManualOrderOpen(true)} className="rounded-lg px-3 py-2 text-sm font-semibold text-white" style={{ backgroundColor: primaryColor }}>+ Criar pedido</button>}
+            {canCreateManualOrder && <button type="button" onClick={() => setManualOrderOpen(true)} className="rounded-lg px-3 py-2 text-sm font-semibold text-white" style={{ backgroundColor: primaryColor }}>+ Criar pedido</button>}
             <button
               type="button"
               onClick={() => setFiltersOpen((open) => !open)}
