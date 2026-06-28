@@ -177,6 +177,11 @@ const canOrderProceedForFulfillment = (order: any, payments: any[] = []) =>
   isOrderPendingCash(order, payments) ||
   isPendingCardPaymentForDelivery(order, payments) ||
   order?.origem_checkout === "admin_dashboard";
+const DELIVERY_ASSIGNMENT_BLOCKED_STATUSES = new Set([
+  "entregue",
+  "nao_entregue",
+  "cancelado",
+]);
 const REFUND_ACTIVE_STATUSES = new Set(["pendente", "processando", "aprovado"]);
 const ORDER_TABS = [
   { value: "Entrega", label: "Delivery" },
@@ -200,6 +205,16 @@ const canTakeSalaoOrderToTable = (order: any) =>
   getOrderType(order) === "salao" &&
   getBackendStatus(order?.status || "") === "pronto" &&
   getSalaoComandaStatus(order) === "aberta";
+const canSelectOrderForDeliveryAssignment = (
+  order: any,
+  assignedOrderIds: Set<any>,
+) =>
+  isDeliveryOrder(order) &&
+  !assignedOrderIds.has(order?.id) &&
+  !hasPendingCancellationRequest(order) &&
+  !DELIVERY_ASSIGNMENT_BLOCKED_STATUSES.has(
+    getBackendStatus(order?.status || ""),
+  );
 
 export function OrdersScreen() {
   const [searchParams] = useSearchParams();
@@ -1518,12 +1533,10 @@ export function OrdersScreen() {
           (order) => getOrderNeighborhood(order) === bairroFilter,
         );
   const listDeliveryOrders = allDeliveryOrders.filter(
-    (order) =>
-      !assignedOrderIds.has(order.id) && !hasPendingCancellationRequest(order),
+    (order) => canSelectOrderForDeliveryAssignment(order, assignedOrderIds),
   );
   const deliveryOrders = bairroFilteredDeliveryOrders.filter(
-    (order) =>
-      !assignedOrderIds.has(order.id) && !hasPendingCancellationRequest(order),
+    (order) => canSelectOrderForDeliveryAssignment(order, assignedOrderIds),
   );
   const selectableDeliveryOrders =
     viewMode === "bairros" ? deliveryOrders : listDeliveryOrders;
@@ -1768,27 +1781,11 @@ export function OrdersScreen() {
       new Map(ordersToAssign.map((order) => [order.id, order])).values(),
     );
     const activeOrders = uniqueOrders.filter(
-      (order) => {
-        const orderPayments =
-          selected?.id === order.id ? selectedPayments : [];
-        return (
-          canOrderProceedForFulfillment(order, orderPayments) &&
-          !assignedOrderIds.has(order.id) &&
-          !hasPendingCancellationRequest(order) &&
-          ![
-          "entregue",
-          "nao_entregue",
-          "cancelado",
-          "Entregue",
-          "Não entregue",
-          "Cancelado",
-          ].includes(order.status)
-        );
-      },
+      (order) => canSelectOrderForDeliveryAssignment(order, assignedOrderIds),
     );
     if (activeOrders.length === 0) {
       showSystemNotice(
-        "Nenhum pedido pago e não atribuído disponível para adicionar.",
+        "Nenhum pedido disponível para adicionar à entrega.",
       );
       return;
     }
@@ -2207,19 +2204,12 @@ export function OrdersScreen() {
                     const isEntrega = isDeliveryOrder(order);
                     const orderPayments =
                       selected?.id === order.id ? selectedPayments : [];
-                    const orderCanProceed = canOrderProceedForFulfillment(
-                      order,
-                      orderPayments,
-                    );
                     const orderPaymentIsPending =
                       hasPendingPaymentForDisplay(order, orderPayments);
                     const canSelectForDelivery =
-                      isEntrega &&
-                      orderCanProceed &&
-                      !assignedOrderIds.has(order.id) &&
-                      !hasPendingCancellationRequest(order) &&
-                      !["entregue", "nao_entregue", "cancelado"].includes(
-                        order.status,
+                      canSelectOrderForDeliveryAssignment(
+                        order,
+                        assignedOrderIds,
                       );
                     const isSelectedForDelivery = selectedOrderIds.includes(
                       order.id,
@@ -2476,17 +2466,7 @@ export function OrdersScreen() {
               const col = bairroColors[group.colorIdx];
               const isExpanded = expandedBairros[bairro] !== false; // expanded by default
               const activeOrders = group.orders.filter(
-                (o) =>
-                  canOrderProceedForFulfillment(o) &&
-                  !hasPendingCancellationRequest(o) &&
-                  ![
-                    "entregue",
-                    "nao_entregue",
-                    "cancelado",
-                    "Entregue",
-                    "Não entregue",
-                    "Cancelado",
-                  ].includes(o.status),
+                (o) => canSelectOrderForDeliveryAssignment(o, assignedOrderIds),
               );
               const deliveredCount = group.orders.filter((o) =>
                 ["entregue", "Entregue"].includes(o.status),
@@ -2612,18 +2592,12 @@ export function OrdersScreen() {
                           };
                         const orderPayments =
                           selected?.id === order.id ? selectedPayments : [];
-                        const orderCanProceed = canOrderProceedForFulfillment(
-                          order,
-                          orderPayments,
-                        );
                         const orderPaymentIsPending =
                           hasPendingPaymentForDisplay(order, orderPayments);
                         const canSelectForDelivery =
-                          orderCanProceed &&
-                          !assignedOrderIds.has(order.id) &&
-                          !hasPendingCancellationRequest(order) &&
-                          !["entregue", "nao_entregue", "cancelado"].includes(
-                            order.status,
+                          canSelectOrderForDeliveryAssignment(
+                            order,
+                            assignedOrderIds,
                           );
                         const isSelectedForDelivery = selectedOrderIds.includes(
                           order.id,
