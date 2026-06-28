@@ -252,9 +252,7 @@ export function OrdersScreen() {
   const [expandedBairros, setExpandedBairros] = useState<
     Record<string, boolean>
   >({});
-  const [expandedListGroups, setExpandedListGroups] = useState<
-    Record<string, boolean>
-  >({});
+  const [activeListGroupKey, setActiveListGroupKey] = useState("andamento");
   const [couriers, setCouriers] = useState<any[]>([]);
   const [areas, setAreas] = useState<any[]>([]);
   const [deliveryRecords, setDeliveryRecords] = useState<any[]>([]);
@@ -1760,6 +1758,10 @@ export function OrdersScreen() {
             defaultExpanded: false,
           },
         ].filter((group) => group.orders.length > 0);
+  const activeListGroup =
+    listGroups.find((group) => group.key === activeListGroupKey) ||
+    listGroups[0] ||
+    null;
   const bairroGroups: Record<
     string,
     { orders: any[]; total: number; colorIdx: number }
@@ -1787,13 +1789,6 @@ export function OrdersScreen() {
 
   const toggleBairro = (bairro: string) => {
     setExpandedBairros((p) => ({ ...p, [bairro]: !p[bairro] }));
-  };
-
-  const toggleListGroup = (groupKey: string, defaultExpanded = false) => {
-    setExpandedListGroups((current) => ({
-      ...current,
-      [groupKey]: !(current[groupKey] ?? defaultExpanded),
-    }));
   };
 
   const toggleOrderSelection = (orderId: string) => {
@@ -2217,48 +2212,65 @@ export function OrdersScreen() {
 
         {/* ── LISTA VIEW ─────────────────────────────── */}
         {(viewMode === "lista" || viewMode === "arquivados") && (
-          <div className="flex-1 overflow-y-auto bg-slate-50/50 p-4 space-y-4">
-            {listGroups.map((group) => {
-              const isExpanded =
-                expandedListGroups[group.key] ?? group.defaultExpanded ?? false;
-
-              return (
-                <section
-                  key={group.key}
-                  className="rounded-xl border border-gray-200 bg-white overflow-hidden"
+          <>
+            {listGroups.length > 0 && (
+              <div className="border-b border-gray-200 bg-white px-4">
+                <div
+                  className="flex gap-1 overflow-x-auto"
+                  role="tablist"
+                  aria-label="Status dos pedidos"
                 >
-                  <button
-                    type="button"
-                    onClick={() =>
-                      toggleListGroup(group.key, group.defaultExpanded)
-                    }
-                    aria-expanded={isExpanded}
-                    className={`flex w-full items-center justify-between gap-3 bg-white px-4 py-3 text-left transition-colors hover:bg-slate-50 ${
-                      isExpanded ? "border-b border-gray-100" : ""
-                    }`}
-                  >
-                    <div className="flex min-w-0 items-center gap-2">
-                      {isExpanded ? (
-                        <ChevronDown className="h-4 w-4 shrink-0 text-gray-400" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" />
-                      )}
-                      <div className="min-w-0">
-                        <h3 className="text-sm font-semibold text-gray-800">
-                          {group.title}
-                        </h3>
-                        <p className="truncate text-xs text-gray-500">
-                          {group.description}
-                        </p>
-                      </div>
-                    </div>
-                    <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600">
-                      {group.orders.length}
-                    </span>
-                  </button>
-                  {isExpanded && (
-                    <div className="divide-y divide-gray-100">
-                      {group.orders.map((order, orderIndex) => {
+                  {listGroups.map((group) => {
+                    const active = activeListGroup?.key === group.key;
+                    return (
+                      <button
+                        key={group.key}
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        title={group.description}
+                        onClick={() => setActiveListGroupKey(group.key)}
+                        className={`relative inline-flex min-w-max items-center justify-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${
+                          active
+                            ? "text-gray-900"
+                            : "border-transparent text-gray-500 hover:text-gray-800"
+                        }`}
+                        style={
+                          active
+                            ? {
+                                borderBottomColor: primaryColor,
+                                color: primaryColor,
+                              }
+                            : undefined
+                        }
+                      >
+                        {group.title}
+                        <span
+                          className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold ${
+                            active
+                              ? "text-white"
+                              : "bg-gray-100 text-gray-500"
+                          }`}
+                          style={
+                            active
+                              ? { backgroundColor: primaryColor }
+                              : undefined
+                          }
+                        >
+                          {group.orders.length > 99 ? "99+" : group.orders.length}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="flex-1 overflow-y-auto bg-slate-50/50 p-4 space-y-4">
+              {activeListGroup && (
+                <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+                  <div className="divide-y divide-gray-100">
+                    {activeListGroup.orders.map((order, orderIndex) => {
                     const statusDisplay = getStatusLabel(order.status);
                     const sc = statusColor[order.status] ||
                       statusColor["Recebido"] || {
@@ -2480,11 +2492,9 @@ export function OrdersScreen() {
                       </div>
                     );
                   })}
-                    </div>
-                  )}
+                  </div>
                 </section>
-              );
-            })}
+              )}
 
             {hasMore && (
               <div className="p-4 flex justify-center">
@@ -2506,7 +2516,7 @@ export function OrdersScreen() {
               </div>
             )}
 
-            {filtered.length === 0 && !loading && (
+            {(filtered.length === 0 || listGroups.length === 0) && !loading && (
               <div className="flex flex-col items-center justify-center py-16 text-gray-400">
                 <Package className="w-10 h-10 mb-3 opacity-40" />
                 <p className="text-sm">
@@ -2516,7 +2526,8 @@ export function OrdersScreen() {
                 </p>
               </div>
             )}
-          </div>
+            </div>
+          </>
         )}
 
         {/* ── POR BAIRRO VIEW ────────────────────────── */}
