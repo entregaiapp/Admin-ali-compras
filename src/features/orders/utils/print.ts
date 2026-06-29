@@ -40,12 +40,12 @@ const renderStoreHeader = (store: any) => {
   const lines = [
     name ? `<p class="large bold">${escapeHtml(name)}</p>` : "",
     corporateName && corporateName !== name
-      ? `<p style="font-size:10px">${escapeHtml(corporateName)}</p>`
+      ? `<p style="font-size:24px">${escapeHtml(corporateName)}</p>`
       : "",
-    cnpj ? `<p style="font-size:10px">CNPJ: ${escapeHtml(cnpj)}</p>` : "",
-    phone ? `<p style="font-size:10px">Tel: ${escapeHtml(phone)}</p>` : "",
-    email ? `<p style="font-size:10px">${escapeHtml(email)}</p>` : "",
-    slogan ? `<p style="font-size:10px">${escapeHtml(slogan)}</p>` : "",
+    cnpj ? `<p style="font-size:24px">CNPJ: ${escapeHtml(cnpj)}</p>` : "",
+    phone ? `<p style="font-size:24px">Tel: ${escapeHtml(phone)}</p>` : "",
+    email ? `<p style="font-size:24px">${escapeHtml(email)}</p>` : "",
+    slogan ? `<p style="font-size:24px">${escapeHtml(slogan)}</p>` : "",
   ].filter(Boolean);
 
   if (lines.length === 0) return "";
@@ -63,7 +63,7 @@ const thermalReceiptStyles = `
       max-width: 80mm;
       margin: 0 auto;
       padding: 3mm;
-      font-size: 16px;
+      font-size: 30px;
       font-weight: 700;
       color: #000;
       -webkit-print-color-adjust: exact;
@@ -72,17 +72,17 @@ const thermalReceiptStyles = `
     body * { color: #000 !important; font-weight: 700; }
     .center { text-align: center; }
     .bold { font-weight: 800; }
-    .large { font-size: 19px; }
-    .divider-solid { border-top: 1px solid #000; margin: 8px 0; }
-    .divider { border-top: 1px dashed #000; margin: 8px 0; }
+    .large { font-size: 34px; }
+    .divider-solid { border-top: 2px solid #000; margin: 12px 0; }
+    .divider { border-top: 2px dashed #000; margin: 12px 0; }
     .row { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
-    .row-total { display: flex; justify-content: space-between; gap: 8px; font-size: 18px; font-weight: 800; margin-bottom: 3px; }
-    .obs { font-size: 14px; margin: 0 0 5px 16px; font-style: italic; }
-    .option { font-size: 14px; margin: 0 0 2px 16px; }
-    p { margin-bottom: 4px; }
-    .tag { display: inline-block; border: 1px solid #000; padding: 1px 6px; font-size: 15px; margin: 2px 0; }
-    .order-block { border: 1px dashed #000; padding: 8px; margin-bottom: 8px; }
-    .num { display: inline-block; width: 22px; height: 22px; border: 1px solid #000; text-align: center; line-height: 22px; margin-right: 4px; font-size: 14px; }
+    .row-total { display: flex; justify-content: space-between; gap: 8px; font-size: 34px; font-weight: 800; margin-bottom: 5px; }
+    .obs { font-size: 26px; margin: 0 0 8px 18px; font-style: italic; }
+    .option { font-size: 26px; margin: 0 0 4px 18px; }
+    p { margin-bottom: 7px; }
+    .tag { display: inline-block; border: 2px solid #000; padding: 2px 8px; font-size: 28px; margin: 4px 0; }
+    .order-block { border: 2px dashed #000; padding: 10px; margin-bottom: 10px; }
+    .num { display: inline-block; width: 36px; height: 36px; border: 2px solid #000; text-align: center; line-height: 36px; margin-right: 6px; font-size: 24px; }
     @page { size: 80mm 200mm; margin: 0; }
     @media print {
       html, body { width: 80mm; min-height: 30mm; }
