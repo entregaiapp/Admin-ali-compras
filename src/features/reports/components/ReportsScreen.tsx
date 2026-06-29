@@ -452,7 +452,7 @@ export function ReportsScreen() {
                   <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
                     <div className="px-5 py-4 border-b border-gray-100">
                       <h3 className="font-semibold text-gray-800">Pedidos do relatório</h3>
-                      <p className="text-xs text-gray-400 mt-0.5">Pedidos manuais aparecem para conferência, sem compor a cobrança final.</p>
+                      <p className="text-xs text-gray-400 mt-0.5">Pedidos manuais de entrega podem compor a cobrança final; retirada manual aparece apenas para conferência.</p>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
