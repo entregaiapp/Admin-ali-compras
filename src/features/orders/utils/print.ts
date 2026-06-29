@@ -63,7 +63,7 @@ const thermalReceiptStyles = `
       max-width: 80mm;
       margin: 0 auto;
       padding: 3mm;
-      font-size: 14px;
+      font-size: 16px;
       font-weight: 700;
       color: #000;
       -webkit-print-color-adjust: exact;
@@ -72,17 +72,17 @@ const thermalReceiptStyles = `
     body * { color: #000 !important; font-weight: 700; }
     .center { text-align: center; }
     .bold { font-weight: 800; }
-    .large { font-size: 17px; }
+    .large { font-size: 19px; }
     .divider-solid { border-top: 1px solid #000; margin: 8px 0; }
     .divider { border-top: 1px dashed #000; margin: 8px 0; }
     .row { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
-    .row-total { display: flex; justify-content: space-between; gap: 8px; font-size: 16px; font-weight: 800; margin-bottom: 3px; }
-    .obs { font-size: 12px; margin: 0 0 5px 16px; font-style: italic; }
-    .option { font-size: 12px; margin: 0 0 2px 16px; }
+    .row-total { display: flex; justify-content: space-between; gap: 8px; font-size: 18px; font-weight: 800; margin-bottom: 3px; }
+    .obs { font-size: 14px; margin: 0 0 5px 16px; font-style: italic; }
+    .option { font-size: 14px; margin: 0 0 2px 16px; }
     p { margin-bottom: 4px; }
-    .tag { display: inline-block; border: 1px solid #000; padding: 1px 6px; font-size: 13px; margin: 2px 0; }
+    .tag { display: inline-block; border: 1px solid #000; padding: 1px 6px; font-size: 15px; margin: 2px 0; }
     .order-block { border: 1px dashed #000; padding: 8px; margin-bottom: 8px; }
-    .num { display: inline-block; width: 20px; height: 20px; border: 1px solid #000; text-align: center; line-height: 20px; margin-right: 4px; font-size: 12px; }
+    .num { display: inline-block; width: 22px; height: 22px; border: 1px solid #000; text-align: center; line-height: 22px; margin-right: 4px; font-size: 14px; }
     @page { size: 80mm 200mm; margin: 0; }
     @media print {
       html, body { width: 80mm; min-height: 30mm; }
