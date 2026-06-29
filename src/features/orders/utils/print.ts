@@ -77,14 +77,14 @@ const thermalReceiptStyles = `
     .divider { border-top: 1px dashed #000; margin: 8px 0; }
     .row { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
     .row-total { display: flex; justify-content: space-between; gap: 8px; font-size: 18px; font-weight: 800; margin-bottom: 3px; }
-    .obs { font-size: 14px; margin: 0 0 5px 16px; font-style: italic; }
+    .obs { font-size: 22px; line-height: 1.12; margin: 0 0 7px 16px; font-style: italic; }
     .option { font-size: 14px; margin: 0 0 2px 16px; }
     p { margin-bottom: 4px; }
     .tag { display: inline-block; border: 1px solid #000; padding: 1px 6px; font-size: 15px; margin: 2px 0; }
     .order-block { border: 1px dashed #000; padding: 8px; margin-bottom: 8px; }
     .num { display: inline-block; width: 22px; height: 22px; border: 1px solid #000; text-align: center; line-height: 22px; margin-right: 4px; font-size: 14px; }
     .address-line,
-    .product-row { font-size: 30px; line-height: 1.12; margin-bottom: 8px; }
+    .product-row { font-size: 26px; line-height: 1.12; margin-bottom: 7px; }
     .product-row span:first-child { flex: 1; }
     .product-row span:last-child { white-space: nowrap; }
     @page { size: 80mm 200mm; margin: 0; }
