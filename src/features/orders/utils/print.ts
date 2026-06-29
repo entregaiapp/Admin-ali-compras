@@ -53,6 +53,43 @@ const renderStoreHeader = (store: any) => {
   return `<div class="center">${lines.join("")}</div><div class="divider-solid"></div>`;
 };
 
+const thermalReceiptStyles = `
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 80mm; min-height: 30mm; }
+    body {
+      font-family: 'Courier New', Courier, monospace;
+      width: 80mm;
+      min-height: 30mm;
+      max-width: 80mm;
+      margin: 0 auto;
+      padding: 3mm;
+      font-size: 12px;
+      font-weight: 700;
+      color: #000;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    body * { color: #000 !important; font-weight: 700; }
+    .center { text-align: center; }
+    .bold { font-weight: 800; }
+    .large { font-size: 15px; }
+    .divider-solid { border-top: 1px solid #000; margin: 8px 0; }
+    .divider { border-top: 1px dashed #000; margin: 8px 0; }
+    .row { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
+    .row-total { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; font-weight: 800; margin-bottom: 3px; }
+    .obs { font-size: 10px; margin: 0 0 5px 16px; font-style: italic; }
+    .option { font-size: 10px; margin: 0 0 2px 16px; }
+    p { margin-bottom: 4px; }
+    .tag { display: inline-block; border: 1px solid #000; padding: 1px 6px; font-size: 11px; margin: 2px 0; }
+    .order-block { border: 1px dashed #000; padding: 8px; margin-bottom: 8px; }
+    .num { display: inline-block; width: 18px; height: 18px; border: 1px solid #000; text-align: center; line-height: 18px; margin-right: 4px; font-size: 10px; }
+    @page { size: 80mm 30mm; margin: 0; }
+    @media print {
+      html, body { width: 80mm; min-height: 30mm; }
+      body { margin: 0; padding: 3mm; }
+    }
+`;
+
 export const printComanda = (
   order: any,
   orderItems: any[] = [],
@@ -80,19 +117,7 @@ export const printComanda = (
   <meta charset="UTF-8">
   <title>Comanda ${orderNumber}</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Courier New', Courier, monospace; max-width: 300px; margin: 0 auto; padding: 16px; font-size: 12px; color: #000; }
-    .center { text-align: center; }
-    .bold { font-weight: bold; }
-    .large { font-size: 15px; }
-    .divider-solid { border-top: 1px solid #000; margin: 8px 0; }
-    .divider { border-top: 1px dashed #000; margin: 8px 0; }
-    .row { display: flex; justify-content: space-between; margin-bottom: 3px; }
-    .row-total { display: flex; justify-content: space-between; font-size: 14px; font-weight: bold; margin-bottom: 3px; }
-    .obs { font-size: 10px; color: #555; margin: 0 0 5px 16px; font-style: italic; }
-    .option { font-size: 10px; margin: 0 0 2px 16px; }
-    p { margin-bottom: 4px; }
-    .tag { display: inline-block; border: 1px solid #000; padding: 1px 6px; font-size: 11px; margin: 2px 0; }
+${thermalReceiptStyles}
   </style>
 </head>
 <body>
@@ -159,17 +184,7 @@ export const printBairroRoute = (bairro: string, bairroOrders: any[], store?: an
   <meta charset="UTF-8">
   <title>Rota – ${bairro}</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Courier New', Courier, monospace; max-width: 300px; margin: 0 auto; padding: 16px; font-size: 12px; }
-    .center { text-align: center; }
-    .bold { font-weight: bold; }
-    .large { font-size: 15px; }
-    .divider { border-top: 1px dashed #000; margin: 8px 0; }
-    .divider-solid { border-top: 1px solid #000; margin: 8px 0; }
-    .row { display: flex; justify-content: space-between; margin-bottom: 3px; }
-    p { margin-bottom: 4px; }
-    .order-block { border: 1px dashed #555; padding: 8px; margin-bottom: 8px; }
-    .num { display: inline-block; width: 18px; height: 18px; border: 1px solid #000; text-align: center; line-height: 18px; margin-right: 4px; font-size: 10px; }
+${thermalReceiptStyles}
   </style>
 </head>
 <body>
