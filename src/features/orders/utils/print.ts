@@ -83,7 +83,7 @@ const thermalReceiptStyles = `
     .tag { display: inline-block; border: 1px solid #000; padding: 1px 6px; font-size: 11px; margin: 2px 0; }
     .order-block { border: 1px dashed #000; padding: 8px; margin-bottom: 8px; }
     .num { display: inline-block; width: 18px; height: 18px; border: 1px solid #000; text-align: center; line-height: 18px; margin-right: 4px; font-size: 10px; }
-    @page { size: 80mm 30mm; margin: 0; }
+    @page { size: 80mm 200mm; margin: 0; }
     @media print {
       html, body { width: 80mm; min-height: 30mm; }
       body { margin: 0; padding: 3mm; }
