@@ -27,7 +27,8 @@ export function AuditLogsScreen() {
       setError(null);
       const response = await api.get('/logs_auditoria');
       if (response.data?.success) {
-        setLogs(response.data.data || []);
+        const payloadData = response.data.data;
+        setLogs(Array.isArray(payloadData) ? payloadData : payloadData?.data || []);
       } else {
         setLogs(response.data || []);
       }

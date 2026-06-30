@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, CreditCard, Smartphone, Banknote, CheckCircle2, Clock, XCircle, RefreshCw } from 'lucide-react';
+import { Search, CreditCard, Smartphone, Banknote, CheckCircle2, Clock, XCircle, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '@/shared/lib/api';
 import { showSystemNotice } from '@/shared/components/SystemNoticeModal';
 import { formatBrasiliaDate } from '@/shared/lib/dateTime';
@@ -25,6 +25,19 @@ const methodIcon: Record<string, typeof CreditCard> = {
   'Dinheiro': Banknote,
 };
 
+const statusApiFilter: Record<string, string | undefined> = {
+  Todos: undefined,
+  Pago: 'aprovado',
+  Pendente: 'pendente',
+  'Em processamento': 'em_processamento',
+  Reembolsado: 'estornado',
+  Rejeitado: 'rejeitado',
+  Cancelado: 'cancelado',
+  Expirado: 'expirado',
+};
+
+const PAGE_SIZE = 20;
+
 export function PaymentsScreen() {
   const [payments, setPayments] = useState<any[]>([]);
   const [search, setSearch] = useState('');
@@ -32,6 +45,8 @@ export function PaymentsScreen() {
   const [loading, setLoading] = useState(true);
   const [refundingPaymentId, setRefundingPaymentId] = useState('');
   const [refundApprovalPayment, setRefundApprovalPayment] = useState<any | null>(null);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState({ total: 0, total_pages: 1, per_page: PAGE_SIZE });
 
   const user = (() => {
     try {
@@ -46,25 +61,26 @@ export function PaymentsScreen() {
   const fetchPayments = async ({ silent = false } = {}) => {
     try {
       if (!silent) setLoading(true);
-      const [payRes, pedRes, cliRes] = await Promise.all([
-        api.get('/pagamentos'),
-        api.get('/pedidos'),
-        api.get('/clientes')
-      ]);
+      const payRes = await api.get('/pagamentos', {
+        params: {
+          page,
+          per_page: PAGE_SIZE,
+          status: statusApiFilter[statusFilter],
+        },
+      });
 
       const pagamentosRaw = payRes.data.data;
       const pagamentos = Array.isArray(pagamentosRaw) ? pagamentosRaw : pagamentosRaw?.data || [];
-      
-      const pedidosRaw = pedRes.data.data;
-      const pedidos = Array.isArray(pedidosRaw) ? pedidosRaw : pedidosRaw?.data || [];
-      
-      const clientesRaw = cliRes.data.data;
-      const clientes = Array.isArray(clientesRaw) ? clientesRaw : clientesRaw?.data || [];
+
+      if (!Array.isArray(pagamentosRaw) && pagamentosRaw) {
+        setPagination({
+          total: Number(pagamentosRaw.total || 0),
+          total_pages: Math.max(1, Number(pagamentosRaw.total_pages || 1)),
+          per_page: Number(pagamentosRaw.per_page || PAGE_SIZE),
+        });
+      }
 
       const mapped = pagamentos.map((p: any) => {
-        const pedido = pedidos.find((ped: any) => ped.id === p.pedido_id);
-        const cliente = pedido ? clientes.find((c: any) => c.id === pedido.cliente_id) : null;
-
         const methodMapping: Record<string, string> = {
           'credit_card': 'Cartão de Crédito',
           'debit_card': 'Cartão de Débito',
@@ -89,9 +105,9 @@ export function PaymentsScreen() {
         };
 
         return {
-          id: p.id ? p.id.split('-')[0].toUpperCase() : '—',
+          id: p.pedido_numero || (p.id ? p.id.split('-')[0].toUpperCase() : '---'),
           originalId: p.id,
-          customer: cliente ? cliente.nome : 'Cliente Desconhecido',
+          customer: p.cliente_nome || 'Cliente Desconhecido',
           method: methodMapping[p.forma_pagamento] || 'Dinheiro',
           value: parseFloat(p.valor) || 0,
           status: statusMapping[p.status] || 'Pendente',
@@ -175,7 +191,7 @@ export function PaymentsScreen() {
     }, 15000);
 
     return () => window.clearInterval(intervalId);
-  }, []);
+  }, [page, statusFilter]);
 
   const filtered = payments.filter(p => {
     const matchSearch = p.customer.toLowerCase().includes(search.toLowerCase()) || p.id.toLowerCase().includes(search.toLowerCase());
@@ -229,7 +245,10 @@ export function PaymentsScreen() {
           {['Todos', 'Pago', 'Pendente', 'Em processamento', 'Reembolsado', 'Rejeitado', 'Cancelado', 'Expirado'].map(s => (
             <button
               key={s}
-              onClick={() => setStatusFilter(s)}
+              onClick={() => {
+                setPage(1);
+                setStatusFilter(s);
+              }}
               className="px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap flex-shrink-0 transition-colors"
               style={statusFilter === s ? { backgroundColor: PRIMARY, color: 'white' } : { backgroundColor: '#f3f4f6', color: '#6b7280' }}
             >
@@ -320,6 +339,31 @@ export function PaymentsScreen() {
               })}
             </tbody>
           </table>
+        </div>
+      </div>
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3">
+        <div className="text-sm text-gray-500">
+          Página {page} de {pagination.total_pages} · {pagination.total} pagamento(s)
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setPage((current) => Math.max(1, current - 1))}
+            disabled={loading || page <= 1}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Anterior
+          </button>
+          <button
+            type="button"
+            onClick={() => setPage((current) => Math.min(pagination.total_pages, current + 1))}
+            disabled={loading || page >= pagination.total_pages}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Próxima
+            <ChevronRight className="h-4 w-4" />
+          </button>
         </div>
       </div>
       <MfaApprovalModal
