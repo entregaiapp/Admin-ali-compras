@@ -3,7 +3,6 @@ import type { MouseEvent } from "react";
 import { useSearchParams } from "react-router";
 import {
   Search,
-  Filter,
   Eye,
   X,
   Phone,
@@ -102,6 +101,15 @@ const formatCurrency = (value: unknown) =>
   `R$ ${Number(value || 0)
     .toFixed(2)
     .replace(".", ",")}`;
+const getDailyTicketNumber = (order: any) => {
+  const formatted = String(order?.numero_comanda_codigo || "").trim();
+  if (formatted) return formatted;
+
+  const numeric = Number(order?.numero_comanda_diario);
+  return Number.isFinite(numeric) && numeric > 0
+    ? String(numeric).padStart(5, "0")
+    : "";
+};
 const toCurrencyCents = (value: unknown) =>
   Math.round(Number(value || 0) * 100);
 const calculateMissingItemsRefundAfterDiscount = (
@@ -281,7 +289,6 @@ export function OrdersScreen() {
   const [confirmStep, setConfirmStep] = useState(false);
   const [primaryColor, setPrimaryColor] = useState(PRIMARY);
   const [storePrintData, setStorePrintData] = useState<any | null>(null);
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [manualOrderOpen, setManualOrderOpen] = useState(false);
   const [manualOrderCreationAllowed, setManualOrderCreationAllowed] = useState(false);
   const [salaoEnabled, setSalaoEnabled] = useState(false);
@@ -1570,8 +1577,10 @@ export function OrdersScreen() {
   const filtered = orders.filter((o) => {
     const customerName = (o.cliente?.nome || o.customer || "").toLowerCase();
     const orderId = (o.numero_pedido || o.id || "").toLowerCase();
+    const dailyTicket = getDailyTicketNumber(o).toLowerCase();
     const matchSearch =
       customerName.includes(search.toLowerCase()) ||
+      dailyTicket.includes(search.toLowerCase()) ||
       orderId.includes(search.toLowerCase());
 
     // No longer filtering by status/type in memory as we do it in API
@@ -2058,95 +2067,22 @@ export function OrdersScreen() {
           </div>
         </div>
         {/* Filters bar */}
-        <div className="relative bg-white border-b border-gray-200 px-4 py-2">
-          <div className="flex items-center justify-between gap-3">
-            {canCreateManualOrder && <button type="button" onClick={() => setManualOrderOpen(true)} className="rounded-lg px-3 py-2 text-sm font-semibold text-white" style={{ backgroundColor: primaryColor }}>+ Criar pedido</button>}
-            <button
-              type="button"
-              onClick={() => setFiltersOpen((open) => !open)}
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-800 hover:bg-gray-50"
-            >
-              <Filter className="w-4 h-4" style={{ color: PRIMARY }} />
-              Filtros
-              {activeFiltersCount > 0 && (
-                <span
-                  className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white"
-                  style={{ backgroundColor: PRIMARY }}
-                >
-                  {activeFiltersCount}
-                </span>
-              )}
-              <ChevronDown
-                className={`w-4 h-4 text-gray-400 transition-transform ${filtersOpen ? "rotate-180" : ""}`}
-              />
-            </button>
-
-            <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5">
-              <button
-                onClick={() => setViewMode("lista")}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
-                style={
-                  viewMode === "lista"
-                    ? { backgroundColor: PRIMARY, color: "white" }
-                    : { color: "#6b7280" }
-                }
-              >
-                <List className="w-3.5 h-3.5" /> Lista
-              </button>
-              {typeFilter === "Entrega" && (
+        <div className="bg-white border-b border-gray-200 px-4 py-3">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+            <div className="flex min-w-0 flex-1 flex-col gap-3 lg:flex-row lg:items-end">
+              {canCreateManualOrder && (
                 <button
-                  onClick={() => setViewMode("bairros")}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
-                  style={
-                    viewMode === "bairros"
-                      ? { backgroundColor: PRIMARY, color: "white" }
-                      : { color: "#6b7280" }
-                  }
+                  type="button"
+                  onClick={() => setManualOrderOpen(true)}
+                  className="h-10 shrink-0 rounded-lg px-3 py-2 text-sm font-semibold text-white"
+                  style={{ backgroundColor: primaryColor }}
                 >
-                  <MapIcon className="w-3.5 h-3.5" /> Por bairro
+                  + Criar pedido
                 </button>
               )}
-              <button
-                onClick={() => setViewMode("arquivados")}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
-                style={
-                  viewMode === "arquivados"
-                    ? { backgroundColor: PRIMARY, color: "white" }
-                    : { color: "#6b7280" }
-                }
-              >
-                <Archive className="w-3.5 h-3.5" /> Arquivados
-              </button>
-            </div>
-          </div>
-
-          {filtersOpen && (
-            <div className="absolute left-4 right-4 top-[calc(100%-4px)] z-30 rounded-xl border border-gray-200 bg-white p-4 shadow-xl">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <div className="text-sm font-semibold text-gray-800">
-                  Filtros de pedidos
-                </div>
-                {activeFiltersCount > 0 && (
-                  <button
-                    onClick={() => {
-                      setSearch("");
-                      setStatusFilter("Todos");
-                      if (viewMode === "arquivados") {
-                        setArchivedStartDate("");
-                        setArchivedEndDate("");
-                      } else {
-                        setBairroFilter("Todos");
-                      }
-                    }}
-                    className="text-xs font-medium text-gray-500 hover:text-gray-800"
-                  >
-                    Limpar filtros
-                  </button>
-                )}
-              </div>
 
               <div
-                className={`grid grid-cols-1 gap-3 ${viewMode === "arquivados" ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}
+                className={`grid min-w-0 flex-1 grid-cols-1 gap-3 sm:grid-cols-2 ${viewMode === "arquivados" ? "2xl:grid-cols-4" : viewMode === "bairros" ? "xl:grid-cols-3" : ""}`}
               >
                 <div className="relative">
                   <label className="block text-[11px] font-semibold uppercase text-gray-400 mb-1">
@@ -2156,7 +2092,7 @@ export function OrdersScreen() {
                   <input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Pedido ou cliente"
+                    placeholder="Comanda, pedido ou cliente"
                     className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1"
                   />
                 </div>
@@ -2228,12 +2164,69 @@ export function OrdersScreen() {
                 )}
               </div>
 
-              {viewMode === "bairros" && (
-                <div className="mt-3 text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
-                  A visualização por bairro mostra pedidos de entrega e também
-                  respeita busca, status e bairro selecionado.
-                </div>
+              {activeFiltersCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearch("");
+                    setStatusFilter("Todos");
+                    if (viewMode === "arquivados") {
+                      setArchivedStartDate("");
+                      setArchivedEndDate("");
+                    } else {
+                      setBairroFilter("Todos");
+                    }
+                  }}
+                  className="h-10 shrink-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                >
+                  Limpar
+                </button>
               )}
+            </div>
+
+            <div className="flex shrink-0 self-start rounded-lg bg-gray-100 p-0.5 gap-0.5 xl:self-end">
+              <button
+                onClick={() => setViewMode("lista")}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
+                style={
+                  viewMode === "lista"
+                    ? { backgroundColor: PRIMARY, color: "white" }
+                    : { color: "#6b7280" }
+                }
+              >
+                <List className="w-3.5 h-3.5" /> Lista
+              </button>
+              {typeFilter === "Entrega" && (
+                <button
+                  onClick={() => setViewMode("bairros")}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
+                  style={
+                    viewMode === "bairros"
+                      ? { backgroundColor: PRIMARY, color: "white" }
+                      : { color: "#6b7280" }
+                  }
+                >
+                  <MapIcon className="w-3.5 h-3.5" /> Por bairro
+                </button>
+              )}
+              <button
+                onClick={() => setViewMode("arquivados")}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
+                style={
+                  viewMode === "arquivados"
+                    ? { backgroundColor: PRIMARY, color: "white" }
+                    : { color: "#6b7280" }
+                }
+              >
+                <Archive className="w-3.5 h-3.5" /> Arquivados
+              </button>
+            </div>
+          </div>
+
+          {viewMode === "bairros" && (
+            <div className="mt-3 text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+              A visualização por bairro mostra pedidos de entrega e também
+              respeita busca, status e bairro selecionado.
             </div>
           )}
         </div>
@@ -2364,6 +2357,7 @@ export function OrdersScreen() {
                     const failureReason = getDeliveryFailureReason(order);
                     const canTakeToTable = canTakeSalaoOrderToTable(order);
                     const takingToTable = updatingStatusOrderId === order.id;
+                    const dailyTicketNumber = getDailyTicketNumber(order);
                     const rowBgClass = isSelectedForDelivery
                       ? ""
                       : orderIndex % 2 === 0
@@ -2429,6 +2423,11 @@ export function OrdersScreen() {
                             )}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
+                                {dailyTicketNumber && (
+                                  <span className="rounded-md border border-slate-300 bg-white px-2 py-0.5 font-mono text-sm font-black text-slate-900">
+                                    Comanda {dailyTicketNumber}
+                                  </span>
+                                )}
                                 <span className="text-sm font-semibold text-gray-800">
                                   {order.numero_pedido || order.id}
                                 </span>
@@ -2767,6 +2766,7 @@ export function OrdersScreen() {
                           order.id,
                         );
                         const failureReason = getDeliveryFailureReason(order);
+                        const dailyTicketNumber = getDailyTicketNumber(order);
                         return (
                           <div
                             key={order.id}
@@ -2837,6 +2837,11 @@ export function OrdersScreen() {
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
+                                {dailyTicketNumber && (
+                                  <span className="rounded-md border border-slate-300 bg-white px-2 py-0.5 font-mono text-sm font-black text-slate-900">
+                                    Comanda {dailyTicketNumber}
+                                  </span>
+                                )}
                                 <span className="text-sm font-semibold text-gray-800">
                                   {order.numero_pedido || order.id}
                                 </span>
@@ -3237,6 +3242,11 @@ export function OrdersScreen() {
                 <h2 className="text-gray-900 font-semibold">
                   Pedido {selected.numero_pedido || selected.id}
                 </h2>
+                {getDailyTicketNumber(selected) && (
+                  <span className="rounded-md border border-slate-300 bg-slate-50 px-2 py-0.5 font-mono text-sm font-black text-slate-900">
+                    Comanda {getDailyTicketNumber(selected)}
+                  </span>
+                )}
                 <span
                   className="px-2 py-0.5 rounded-full text-xs font-medium"
                   style={{

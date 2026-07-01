@@ -26,6 +26,15 @@ const formatMoney = (value: unknown) => {
 };
 
 const printableText = (value: unknown) => String(value ?? "").trim();
+const getDailyTicketNumber = (order: any) => {
+  const formatted = printableText(order?.numero_comanda_codigo);
+  if (formatted) return formatted;
+
+  const numeric = Number(order?.numero_comanda_diario);
+  return Number.isFinite(numeric) && numeric > 0
+    ? String(numeric).padStart(5, "0")
+    : "";
+};
 const renderItemConfiguration = (item: any) => getOrderItemConfigurationLines(item)
   .map((line) => `<p class="option">${escapeHtml(line)}</p>`)
   .join("");
@@ -81,6 +90,9 @@ const thermalReceiptStyles = `
     .option { font-size: 14px; margin: 0 0 2px 16px; }
     p { margin-bottom: 4px; }
     .tag { display: inline-block; border: 1px solid #000; padding: 1px 6px; font-size: 15px; margin: 2px 0; }
+    .ticket-number { border: 2px solid #000; padding: 8px 4px; margin: 8px 0; text-align: center; }
+    .ticket-label { font-size: 15px; font-weight: 800; letter-spacing: 0; }
+    .ticket-value { display: block; font-size: 42px; line-height: 1; font-weight: 900; margin-top: 3px; }
     .order-block { border: 1px dashed #000; padding: 8px; margin-bottom: 8px; }
     .num { display: inline-block; width: 22px; height: 22px; border: 1px solid #000; text-align: center; line-height: 22px; margin-right: 4px; font-size: 14px; }
     .address-line,
@@ -111,6 +123,7 @@ export const printComanda = (
   const orderDate = order.realizado_em || order.criado_em || order.created_at || new Date();
   const scheduledDate = order.agendado_para;
   const orderNumber = escapeHtml(order.numero_pedido || order.id);
+  const dailyTicketNumber = getDailyTicketNumber(order);
   const isDelivery = isDeliveryOrder(order);
   const storeHeader = renderStoreHeader(store);
   const storeName = printableText(store?.nome);
@@ -128,6 +141,7 @@ ${thermalReceiptStyles}
   ${storeHeader}
   <div class="center">
     <p class="bold large">COMANDA DE PEDIDO</p>
+    ${dailyTicketNumber ? `<div class="ticket-number"><span class="ticket-label">COMANDA DO DIA</span><span class="ticket-value">${escapeHtml(dailyTicketNumber)}</span></div>` : ""}
     <p>Pedido: <span class="bold">${orderNumber}</span></p>
     <p>Data: ${escapeHtml(formatBrasiliaDate(orderDate, { dateStyle: "short", timeStyle: "medium" }))}</p>
     ${scheduledDate ? `<p>Entrega agendada: <span class="bold">${escapeHtml(formatBrasiliaDate(scheduledDate, { dateStyle: "short", timeStyle: "short" }))}</span></p>` : ""}

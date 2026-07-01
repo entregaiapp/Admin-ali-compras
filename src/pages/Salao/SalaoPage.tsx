@@ -202,6 +202,16 @@ const escapePrintHtml = (value: unknown) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 
+const getDailyTicketNumber = (value: any) => {
+  const formatted = String(value?.numero_comanda_codigo || "").trim();
+  if (formatted) return formatted;
+
+  const numeric = Number(value?.numero_comanda_diario);
+  return Number.isFinite(numeric) && numeric > 0
+    ? String(numeric).padStart(5, "0")
+    : "";
+};
+
 const salaoItemAuthorLabel = (item: any) => {
   if (item?.autor_label) return item.autor_label;
   if (item?.participante_id)
@@ -904,6 +914,7 @@ export function SalaoPage() {
       .filter((item) => item.status !== "cancelado")
       .reduce((sum, item) => sum + Number(item.preco_total || 0), 0);
     const splitPeople = Number(comanda.quantidade_pessoas_divisao || 1);
+    const dailyTicketNumber = getDailyTicketNumber(comanda);
     const division =
       splitPeople > 1
         ? `<div class="divider"></div><div class="row"><span>Divisão (${splitPeople} pessoas)</span><span>R$ ${formatMoney(total / splitPeople)} por pessoa</span></div>`
@@ -912,10 +923,11 @@ export function SalaoPage() {
     printWindow.document.write(`<!DOCTYPE html>
       <html lang="pt-BR"><head><meta charset="UTF-8"><title>Comanda ${escapePrintHtml(comanda.numero_comanda)}</title>
       <style>
-        *{margin:0;padding:0;box-sizing:border-box}html,body{width:80mm;min-height:30mm}body{font-family:'Courier New',Courier,monospace;width:80mm;min-height:30mm;max-width:80mm;margin:0 auto;padding:3mm;font-size:16px;font-weight:700;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}body *{color:#000!important;font-weight:700}.center{text-align:center}.bold{font-weight:800}.large{font-size:19px}.divider-solid{border-top:1px solid #000;margin:8px 0}.divider{border-top:1px dashed #000;margin:8px 0}.row{display:flex;justify-content:space-between;gap:8px;margin-bottom:3px}.row-total{display:flex;justify-content:space-between;gap:8px;font-size:18px;font-weight:800;margin-bottom:3px}.person{padding:8px 0}.person-title{font-weight:800;margin-bottom:6px}.subtotal{margin-top:6px;font-weight:800}.option{font-size:14px;margin:0 0 2px 16px}.obs{font-size:22px;line-height:1.12;margin:0 0 7px 16px;font-style:italic}.tag{display:inline-block;border:1px solid #000;padding:1px 6px;font-size:15px;margin:2px 0}.product-row{font-size:26px;line-height:1.12;margin-bottom:7px}.product-row span:first-child{flex:1}.product-row span:last-child{white-space:nowrap}p{margin-bottom:4px}@page{size:80mm 200mm;margin:0}@media print{html,body{width:80mm;min-height:30mm}body{margin:0;padding:3mm}}
+        *{margin:0;padding:0;box-sizing:border-box}html,body{width:80mm;min-height:30mm}body{font-family:'Courier New',Courier,monospace;width:80mm;min-height:30mm;max-width:80mm;margin:0 auto;padding:3mm;font-size:16px;font-weight:700;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}body *{color:#000!important;font-weight:700}.center{text-align:center}.bold{font-weight:800}.large{font-size:19px}.divider-solid{border-top:1px solid #000;margin:8px 0}.divider{border-top:1px dashed #000;margin:8px 0}.row{display:flex;justify-content:space-between;gap:8px;margin-bottom:3px}.row-total{display:flex;justify-content:space-between;gap:8px;font-size:18px;font-weight:800;margin-bottom:3px}.person{padding:8px 0}.person-title{font-weight:800;margin-bottom:6px}.subtotal{margin-top:6px;font-weight:800}.option{font-size:14px;margin:0 0 2px 16px}.obs{font-size:22px;line-height:1.12;margin:0 0 7px 16px;font-style:italic}.tag{display:inline-block;border:1px solid #000;padding:1px 6px;font-size:15px;margin:2px 0}.ticket-number{border:2px solid #000;padding:8px 4px;margin:8px 0;text-align:center}.ticket-label{font-size:15px;font-weight:800;letter-spacing:0}.ticket-value{display:block;font-size:42px;line-height:1;font-weight:900;margin-top:3px}.product-row{font-size:26px;line-height:1.12;margin-bottom:7px}.product-row span:first-child{flex:1}.product-row span:last-child{white-space:nowrap}p{margin-bottom:4px}@page{size:80mm 200mm;margin:0}@media print{html,body{width:80mm;min-height:30mm}body{margin:0;padding:3mm}}
       </style></head><body>
         <div class="center">
           <p class="bold large">COMANDA DO SALÃO</p>
+          ${dailyTicketNumber ? `<div class="ticket-number"><span class="ticket-label">COMANDA DO DIA</span><span class="ticket-value">${escapePrintHtml(dailyTicketNumber)}</span></div>` : ""}
           <p>Comanda: <span class="bold">${escapePrintHtml(comanda.numero_comanda)}</span></p>
           <p>Data: ${new Date().toLocaleString("pt-BR")}</p>
           <span class="tag">MESA ${escapePrintHtml(comanda.mesa?.numero || "-")}</span>

@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 import {
   ShoppingCart, TrendingUp, Truck, XCircle, DollarSign, Users,
-  Package, AlertTriangle, ArrowRight, Clock, CheckCircle2, Activity, Calendar, Zap
+  Package, AlertTriangle, ArrowRight, Clock, CheckCircle2, Activity, Calendar, Zap, CreditCard
 } from 'lucide-react';
 import api from '@/shared/lib/api';
 import { dateInputInBrasilia, formatBrasiliaTime, hourInBrasilia } from '@/shared/lib/dateTime';
@@ -48,6 +48,41 @@ const formatDateInput = (date: Date) => {
 };
 
 const formatDisplayDate = (date: string) => date.split('-').reverse().join('/');
+
+const formatCurrency = (value: unknown) => {
+  const number = typeof value === 'number' ? value : Number(String(value ?? 0).replace(',', '.'));
+  return number.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+};
+
+const paymentMethodLabel = (value: unknown) => {
+  const labels: Record<string, string> = {
+    dinheiro: 'Dinheiro',
+    cartao: 'Cartão',
+    pix: 'PIX',
+    cartao_credito: 'Cartão crédito',
+    cartao_debito: 'Cartão débito',
+    outros: 'Outros',
+  };
+  return labels[String(value || '').toLowerCase()] || String(value || 'Indefinido');
+};
+
+const paymentChannelLabel = (value: unknown) => {
+  if (value === 'entrega') return 'Na entrega';
+  if (value === 'app') return 'No app';
+  return String(value || 'Indefinido');
+};
+
+const financialStatusLabel = (value: unknown) => {
+  const labels: Record<string, string> = {
+    recebido: 'Recebido',
+    previsto: 'Previsto',
+    rejeitado: 'Rejeitado',
+    cancelado: 'Cancelado',
+    estornado: 'Estornado',
+    indefinido: 'Indefinido',
+  };
+  return labels[String(value || '').toLowerCase()] || String(value || 'Indefinido');
+};
 
 const formatTimeLabel = (totalMinutes: number) => {
   const normalizedMinutes = Math.min(totalMinutes, MINUTES_PER_DAY - 1);
@@ -284,6 +319,12 @@ export function DashboardScreen() {
     { label: 'Em Rota', value: metrics?.pedidosEmRota || '0', sub: 'Atuais', icon: Truck, color: '#ea580c', bg: '#fff7ed' },
   ];
 
+  const paymentDetails = metrics?.financeiro?.pagamentos_detalhados || {};
+  const paymentSummary = paymentDetails.resumo || {};
+  const paymentsByMethod = Array.isArray(paymentDetails.por_forma_pagamento) ? paymentDetails.por_forma_pagamento : [];
+  const paymentsByChannel = Array.isArray(paymentDetails.por_canal_pagamento) ? paymentDetails.por_canal_pagamento : [];
+  const paymentsByMethodChannel = Array.isArray(paymentDetails.por_forma_e_canal) ? paymentDetails.por_forma_e_canal : [];
+
   const rawSalesData = Array.isArray(metrics?.hourlyData) && metrics.hourlyData.length
     ? metrics.hourlyData
     : Array.isArray(metrics?.vendasSemana)
@@ -377,6 +418,84 @@ export function DashboardScreen() {
             <div className="text-gray-400 text-[11px] mt-1">{card.sub}</div>
           </div>
         ))}
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
+        {[
+          { label: 'Recebido real', value: formatCurrency(paymentSummary.valor_recebido), sub: `${paymentSummary.pagamentos_recebidos || 0} pagamento(s)`, icon: DollarSign, color: '#16a34a', bg: '#f0fdf4' },
+          { label: 'Previsto a receber', value: formatCurrency(paymentSummary.valor_previsto_receber), sub: `${paymentSummary.pagamentos_previstos || 0} pendente(s)`, icon: Clock, color: '#d97706', bg: '#fffbeb' },
+          { label: 'Na entrega', value: formatCurrency(paymentSummary.valor_na_entrega), sub: `${paymentSummary.pagamentos_na_entrega || 0} dinheiro/cartão`, icon: Truck, color: '#0891b2', bg: '#ecfeff' },
+          { label: 'No app', value: formatCurrency(paymentSummary.valor_no_app), sub: `${paymentSummary.pagamentos_no_app || 0} pix/cartão`, icon: CreditCard, color: '#7c3aed', bg: '#f5f3ff' },
+        ].map(card => (
+          <div key={card.label} className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="flex items-start justify-between mb-3">
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: card.bg }}>
+                <card.icon className="w-4.5 h-4.5" style={{ color: card.color }} />
+              </div>
+            </div>
+            <div className="text-gray-900 font-semibold text-xl leading-tight">{card.value}</div>
+            <div className="text-gray-500 text-xs mt-0.5">{card.label}</div>
+            <div className="text-gray-400 text-[11px] mt-1">{card.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <h3 className="text-gray-800 font-semibold mb-3">Pagamentos por Forma</h3>
+          <div className="space-y-3">
+            {(paymentsByMethod.length ? paymentsByMethod : [{ metodo_pagamento: 'sem dados', valor_recebido: 0, valor_previsto_receber: 0, quantidade: 0 }]).map((item: any) => (
+              <div key={item.metodo_pagamento} className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium text-gray-700">{paymentMethodLabel(item.metodo_pagamento)}</div>
+                  <div className="text-xs text-gray-400">{item.quantidade || 0} pagamento(s)</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm font-semibold text-gray-900">{formatCurrency(item.valor_recebido)}</div>
+                  <div className="text-xs text-amber-600">{formatCurrency(item.valor_previsto_receber)} previsto</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <h3 className="text-gray-800 font-semibold mb-3">Pagamentos por Canal</h3>
+          <div className="space-y-3">
+            {(paymentsByChannel.length ? paymentsByChannel : [{ canal_pagamento: 'sem dados', valor_recebido: 0, valor_previsto_receber: 0, quantidade: 0 }]).map((item: any) => (
+              <div key={item.canal_pagamento} className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium text-gray-700">{paymentChannelLabel(item.canal_pagamento)}</div>
+                  <div className="text-xs text-gray-400">{item.quantidade || 0} pagamento(s)</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm font-semibold text-gray-900">{formatCurrency(item.valor_recebido)}</div>
+                  <div className="text-xs text-amber-600">{formatCurrency(item.valor_previsto_receber)} previsto</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <h3 className="text-gray-800 font-semibold mb-3">Detalhe Financeiro</h3>
+          <div className="space-y-2">
+            {paymentsByMethodChannel.length ? paymentsByMethodChannel.slice(0, 6).map((item: any) => (
+              <div key={`${item.metodo_pagamento}-${item.canal_pagamento}-${item.situacao_financeira}`} className="rounded-lg border border-gray-100 p-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-gray-700">{paymentMethodLabel(item.metodo_pagamento)} · {paymentChannelLabel(item.canal_pagamento)}</span>
+                  <span className="text-[11px] text-gray-400">{item.quantidade || 0}</span>
+                </div>
+                <div className="mt-1 flex items-center justify-between gap-2">
+                  <span className="text-[11px] text-gray-500">{financialStatusLabel(item.situacao_financeira)}</span>
+                  <span className="text-xs font-semibold text-gray-900">{formatCurrency(item.valor_total)}</span>
+                </div>
+              </div>
+            )) : (
+              <div className="text-sm text-gray-500 text-center">Nenhum pagamento no período.</div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Charts row */}
