@@ -143,18 +143,15 @@ const getMesaPendingAction = (mesa: any, comanda?: any) => {
 };
 
 const resolveClientBaseUrl = () => {
+  const productionClientUrl = "https://cliente.entregaiapp.com.br";
   const configured = import.meta.env.VITE_CLIENTE_URL?.trim();
-  if (configured) return configured.replace(/\/$/, "");
+  const { hostname, origin } = window.location;
 
-  const { protocol, hostname, port, origin } = window.location;
-  if (hostname === "localhost" || hostname === "127.0.0.1") return origin;
-  if (hostname === "admin.deliplaytecnologia.com") {
-    return "https://cliente.deliplaytecnologia.com";
+  if (hostname === "localhost" || hostname === "127.0.0.1") {
+    return configured ? configured.replace(/\/$/, "") : origin;
   }
-  if (hostname.startsWith("admin.")) {
-    return `${protocol}//${hostname.replace(/^admin\./, "cliente.")}${port ? `:${port}` : ""}`;
-  }
-  return origin;
+
+  return productionClientUrl;
 };
 
 const CLIENT_BASE_URL = resolveClientBaseUrl();
