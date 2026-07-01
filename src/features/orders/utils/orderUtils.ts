@@ -170,6 +170,7 @@ export const formatPaymentMethod = (value: unknown) => {
     cartao_credito: "Cartão de crédito",
     cartao_debito: "Cartão de débito",
     dinheiro: "Dinheiro",
+    fiado: "Fiado",
   };
 
   if (!method) return "Não informado";
@@ -193,9 +194,21 @@ export const formatPaymentStatus = (value: unknown) => {
   return labels[status] || status.replace(/_/g, " ").replace(/^\w/, (char) => char.toUpperCase());
 };
 
+export const isFiadoPayment = (payment: any) => {
+  const method = cleanText(payment?.forma_pagamento || payment?.method || payment?.payment).toLowerCase();
+  const metadataType = cleanText(payment?.metadata?.tipo).toLowerCase();
+  return method === "fiado" || metadataType === "fiado";
+};
+
 export const isApprovedPayment = (payment: any) =>
-  Boolean(payment?.pago_em || payment?.paidAt) ||
-  cleanText(payment?.status).toLowerCase() === "aprovado";
+  !isFiadoPayment(payment) &&
+  (Boolean(payment?.pago_em || payment?.paidAt) ||
+    cleanText(payment?.status).toLowerCase() === "aprovado");
+
+export const isFiadoOrder = (order: any, payments: any[] = []) =>
+  payments.some(isFiadoPayment) ||
+  isFiadoPayment(order?.pagamento) ||
+  isFiadoPayment(order);
 
 const getPaymentOnDeliveryMethod = (payment: any) =>
   cleanText(
@@ -230,9 +243,12 @@ export const getPreferredOrderPayment = (order: any, payments: any[] = []) =>
   null;
 
 export const isOrderPaid = (order: any, payments: any[] = []) =>
-  payments.some(isApprovedPayment) ||
-  isApprovedPayment(order?.pagamento) ||
-  cleanText(order?.payment_status).toLowerCase() === "aprovado";
+  !isFiadoOrder(order, payments) &&
+  (
+    payments.some(isApprovedPayment) ||
+    isApprovedPayment(order?.pagamento) ||
+    cleanText(order?.payment_status).toLowerCase() === "aprovado"
+  );
 
 export const isOrderPendingCash = (order: any, payments: any[] = []) =>
   payments.some(isPendingCashPayment) || isPendingCashPayment(order?.pagamento) || isPendingCashPayment(order);
