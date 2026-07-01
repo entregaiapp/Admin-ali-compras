@@ -15,6 +15,7 @@ import { CustomersPage } from "@/pages/Customers/CustomersPage";
 import { DeliveriesPage } from "@/pages/Deliveries/DeliveriesPage";
 import { CouponsPage } from "@/pages/Coupons/CouponsPage";
 import { PaymentsPage } from "@/pages/Payments/PaymentsPage";
+import { FiadosPage } from "@/pages/Fiados/FiadosPage";
 import { ReportsPage } from "@/pages/Reports/ReportsPage";
 import { UsersPage } from "@/pages/Users/UsersPage";
 import { SystemPermissionsPage } from "@/pages/SystemPermissions/SystemPermissionsPage";
@@ -66,6 +67,7 @@ export const router = createBrowserRouter([
           { path: "deliveries", Component: DeliveriesPage },
           { path: "coupons", Component: CouponsPage },
           { path: "payments", Component: PaymentsPage },
+          { path: "fiados", Component: FiadosPage },
           { path: "reports", Component: ReportsPage },
           { path: "users", Component: UsersPage },
           { path: "permissions", Component: SystemPermissionsPage },

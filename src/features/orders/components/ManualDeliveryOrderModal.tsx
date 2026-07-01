@@ -41,9 +41,13 @@ const PAYMENT_METHOD_VALUES: Record<string, string> = {
   "Dinheiro": "dinheiro",
   "Vale Refeição": "vale_refeicao",
   "Vale Alimentação": "vale_alimentacao",
+  "Fiado": "fiado",
 };
 const CARD_PAYMENT_VALUES = new Set(["cartao_credito", "cartao_debito"]);
 const paymentMethodCaption = (value: string) =>
+  value === "fiado"
+    ? "Conta fiado do contato"
+    :
   value === "dinheiro" || CARD_PAYMENT_VALUES.has(value)
     ? "Pagar na entrega"
     : "Pagamento externo ao app";
@@ -63,8 +67,8 @@ const getLoggedUser = () => {
   }
 };
 
-export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onClose, onCreated }: {
-  lojaId: string; primaryColor?: string; onClose: () => void; onCreated: () => void;
+export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fiadoEnabled = false, onClose, onCreated }: {
+  lojaId: string; primaryColor?: string; fiadoEnabled?: boolean; onClose: () => void; onCreated: () => void;
 }) {
   const [step, setStep] = useState(1);
   const [busy, setBusy] = useState(false);
@@ -119,10 +123,11 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onC
       const methods = Array.isArray(config?.formas_pagamento) && config.formas_pagamento.length
         ? config.formas_pagamento
         : DEFAULT_PAYMENT_METHODS;
-      setAcceptedPaymentMethods(methods);
-      setPayment(PAYMENT_METHOD_VALUES[methods[0]] || String(methods[0]).toLowerCase());
+      const nextMethods = fiadoEnabled && !methods.includes("Fiado") ? [...methods, "Fiado"] : methods;
+      setAcceptedPaymentMethods(nextMethods);
+      setPayment(PAYMENT_METHOD_VALUES[nextMethods[0]] || String(nextMethods[0]).toLowerCase());
     });
-  }, [lojaId, primaryColor]);
+  }, [fiadoEnabled, lojaId, primaryColor]);
 
   useEffect(() => {
     if (!configuring) return;

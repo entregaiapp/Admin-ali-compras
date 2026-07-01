@@ -272,6 +272,11 @@ export function ReportsScreen() {
   const categoryRevenueData = metrics?.categoryRevenueData || [];
   const topProducts = metrics?.topProdutos || [];
   const hourlyData = metrics?.hourlyData || [];
+  const fiados = metrics?.financeiro?.fiados;
+  const fiadoResumo = fiados?.resumo || {};
+  const fiadoPorForma = Array.isArray(fiados?.recebimentos_por_forma_pagamento)
+    ? fiados.recebimentos_por_forma_pagamento
+    : [];
 
   return (
     <div className="p-5 space-y-5 overflow-y-auto flex-1 h-full">
@@ -513,6 +518,60 @@ export function ReportsScreen() {
           </div>
         ))}
       </div>
+
+      {fiados && (
+        <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="font-semibold text-gray-800">Recebimentos fiado</h3>
+              <p className="text-xs text-gray-400 mt-0.5">Valores recebidos no periodo, separados da venda original.</p>
+            </div>
+            <div className="text-sm font-semibold text-gray-900">
+              Recebido: {formatCurrency(fiadoResumo.recebido_periodo)}
+            </div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-4">
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Saldo aberto total</div>
+              <div className="mt-1 text-lg font-semibold text-gray-900">{formatCurrency(fiadoResumo.saldo_aberto_total)}</div>
+            </div>
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Fiado criado</div>
+              <div className="mt-1 text-lg font-semibold text-gray-900">{formatCurrency(fiadoResumo.valor_fiado_periodo)}</div>
+            </div>
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Pessoas com saldo</div>
+              <div className="mt-1 text-lg font-semibold text-gray-900">{Number(fiadoResumo.pessoas_com_saldo || 0)}</div>
+            </div>
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Pedidos abertos</div>
+              <div className="mt-1 text-lg font-semibold text-gray-900">{Number(fiadoResumo.pedidos_abertos || 0)}</div>
+            </div>
+          </div>
+          {fiadoPorForma.length > 0 && (
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Forma de pagamento</th>
+                    <th className="px-3 py-2 text-right">Quantidade</th>
+                    <th className="px-3 py-2 text-right">Valor recebido</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fiadoPorForma.map((item: any) => (
+                    <tr key={item.forma_pagamento} className="border-t border-gray-100">
+                      <td className="px-3 py-2">{item.forma_pagamento}</td>
+                      <td className="px-3 py-2 text-right">{item.quantidade}</td>
+                      <td className="px-3 py-2 text-right font-semibold">{formatCurrency(item.valor_recebido)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Charts row 1 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

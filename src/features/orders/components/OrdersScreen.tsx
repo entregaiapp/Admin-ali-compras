@@ -292,6 +292,7 @@ export function OrdersScreen() {
   const [manualOrderOpen, setManualOrderOpen] = useState(false);
   const [manualOrderCreationAllowed, setManualOrderCreationAllowed] = useState(false);
   const [salaoEnabled, setSalaoEnabled] = useState(false);
+  const [fiadoEnabled, setFiadoEnabled] = useState(false);
   const [newOrdersCount, setNewOrdersCount] = useState<Record<OrderType, number>>({
     entrega: 0,
     retirada: 0,
@@ -338,7 +339,11 @@ export function OrdersScreen() {
     api.get(`/salao/lojas/${user.loja_id}/modulos`).then((modulesResult) => {
       const modules = modulesResult.data?.data ?? modulesResult.data ?? [];
       setSalaoEnabled(Array.isArray(modules) && modules.some((module: any) => module.slug === "salao" && module.enabled === true));
-    }).catch(() => setSalaoEnabled(false));
+      setFiadoEnabled(Array.isArray(modules) && modules.some((module: any) => module.slug === "fiado" && module.enabled === true));
+    }).catch(() => {
+      setSalaoEnabled(false);
+      setFiadoEnabled(false);
+    });
   }, [user?.loja_id]);
 
   useEffect(() => {
@@ -2000,7 +2005,7 @@ export function OrdersScreen() {
   return (
     <div className="flex h-full">
       {manualOrderOpen && canCreateManualOrder && user?.loja_id && (
-        <ManualDeliveryOrderModal lojaId={user.loja_id} primaryColor={primaryColor} onClose={() => setManualOrderOpen(false)} onCreated={() => fetchOrders(1, true)} />
+        <ManualDeliveryOrderModal lojaId={user.loja_id} primaryColor={primaryColor} fiadoEnabled={fiadoEnabled} onClose={() => setManualOrderOpen(false)} onCreated={() => fetchOrders(1, true)} />
       )}
       {/* Left panel: list or bairros */}
       <div

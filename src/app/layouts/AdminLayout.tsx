@@ -3,7 +3,7 @@ import { Outlet, useNavigate, useLocation, Navigate } from 'react-router';
 import {
   LayoutDashboard, ShoppingCart, Package,  Grid3X3, Tag, Image, Users, Truck, User,
   Ticket, CreditCard, BarChart3, UserCog, Settings, Bell, Menu, X, LogOut,
-  ChevronRight, Key, Bike, UtensilsCrossed
+  ChevronRight, Key, Bike, UtensilsCrossed, Wallet
 } from 'lucide-react';
 import api from '@/shared/lib/api';
 import logo from '@/assets/logo.png';
@@ -25,6 +25,7 @@ const navItems = [
   { label: 'Entregadores', icon: User, path: '/entregadores', slug: 'entregadores' },
   { label: 'Cupons', icon: Ticket, path: '/coupons', slug: 'cupons' },
   { label: 'Pagamentos', icon: CreditCard, path: '/payments', slug: 'financeiro' },
+  { label: 'Fiados', icon: Wallet, path: '/fiados', slug: 'fiados' },
   { label: 'Relatórios', icon: BarChart3, path: '/reports', slug: 'financeiro' },
   { label: 'Usuários', icon: UserCog, path: '/users', slug: 'usuarios' },
   { label: 'Configurações', icon: Settings, path: '/settings', slug: 'configuracoes' },
@@ -36,7 +37,7 @@ const navGroups = [
   { title: 'Cardápio', paths: ['/products', '/categories'] },
   { title: 'Marketing e vendas', paths: ['/promotions', '/coupons', '/banners', '/notifications'] },
   { title: 'Clientes', paths: ['/customers'] },
-  { title: 'Financeiro', paths: ['/payments', '/reports'] },
+  { title: 'Financeiro', paths: ['/payments', '/fiados', '/reports'] },
   { title: 'Administração', paths: ['/users', '/settings'] },
 ];
 
@@ -49,6 +50,7 @@ export function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [storeName, setStoreName] = useState('Carregando...');
   const [salaoEnabled, setSalaoEnabled] = useState<boolean | null>(null);
+  const [fiadoEnabled, setFiadoEnabled] = useState<boolean | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();
@@ -89,10 +91,12 @@ export function AdminLayout() {
           ? (modulesResult.value.data?.data ?? modulesResult.value.data)
           : [];
         setSalaoEnabled(Array.isArray(modules) && modules.some(module => module.slug === 'salao' && module.enabled === true));
+        setFiadoEnabled(Array.isArray(modules) && modules.some(module => module.slug === 'fiado' && module.enabled === true));
       });
     } else {
       setStoreName('Admin Master');
       setSalaoEnabled(false);
+      setFiadoEnabled(false);
     }
   }, [user?.loja_id]);
 
@@ -162,6 +166,7 @@ export function AdminLayout() {
     // Hide "Minhas Entregas" from non-drivers to keep sidebar clean
     if (item.path === '/driver') return false;
     if (item.path === '/salao' && salaoEnabled !== true) return false;
+    if (item.path === '/fiados' && fiadoEnabled !== true) return false;
     if (user?.perfil === 'superadmin' || user?.perfil === 'administrador') return true;
     return user?.permissions?.includes(item.slug);
   };
@@ -177,6 +182,9 @@ export function AdminLayout() {
     .filter(group => group.items.length > 0);
 
   if (salaoEnabled === false && location.pathname.startsWith('/salao')) {
+    return <Navigate to="/orders" replace />;
+  }
+  if (fiadoEnabled === false && location.pathname.startsWith('/fiados')) {
     return <Navigate to="/orders" replace />;
   }
 
