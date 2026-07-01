@@ -221,6 +221,10 @@ const canTakeSalaoOrderToTable = (order: any) =>
   getSalaoComandaStatus(order) === "aberta";
 const canForceFinalizeOrder = (order: any) =>
   Boolean(order?.id) && getBackendStatus(order?.status || "") !== "entregue";
+const canQuickArchiveOrder = (order: any) =>
+  Boolean(order?.id) &&
+  !order?.arquivado &&
+  getBackendStatus(order?.status || "") === "entregue";
 const formatOrderDateTime = (value: Date | string) =>
   formatBrasiliaDate(value, { dateStyle: "short", timeStyle: "short" });
 const getOrderArchiveTimestamp = (order: any) =>
@@ -2840,6 +2844,25 @@ export function OrdersScreen() {
                             >
                               <Eye className="w-3 h-3" /> Detalhes
                             </button>
+                            {viewMode !== "arquivados" &&
+                              canQuickArchiveOrder(order) && (
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void toggleArchivedOrder(order);
+                                  }}
+                                  disabled={archivingOrderId === order.id}
+                                  className="mt-1 text-xs flex items-center gap-1 ml-auto font-semibold text-gray-600 hover:text-gray-900 hover:underline disabled:cursor-wait disabled:opacity-70"
+                                >
+                                  {archivingOrderId === order.id ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <Archive className="h-3 w-3" />
+                                  )}
+                                  Arquivar
+                                </button>
+                              )}
                             {canForceFinalizeOrder(order) && (
                               <button
                                 type="button"
@@ -3228,6 +3251,24 @@ export function OrdersScreen() {
                                   <Eye className="w-3 h-3" />
                                 </button>
                               </div>
+                              {canQuickArchiveOrder(order) && (
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void toggleArchivedOrder(order);
+                                  }}
+                                  disabled={archivingOrderId === order.id}
+                                  className="mt-1 ml-auto flex items-center gap-1 text-[11px] font-semibold text-gray-600 hover:text-gray-900 hover:underline disabled:cursor-wait disabled:opacity-70"
+                                >
+                                  {archivingOrderId === order.id ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <Archive className="h-3 w-3" />
+                                  )}
+                                  Arquivar
+                                </button>
+                              )}
                               {canForceFinalizeOrder(order) && (
                                 <button
                                   type="button"
