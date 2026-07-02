@@ -201,7 +201,6 @@ export const isFiadoPayment = (payment: any) => {
 };
 
 export const isApprovedPayment = (payment: any) =>
-  !isFiadoPayment(payment) &&
   (Boolean(payment?.pago_em || payment?.paidAt) ||
     cleanText(payment?.status).toLowerCase() === "aprovado");
 
@@ -227,6 +226,10 @@ const isPaymentOnDelivery = (payment: any) => {
   return (
     method === "dinheiro" ||
     metadataType === "pagamento_entrega" ||
+    metadataType === "pagamento_manual_pendente" ||
+    metadataType === "pagamento_externo" ||
+    cleanText(payment?.metadata?.origem).toLowerCase() === "admin_dashboard" ||
+    payment?.metadata?.pagamento_realizado_fora_do_app === true ||
     cardWithoutGateway ||
     ["dinheiro", "cartao"].includes(getPaymentOnDeliveryMethod(payment))
   );
@@ -243,12 +246,9 @@ export const getPreferredOrderPayment = (order: any, payments: any[] = []) =>
   null;
 
 export const isOrderPaid = (order: any, payments: any[] = []) =>
-  !isFiadoOrder(order, payments) &&
-  (
-    payments.some(isApprovedPayment) ||
-    isApprovedPayment(order?.pagamento) ||
-    cleanText(order?.payment_status).toLowerCase() === "aprovado"
-  );
+  payments.some(isApprovedPayment) ||
+  isApprovedPayment(order?.pagamento) ||
+  cleanText(order?.payment_status).toLowerCase() === "aprovado";
 
 export const isOrderPendingCash = (order: any, payments: any[] = []) =>
   payments.some(isPendingCashPayment) || isPendingCashPayment(order?.pagamento) || isPendingCashPayment(order);
@@ -276,13 +276,15 @@ export const getOrderPaymentMethod = (order: any, payment?: any) => {
 };
 
 export const getOrderPaymentStatus = (order: any, payment?: any) =>
-  formatPaymentStatus(
-    firstText(
-      payment?.status,
-      order?.pagamento?.status,
-      order?.payment_status,
-    ),
-  );
+  cleanText(payment?.status_detalhado || order?.pagamento?.status_detalhado).toLowerCase() === "pago_parcial"
+    ? "Pago parcial"
+    : formatPaymentStatus(
+        firstText(
+          payment?.status,
+          order?.pagamento?.status,
+          order?.payment_status,
+        ),
+      );
 
 export const getDeliveryLabel = (route: any) => {
   if (route.status === "completed") return "Concluída";

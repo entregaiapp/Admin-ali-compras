@@ -1415,7 +1415,7 @@ export function OrdersScreen() {
       setConfirmingCashPaymentId(selectedPayment.id);
       const response = await api.patch(`/pagamentos/${selectedPayment.id}/status`, {
         status: "aprovado",
-        observacao: "Pagamento em dinheiro recebido na retirada",
+        observacao: "Pagamento recebido pelo caixa",
       });
       const updatedPayment = response.data.data || response.data;
 
@@ -1435,7 +1435,7 @@ export function OrdersScreen() {
         ),
       );
       await fetchOrders(1, true, { silent: true });
-      showSystemNotice("Pagamento em dinheiro confirmado como recebido.");
+      showSystemNotice("Pagamento confirmado como recebido.");
     } catch (error) {
       showSystemNotice(
         getApiErrorMessage(
@@ -2031,7 +2031,7 @@ export function OrdersScreen() {
     selectedIsDelivery && selectedStatusLabel === "Pronto";
   const adminCannotConfirmDelivery =
     selectedIsDelivery && selectedStatusLabel === "Saiu para Entrega";
-  const selectedCanProceed = selectedIsPaid || selectedIsFiado || selectedIsPendingCash;
+  const selectedCanProceed = selectedIsPaid;
   const selectedCanAdminAddItems = Boolean(selected?.id) && !selectedBlocksAdminAdjustment;
   const selectedCanChangePendingPayment =
     Boolean(selected?.id) &&
@@ -2039,7 +2039,7 @@ export function OrdersScreen() {
     !selectedIsPaid &&
     !selectedIsFiado;
   const selectedPickupNeedsCashConfirmation =
-    selectedIsPickup && selectedIsPendingCash && !selectedIsCardOnDelivery && selectedStatusLabel === "Pronto";
+    selectedIsPickup && selectedIsPendingCash && selectedStatusLabel === "Pronto";
   const selectedCanTakeSalaoToTable =
     Boolean(selected) &&
     canTakeSalaoOrderToTable(selected) &&
@@ -4158,6 +4158,11 @@ export function OrdersScreen() {
                   A conta e os recebimentos deste pedido sao gerenciados no
                   modulo Fiados.
                 </p>
+                {selectedPaymentStatus !== "NÃ£o informado" && (
+                  <div className={`mt-2 text-xs font-semibold ${selectedPaymentStatusClass}`}>
+                    {selectedPaymentStatus}
+                  </div>
+                )}
               </div>
             )}
             {!selectedIsFiado && <div className="bg-white border border-gray-200 rounded-xl p-4">
@@ -4205,11 +4210,11 @@ export function OrdersScreen() {
                   {selectedIsPendingCash
                     ? selectedIsCardOnDelivery
                       ? "Pagamento em cartão pendente de recebimento."
-                      : "Pagamento em dinheiro pendente de recebimento."
+                      : "Pagamento pendente de recebimento pelo caixa."
                     : "Pagamento pendente"}
                 </div>
               )}
-              {selectedIsPickup && selectedIsPendingCash && !selectedIsCardOnDelivery && (
+              {selectedIsPendingCash && (
                 <button
                   type="button"
                   onClick={confirmCashPayment}
@@ -4219,7 +4224,7 @@ export function OrdersScreen() {
                   {confirmingCashPaymentId === selectedPayment?.id && (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   )}
-                  Marcar dinheiro como recebido
+                  Marcar pagamento como recebido
                 </button>
               )}
               {selectedCanChangePendingPayment && (
@@ -4438,7 +4443,7 @@ export function OrdersScreen() {
                 )}
               {selectedPickupNeedsCashConfirmation && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                  Confirme o recebimento do dinheiro antes de finalizar a
+                  Confirme o recebimento do pagamento antes de finalizar a
                   retirada.
                 </div>
               )}
