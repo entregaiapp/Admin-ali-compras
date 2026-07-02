@@ -455,12 +455,17 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
                 {contactQuery && (
                   <div className="mt-3 overflow-hidden rounded-xl border">
                     {contacts.length ? contacts.map((item) => (
-                      <button key={item.id} onClick={() => chooseContact(item)} className="flex w-full items-center justify-between border-b bg-white p-3 text-left last:border-0 hover:bg-slate-50">
+                      <button key={item.id} onClick={() => chooseContact(item)} className="flex w-full items-center justify-between gap-3 border-b bg-white p-3 text-left last:border-0 hover:bg-slate-50">
                         <span>
                           <b className="block text-slate-800">{item.nome}</b>
                           <small className="text-slate-500">{item.telefone}</small>
+                          {Number(item.fiado_saldo_aberto || 0) > 0 && (
+                            <small className="mt-1 block font-semibold text-amber-700">
+                              Fiado em aberto: {money(item.fiado_saldo_aberto)} em {Number(item.fiado_pedidos_abertos || 0)} pedido{Number(item.fiado_pedidos_abertos || 0) === 1 ? "" : "s"}
+                            </small>
+                          )}
                         </span>
-                        <ArrowRight className="h-4 w-4" style={{ color: primary }} />
+                        <ArrowRight className="h-4 w-4 shrink-0" style={{ color: primary }} />
                       </button>
                     )) : !contactLoading && <p className="bg-white p-4 text-center text-sm text-slate-500">Nenhum contato encontrado.</p>}
                   </div>

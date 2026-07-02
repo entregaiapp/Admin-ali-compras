@@ -255,8 +255,7 @@ const canOrderProceedForFulfillment = (order: any, payments: any[] = []) =>
   isOrderPaid(order, payments) ||
   isFiadoOrder(order, payments) ||
   isOrderPendingCash(order, payments) ||
-  isPendingCardPaymentForDelivery(order, payments) ||
-  order?.origem_checkout === "admin_dashboard";
+  isPendingCardPaymentForDelivery(order, payments);
 const DELIVERY_ASSIGNMENT_BLOCKED_STATUSES = new Set([
   "entregue",
   "nao_entregue",
@@ -267,7 +266,6 @@ const ORDER_TABS = [
   { value: "Entrega", label: "Delivery" },
   { value: "Retirada", label: "Retirada" },
   { value: "Salao", label: "Salão" },
-  { value: "Internos", label: "Pedidos internos" },
 ] as const;
 type OrderTab = (typeof ORDER_TABS)[number]["value"];
 type ArchivedOrderTypeFilter = "Todos" | OrderTab;
@@ -277,7 +275,7 @@ type ArchivedDailySummary = {
   total: number;
 };
 type OrderType = "entrega" | "retirada" | "salao";
-type OrderCounterKey = OrderType | "internos";
+type OrderCounterKey = OrderType;
 const getOrderType = (order: any): OrderType => {
   const type = String(order?.tipo_pedido || order?.type || "").toLowerCase();
   return type === "salao" || type === "retirada" ? type : "entrega";
@@ -418,11 +416,10 @@ export function OrdersScreen() {
     entrega: 0,
     retirada: 0,
     salao: 0,
-    internos: 0,
   });
   const [lastOrdersLoadedAt, setLastOrdersLoadedAt] = useState<Record<OrderCounterKey, string>>(() => {
     const initialCursor = new Date(0).toISOString();
-    return { entrega: initialCursor, retirada: initialCursor, salao: initialCursor, internos: initialCursor };
+    return { entrega: initialCursor, retirada: initialCursor, salao: initialCursor };
   });
   const [newOrderCursorsReady, setNewOrderCursorsReady] = useState(false);
   const [checkingNewOrders, setCheckingNewOrders] = useState(false);
@@ -487,7 +484,6 @@ export function OrdersScreen() {
       "entrega",
       "retirada",
       ...(salaoEnabled ? ["salao" as const] : []),
-      ...(fiadoEnabled ? ["internos" as const] : []),
     ];
     Promise.all(
       types.map((type) => api.get("/pedidos/novos/contagem", {
@@ -506,9 +502,9 @@ export function OrdersScreen() {
     }).catch((error) => {
       console.error("Error initializing new-order cursors:", error);
       const now = new Date().toISOString();
-      setLastOrdersLoadedAt({ entrega: now, retirada: now, salao: now, internos: now });
+      setLastOrdersLoadedAt({ entrega: now, retirada: now, salao: now });
     }).finally(() => setNewOrderCursorsReady(true));
-  }, [user?.loja_id, salaoEnabled, fiadoEnabled]);
+  }, [user?.loja_id, salaoEnabled]);
 
   useEffect(() => {
     if (!user?.loja_id) {
@@ -559,18 +555,6 @@ export function OrdersScreen() {
   }, [viewMode, typeFilter]);
 
   useEffect(() => {
-    if (typeFilter === "Internos" && !fiadoEnabled) {
-      setTypeFilter("Entrega");
-    }
-  }, [typeFilter, fiadoEnabled]);
-
-  useEffect(() => {
-    if (archivedTypeFilter === "Internos" && !fiadoEnabled) {
-      setArchivedTypeFilter("Todos");
-    }
-  }, [archivedTypeFilter, fiadoEnabled]);
-
-  useEffect(() => {
     setSelectedOrderIds([]);
   }, [search, statusFilter, typeFilter, archivedTypeFilter, bairroFilter, viewMode]);
 
@@ -618,7 +602,7 @@ export function OrdersScreen() {
   }, [search]);
 
   const getOrderCounterKey = (): OrderCounterKey =>
-    typeFilter === "Internos" ? "internos" : (typeFilter.toLowerCase() as OrderType);
+    typeFilter.toLowerCase() as OrderType;
 
   const getActiveOrderTypeFilter = () =>
     viewMode === "arquivados" ? archivedTypeFilter : typeFilter;
@@ -629,18 +613,9 @@ export function OrdersScreen() {
     arquivado: viewMode === "arquivados" ? "true" : "false",
     status: frontendToBackendStatus[statusFilter],
     tipo_pedido:
-      getActiveOrderTypeFilter() === "Todos" ||
-      getActiveOrderTypeFilter() === "Internos"
+      getActiveOrderTypeFilter() === "Todos"
         ? undefined
         : String(getActiveOrderTypeFilter()).toLowerCase(),
-    forma_pagamento:
-      getActiveOrderTypeFilter() === "Internos" ? "fiado" : undefined,
-    excluir_forma_pagamento:
-      viewMode !== "arquivados" &&
-      getActiveOrderTypeFilter() !== "Internos" &&
-      fiadoEnabled
-        ? "fiado"
-        : undefined,
     busca: search || undefined,
     realizado_em_inicial:
       viewMode === "arquivados" ? archivedStartDate || undefined : undefined,
@@ -667,9 +642,7 @@ export function OrdersScreen() {
   });
 
   const getNewOrdersQueryParams = (type: OrderCounterKey) => ({
-    tipo_pedido: type === "internos" ? undefined : type,
-    forma_pagamento: type === "internos" ? "fiado" : undefined,
-    excluir_forma_pagamento: type !== "internos" && fiadoEnabled ? "fiado" : undefined,
+    tipo_pedido: type,
     arquivado: "false",
     criado_apos: lastOrdersLoadedAt[type],
   });
@@ -739,7 +712,6 @@ export function OrdersScreen() {
         "entrega",
         "retirada",
         ...(salaoEnabled ? ["salao" as const] : []),
-        ...(fiadoEnabled ? ["internos" as const] : []),
       ];
       const responses = await Promise.all(
         types.map((type) => api.get("/pedidos/novos/contagem", {
@@ -777,7 +749,6 @@ export function OrdersScreen() {
     viewMode,
     lastOrdersLoadedAt,
     salaoEnabled,
-    fiadoEnabled,
     newOrderCursorsReady,
   ]);
 
@@ -860,11 +831,10 @@ export function OrdersScreen() {
       "entrega",
       "retirada",
       ...(salaoEnabled ? ["salao" as const] : []),
-      ...(fiadoEnabled ? ["internos" as const] : []),
     ] as OrderCounterKey[])
       .find((type) => newOrdersCount[type] > 0);
     if (!nextType) return;
-    setTypeFilter(({ entrega: "Entrega", retirada: "Retirada", salao: "Salao", internos: "Internos" } as const)[nextType]);
+    setTypeFilter(({ entrega: "Entrega", retirada: "Retirada", salao: "Salao" } as const)[nextType]);
   };
 
   const handleLoadMore = () => {
@@ -1962,8 +1932,7 @@ export function OrdersScreen() {
         ].filter(Boolean).length;
   const availableOrderTabs = ORDER_TABS.filter(
     (tab) =>
-      (tab.value !== "Salao" || salaoEnabled) &&
-      (tab.value !== "Internos" || fiadoEnabled),
+      tab.value !== "Salao" || salaoEnabled,
   );
   const archivedTypeOptions: Array<{
     value: ArchivedOrderTypeFilter;
@@ -1980,7 +1949,7 @@ export function OrdersScreen() {
     typeFilter !== "Salao" &&
     manualOrderCreationAllowed;
   const totalNewOrdersCount = availableOrderTabs.reduce(
-    (total, tab) => total + newOrdersCount[(tab.value === "Internos" ? "internos" : tab.value.toLowerCase()) as OrderCounterKey],
+    (total, tab) => total + newOrdersCount[tab.value.toLowerCase() as OrderCounterKey],
     0,
   );
   const selectedPayment = getPreferredOrderPayment(selected, selectedPayments);
@@ -2081,7 +2050,7 @@ export function OrdersScreen() {
     selectedIsDelivery && selectedStatusLabel === "Pronto";
   const adminCannotConfirmDelivery =
     selectedIsDelivery && selectedStatusLabel === "Saiu para Entrega";
-  const selectedCanProceed = selectedIsPaid || selectedIsFiado || selectedIsPendingCash || selected?.origem_checkout === "admin_dashboard";
+  const selectedCanProceed = selectedIsPaid || selectedIsFiado || selectedIsPendingCash;
   const selectedCanAdminAddItems = Boolean(selected?.id) && !selectedBlocksAdminAdjustment;
   const selectedCanChangePendingPayment =
     Boolean(selected?.id) &&
@@ -2471,7 +2440,7 @@ export function OrdersScreen() {
             <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Tipos de pedido">
               {availableOrderTabs.map((tab) => {
                 const active = typeFilter === tab.value;
-                const type = (tab.value === "Internos" ? "internos" : tab.value.toLowerCase()) as OrderCounterKey;
+                const type = tab.value.toLowerCase() as OrderCounterKey;
                 const count = newOrdersCount[type];
                 return (
                   <button
