@@ -238,8 +238,8 @@ export function FiadosScreen() {
       <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         {[
           ["Saldo aberto", dashboard?.saldo_aberto_total],
-          ["Fiado no periodo", dashboard?.valor_fiado_periodo],
-          ["Recebido no periodo", dashboard?.recebido_periodo],
+          ["Fiado no período", dashboard?.valor_fiado_periodo],
+          ["Recebido no período", dashboard?.recebido_periodo],
           ["Pessoas com saldo", dashboard?.pessoas_com_saldo, false],
           ["Pedidos abertos", dashboard?.pedidos_abertos, false],
         ].map(([label, value, currency = true]) => (
@@ -269,7 +269,7 @@ export function FiadosScreen() {
         </select>
         <label className="flex h-10 items-center gap-2 rounded-lg border px-3 text-sm font-semibold text-slate-700">
           <input type="checkbox" checked={filters.pagou_no_periodo} onChange={(event) => setFilters((current) => ({ ...current, pagou_no_periodo: event.target.checked, page: 1 }))} />
-          Pagou no periodo
+          Pagou no período
         </label>
       </div>
 
@@ -284,8 +284,8 @@ export function FiadosScreen() {
                 <tr>
                   <th className="px-4 py-3">Pessoa</th>
                   <th className="px-4 py-3 text-right">Saldo</th>
-                  <th className="px-4 py-3 text-right">Fiado periodo</th>
-                  <th className="px-4 py-3 text-right">Recebido periodo</th>
+                  <th className="px-4 py-3 text-right">Fiado período</th>
+                  <th className="px-4 py-3 text-right">Recebido período</th>
                   <th className="px-4 py-3 text-right">Pedidos</th>
                 </tr>
               </thead>
