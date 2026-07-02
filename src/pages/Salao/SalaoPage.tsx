@@ -248,6 +248,11 @@ export function SalaoPage() {
     "mesa" | "participantes" | "pedidos"
   >("mesa");
   const [productSearch, setProductSearch] = useState("");
+  const [productSearchResults, setProductSearchResults] = useState<any[] | null>(
+    null,
+  );
+  const [productSearchTotal, setProductSearchTotal] = useState(0);
+  const [searchingProducts, setSearchingProducts] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState("");
   const [configuringProduct, setConfiguringProduct] = useState<{
     product: any;
@@ -373,6 +378,53 @@ export function SalaoPage() {
   useEffect(() => {
     void load({ includeProducts: true });
   }, [load]);
+
+  useEffect(() => {
+    if (!user?.loja_id) return;
+
+    const search = productSearch.trim();
+    if (!search) {
+      setProductSearchResults(null);
+      setProductSearchTotal(0);
+      setSearchingProducts(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSearchingProducts(true);
+    const timeoutId = window.setTimeout(() => {
+      productsService
+        .getStoreProductsPage({
+          search,
+          page: 1,
+          perPage: 100,
+          activeOnly: true,
+        })
+        .then((result) => {
+          if (cancelled) return;
+          setProductSearchResults(result.products || []);
+          setProductSearchTotal(result.total || 0);
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          setProductSearchResults([]);
+          setProductSearchTotal(0);
+          showSystemNotice(
+            error?.response?.data?.message ||
+              error?.message ||
+              "Nao foi possivel buscar produtos.",
+          );
+        })
+        .finally(() => {
+          if (!cancelled) setSearchingProducts(false);
+        });
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [productSearch, user?.loja_id]);
 
   useEffect(() => {
     const enableSound = () => {
@@ -944,12 +996,17 @@ export function SalaoPage() {
     printWindow.document.close();
   };
 
-  const filteredProducts = products.filter((product) =>
-    productName(product)
-      .toLowerCase()
-      .includes(productSearch.trim().toLowerCase()),
-  );
-  const selectedProduct = products.find(
+  const productList = productSearch.trim()
+    ? productSearchResults || []
+    : products;
+  const productPool = useMemo(() => {
+    const byId = new Map<string, any>();
+    for (const product of products) byId.set(product.id, product);
+    for (const product of productSearchResults || [])
+      byId.set(product.id, product);
+    return Array.from(byId.values());
+  }, [products, productSearchResults]);
+  const selectedProduct = productPool.find(
     (product) => product.id === selectedProductId,
   );
   const mesasById = useMemo(
@@ -1569,7 +1626,13 @@ export function SalaoPage() {
                       </div>
 
                       <div className="mt-3 max-h-52 space-y-2 overflow-auto sm:max-h-64">
-                        {filteredProducts.map((product) => (
+                        {searchingProducts ? (
+                          <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-500">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Buscando produtos...
+                          </div>
+                        ) : productList.length > 0 ? (
+                          productList.map((product) => (
                           <button
                             key={product.id}
                             onClick={() =>
@@ -1597,8 +1660,21 @@ export function SalaoPage() {
                               R$ {formatMoney(productPrice(product))}
                             </div>
                           </button>
-                        ))}
+                          ))
+                        ) : (
+                          <div className="rounded-lg border border-gray-200 bg-white p-3 text-center text-sm text-gray-500">
+                            Nenhum produto encontrado.
+                          </div>
+                        )}
                       </div>
+                      {productSearch.trim() &&
+                        !searchingProducts &&
+                        productSearchTotal > productList.length && (
+                          <div className="mt-2 text-xs text-gray-500">
+                            Mostrando {productList.length} de{" "}
+                            {productSearchTotal} produtos encontrados.
+                          </div>
+                        )}
 
                       {configurationLoading && (
                         <div className="mt-3 flex items-center gap-2 text-sm text-gray-500">

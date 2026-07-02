@@ -85,6 +85,33 @@ const STEPS = [
   { id: 4, label: "Pagamento", icon: CreditCard },
 ];
 
+const EMPTY_ADDRESS = {
+  rua: "", numero: "", bairro: "", cidade: "", estado: "", cep: "", complemento: "", ponto_referencia: "",
+};
+
+const normalizeSavedAddress = (savedAddress: any) => {
+  if (!savedAddress) return { ...EMPTY_ADDRESS };
+  return {
+    rua: savedAddress.rua || "",
+    numero: savedAddress.numero || "",
+    bairro: savedAddress.bairro || "",
+    cidade: savedAddress.cidade || "",
+    estado: savedAddress.estado || "",
+    cep: savedAddress.cep || "",
+    complemento: savedAddress.complemento || "",
+    ponto_referencia: savedAddress.ponto_referencia || "",
+  };
+};
+
+const formatSavedAddress = (savedAddress: any) => {
+  if (!savedAddress) return "";
+  return [
+    [savedAddress.rua, savedAddress.numero].filter(Boolean).join(", "),
+    savedAddress.bairro,
+    savedAddress.cidade,
+  ].filter(Boolean).join(" - ");
+};
+
 const getLoggedUser = () => {
   try {
     const userJson = localStorage.getItem("user");
@@ -119,9 +146,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
   const [selectedOptions, setSelectedOptions] = useState<any[]>([]);
   const [optionSearches, setOptionSearches] = useState<Record<string, string>>({});
   const [configurationNotes, setConfigurationNotes] = useState("");
-  const [address, setAddress] = useState<any>({
-    rua: "", numero: "", bairro: "", cidade: "", estado: "", cep: "", complemento: "", ponto_referencia: "",
-  });
+  const [address, setAddress] = useState<any>({ ...EMPTY_ADDRESS });
   const [pickupAtStore, setPickupAtStore] = useState(false);
   const [store, setStore] = useState<any>(null);
   const [themePrimary, setThemePrimary] = useState(primaryColor);
@@ -280,7 +305,12 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
   };
 
   const chooseContact = (selected: any) => {
-    setContact(selected); setQuick({ nome: selected.nome, telefone: selected.telefone }); setError(""); setStep(2);
+    setContact(selected);
+    setQuick({ nome: selected.nome, telefone: selected.telefone });
+    setAddress(normalizeSavedAddress(selected.ultimo_endereco));
+    setPickupAtStore(false);
+    setError("");
+    setStep(2);
   };
   const createQuickContact = () => {
     if (!quick.nome.trim() || quick.telefone.replace(/\D/g, "").length < 8) {
@@ -529,9 +559,14 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
                   <div className="mt-3 overflow-hidden rounded-xl border">
                     {contacts.length ? contacts.map((item) => (
                       <button key={item.id} onClick={() => chooseContact(item)} className="flex w-full items-center justify-between gap-3 border-b bg-white p-3 text-left last:border-0 hover:bg-slate-50">
-                        <span>
+                        <span className="min-w-0">
                           <b className="block text-slate-800">{item.nome}</b>
                           <small className="text-slate-500">{item.telefone}</small>
+                          {item.ultimo_endereco && (
+                            <small className="mt-1 block truncate text-slate-500">
+                              Ultimo endereco salvo: {formatSavedAddress(item.ultimo_endereco)}
+                            </small>
+                          )}
                           {Number(item.fiado_saldo_aberto || 0) > 0 && (
                             <small className="mt-1 block font-semibold text-amber-700">
                               Fiado em aberto: {money(item.fiado_saldo_aberto)} em {Number(item.fiado_pedidos_abertos || 0)} pedido{Number(item.fiado_pedidos_abertos || 0) === 1 ? "" : "s"}
