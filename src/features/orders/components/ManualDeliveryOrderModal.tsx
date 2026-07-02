@@ -121,6 +121,27 @@ const getLoggedUser = () => {
   }
 };
 
+const phoneSearchPattern = /(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?(?:9?\d{4})[-.\s]?\d{4}/;
+const onlyDigits = (value: string) => String(value || "").replace(/\D/g, "");
+const compactText = (value: string) => String(value || "").replace(/\s+/g, " ").trim();
+const inferQuickContactFromQuery = (query: string) => {
+  const value = compactText(query);
+  if (!value) return { nome: "", telefone: "" };
+
+  const phoneMatch = value.match(phoneSearchPattern);
+  const phoneText = phoneMatch?.[0]?.trim() || "";
+  const fallbackDigits = onlyDigits(value);
+  const hasPhone = onlyDigits(phoneText || value).length >= 8;
+
+  if (!hasPhone) return { nome: value, telefone: "" };
+
+  const nome = phoneMatch ? compactText(value.replace(phoneMatch[0], " ")) : "";
+  return {
+    nome,
+    telefone: phoneText || fallbackDigits || value,
+  };
+};
+
 export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fiadoEnabled = false, onClose, onCreated }: {
   lojaId: string; primaryColor?: string; fiadoEnabled?: boolean; onClose: () => void; onCreated: () => void;
 }) {
@@ -154,12 +175,16 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
   const [payment, setPayment] = useState("dinheiro");
   const [semTroco, setSemTroco] = useState(true);
   const [trocoPara, setTrocoPara] = useState("");
+  const quickNameRef = useRef<HTMLInputElement | null>(null);
+  const quickPhoneRef = useRef<HTMLInputElement | null>(null);
   const firstOptionSearchRef = useRef<HTMLInputElement | null>(null);
   const loggedUser = useMemo(() => getLoggedUser(), []);
   const primary = themePrimary || primaryColor || "#2563eb";
   const primarySoft = hexToRgba(primary, 0.1);
   const primaryBorder = hexToRgba(primary, 0.35);
   const buttonStyle = { backgroundColor: primary };
+  const inferredQuickContact = useMemo(() => inferQuickContactFromQuery(contactQuery), [contactQuery]);
+  const hasInferredQuickContact = Boolean(inferredQuickContact.nome || inferredQuickContact.telefone);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedProductSearch(productSearch.trim()), 300);
@@ -311,6 +336,24 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
     setPickupAtStore(false);
     setError("");
     setStep(2);
+  };
+  const mergeQuickContactDraft = (draft = inferredQuickContact) => {
+    if (!draft.nome && !draft.telefone) return;
+    setQuick((current) => ({
+      nome: draft.nome || current.nome,
+      telefone: draft.telefone || current.telefone,
+    }));
+  };
+  const handleContactQueryChange = (value: string) => {
+    setContactQuery(value);
+    mergeQuickContactDraft(inferQuickContactFromQuery(value));
+  };
+  const useTypedContactDraft = () => {
+    mergeQuickContactDraft();
+    window.setTimeout(() => {
+      if (!inferredQuickContact.nome) quickNameRef.current?.focus();
+      else if (!inferredQuickContact.telefone) quickPhoneRef.current?.focus();
+    }, 0);
   };
   const createQuickContact = () => {
     if (!quick.nome.trim() || quick.telefone.replace(/\D/g, "").length < 8) {
@@ -548,7 +591,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
                   <input
                     autoFocus
                     value={contactQuery}
-                    onChange={(event) => setContactQuery(event.target.value)}
+                    onChange={(event) => handleContactQueryChange(event.target.value)}
                     placeholder="Ex.: Maria ou (81) 99999-9999"
                     className="w-full rounded-xl border py-2.5 pl-10 pr-10 outline-none"
                     style={{ borderColor: contactQuery ? primaryBorder : undefined }}
@@ -575,7 +618,22 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
                         </span>
                         <ArrowRight className="h-4 w-4 shrink-0" style={{ color: primary }} />
                       </button>
-                    )) : !contactLoading && <p className="bg-white p-4 text-center text-sm text-slate-500">Nenhum contato encontrado.</p>}
+                    )) : !contactLoading && (
+                      <div className="bg-white p-4 text-center text-sm text-slate-500">
+                        <p>Nenhum contato encontrado.</p>
+                        {hasInferredQuickContact && (
+                          <button
+                            type="button"
+                            onClick={useTypedContactDraft}
+                            className="mt-3 inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-white"
+                            style={buttonStyle}
+                          >
+                            <Plus className="h-4 w-4" />
+                            Usar dado digitado
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </section>
@@ -586,11 +644,11 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="text-sm font-medium text-slate-700">
                     Nome
-                    <input value={quick.nome} onChange={(event) => setQuick({ ...quick, nome: event.target.value })} className="mt-1 w-full rounded-lg border p-2.5" placeholder="Nome do cliente" />
+                    <input ref={quickNameRef} value={quick.nome} onChange={(event) => setQuick({ ...quick, nome: event.target.value })} className="mt-1 w-full rounded-lg border p-2.5" placeholder="Nome do cliente" />
                   </label>
                   <label className="text-sm font-medium text-slate-700">
                     Telefone
-                    <input value={quick.telefone} onChange={(event) => setQuick({ ...quick, telefone: event.target.value })} className="mt-1 w-full rounded-lg border p-2.5" placeholder="(00) 00000-0000" />
+                    <input ref={quickPhoneRef} value={quick.telefone} onChange={(event) => setQuick({ ...quick, telefone: event.target.value })} className="mt-1 w-full rounded-lg border p-2.5" placeholder="(00) 00000-0000" />
                   </label>
                 </div>
                 <button onClick={createQuickContact} className="mt-4 rounded-lg px-4 py-2.5 font-semibold text-white" style={buttonStyle}>
