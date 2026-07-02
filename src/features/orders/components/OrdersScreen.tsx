@@ -2031,15 +2031,26 @@ export function OrdersScreen() {
     selectedIsDelivery && selectedStatusLabel === "Pronto";
   const adminCannotConfirmDelivery =
     selectedIsDelivery && selectedStatusLabel === "Saiu para Entrega";
-  const selectedCanProceed = selectedIsPaid;
+  const selectedIsAdminDashboardOrder =
+    normalizePaymentText(
+      selected?.origem_checkout ||
+        selected?.origemCheckout ||
+        selected?.checkout_origin ||
+        selected?.checkoutOrigin,
+    ) === "admin_dashboard";
+  const selectedCanProceed =
+    selectedIsPaid ||
+    selectedIsAdminDashboardOrder ||
+    (selectedIsPendingCash && !selectedIsFiado);
+  const selectedPaymentKeepsConfirmationPending =
+    !selectedIsPaid && (selectedIsPendingCash || selectedIsAdminDashboardOrder);
   const selectedCanAdminAddItems = Boolean(selected?.id) && !selectedBlocksAdminAdjustment;
   const selectedCanChangePendingPayment =
     Boolean(selected?.id) &&
     !selectedBlocksAdminAdjustment &&
     !selectedIsPaid &&
     !selectedIsFiado;
-  const selectedPickupNeedsCashConfirmation =
-    selectedIsPickup && selectedIsPendingCash && selectedStatusLabel === "Pronto";
+  const selectedPickupNeedsCashConfirmation = false;
   const selectedCanTakeSalaoToTable =
     Boolean(selected) &&
     canTakeSalaoOrderToTable(selected) &&
@@ -3897,8 +3908,12 @@ export function OrdersScreen() {
                   const currentFlowIndex =
                     visibleStatusFlow.indexOf(currentDisplay);
                   const curIdx = currentFlowIndex >= 0 ? currentFlowIndex : 0;
-                  const done = isFailedStep ? false : i <= curIdx;
-                  const connectorDone = i < curIdx;
+                  const isPaymentPendingConfirmationStep =
+                    s === "Confirmado" && selectedPaymentKeepsConfirmationPending;
+                  const done =
+                    isFailedStep || isPaymentPendingConfirmationStep ? false : i <= curIdx;
+                  const connectorDone =
+                    i < curIdx && !isPaymentPendingConfirmationStep;
                   const connectorFailed =
                     selected.status === "nao_entregue" &&
                     visibleStatusFlow[i + 1] === "Não entregue";
@@ -3913,6 +3928,8 @@ export function OrdersScreen() {
                           style={{
                             backgroundColor: isFailedStep
                               ? "#dc2626"
+                              : isPaymentPendingConfirmationStep
+                                ? "#f59e0b"
                               : done
                                 ? PRIMARY
                                 : "#e5e7eb",
@@ -3922,6 +3939,8 @@ export function OrdersScreen() {
                             <CircleX className="w-3.5 h-3.5 text-white" />
                           ) : done ? (
                             <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                          ) : isPaymentPendingConfirmationStep ? (
+                            <div className="w-2 h-2 rounded-full bg-white" />
                           ) : (
                             <div className="w-2 h-2 rounded-full bg-gray-400" />
                           )}
