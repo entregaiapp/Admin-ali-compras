@@ -6,6 +6,7 @@ import {
   enableAdminPush,
   fetchCampaigns,
   fetchNotifications,
+  readAllNotifications,
   readNotification,
   type CampaignAudience,
   type InternalNotification,
@@ -94,6 +95,7 @@ export function NotificationsScreen() {
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [loadingCampaigns, setLoadingCampaigns] = useState(false);
   const [loadingBanners, setLoadingBanners] = useState(false);
+  const [markingAllRead, setMarkingAllRead] = useState(false);
   const [campaignsLoaded, setCampaignsLoaded] = useState(false);
   const [bannersLoaded, setBannersLoaded] = useState(false);
   const [feedback, setFeedback] = useState('');
@@ -183,11 +185,17 @@ export function NotificationsScreen() {
   };
 
   const markAllRead = async () => {
-    const updates = await Promise.all(
-      notifications.filter((item) => !item.read_at).map((item) => readNotification(item.id))
-    );
-    const map = new Map(updates.map((item) => [item.id, item]));
-    setNotificationItems(notifications.map((item) => map.get(item.id) || item));
+    if (markingAllRead) return;
+    setMarkingAllRead(true);
+    try {
+      const updates = await readAllNotifications();
+      const map = new Map(updates.map((item) => [item.id, item]));
+      setNotificationItems(notifications.map((item) => map.get(item.id) || item));
+    } catch (error: any) {
+      setFeedback(error?.response?.data?.message || 'Não foi possível marcar as notificações como lidas.');
+    } finally {
+      setMarkingAllRead(false);
+    }
   };
 
   const activatePush = async () => {
@@ -284,7 +292,12 @@ export function NotificationsScreen() {
         <section>
           <div className="flex justify-end mb-3">
             {unread > 0 && (
-              <button onClick={markAllRead} className="flex items-center gap-1.5 text-sm" style={{ color: PRIMARY }}>
+              <button
+                onClick={markAllRead}
+                disabled={markingAllRead}
+                className="flex items-center gap-1.5 text-sm disabled:opacity-60"
+                style={{ color: PRIMARY }}
+              >
                 <CheckCheck className="w-4 h-4" /> Marcar todas como lidas
               </button>
             )}

@@ -119,6 +119,11 @@ export async function readNotification(id: string) {
   return response.data.data;
 }
 
+export async function readAllNotifications() {
+  const response = await api.patch<{ data: InternalNotification[] }>('/notifications/read');
+  return response.data.data || [];
+}
+
 export async function fetchCampaigns() {
   const response = await api.get<{ data: PushCampaign[] }>('/tenant/notifications/campaigns');
   return response.data.data || [];
