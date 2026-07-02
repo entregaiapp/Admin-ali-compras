@@ -64,6 +64,16 @@ const formatDateTime = (value?: string | null) => {
 
 const csvCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
 
+const reportOriginLabel = (value?: string | null) => {
+  const labels: Record<string, string> = {
+    cliente: 'Cliente',
+    manual: 'Manual',
+    fiado: 'Fiado',
+    salao: 'Salao',
+  };
+  return labels[String(value || '').toLowerCase()] || String(value || 'Indefinido');
+};
+
 const buildDeliveryPaymentReportCsv = (report: DeliveryPaymentBillingReport) => {
   const rows = [
     ['Relatório', report.loja?.nome || 'Estabelecimento'],
@@ -72,14 +82,19 @@ const buildDeliveryPaymentReportCsv = (report: DeliveryPaymentBillingReport) => 
     ['Valor final da cobrança', report.resumo.valor_final_cobranca],
     ['Pedidos de clientes', report.resumo.quantidade_pedidos_clientes],
     ['Pedidos manuais', report.resumo.quantidade_pedidos_manuais],
+    ['Pedidos fiado', report.resumo.quantidade_pedidos_fiados || 0],
+    ['Pedidos salao', report.resumo.quantidade_pedidos_salao || 0],
     [],
-    ['Número', 'Data', 'Origem', 'Status', 'Forma de pagamento', 'Total do pedido', 'Valor de cobrança'],
+    ['Número', 'Data', 'Origem', 'Categoria', 'Status', 'Forma de pagamento', 'Fiado', 'Taxa registrada', 'Total do pedido', 'Valor de cobrança'],
     ...report.pedidos.map((pedido) => [
       pedido.numero_pedido || pedido.id,
       formatDate(pedido.data),
-      pedido.origem_relatorio === 'manual' ? 'Manual' : 'Cliente',
+      reportOriginLabel(pedido.origem_relatorio),
+      pedido.categoria_cobranca_label || pedido.categoria_cobranca || '',
       pedido.status,
       pedido.forma_pagamento,
+      pedido.pedido_fiado ? 'sim' : 'nao',
+      pedido.aplicado_taxa ? 'sim' : 'nao',
       pedido.total,
       pedido.valor_cobranca
     ]),
@@ -369,6 +384,7 @@ export function ReportsScreen() {
                         <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-gray-500">
                           <span className="rounded-md bg-gray-100 px-2 py-1">{report.resumo.quantidade_pedidos_clientes} clientes</span>
                           <span className="rounded-md bg-gray-100 px-2 py-1">{report.resumo.quantidade_pedidos_manuais} manuais</span>
+                          <span className="rounded-md bg-gray-100 px-2 py-1">{report.resumo.quantidade_pedidos_fiados || 0} fiado</span>
                         </div>
                       </button>
                     );
@@ -409,11 +425,12 @@ export function ReportsScreen() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
                     {[
                       { label: 'Valor da cobrança', value: formatCurrency(selectedGeneratedReport.resumo.valor_final_cobranca), icon: DollarSign, color: PRIMARY },
                       { label: 'Pedidos de clientes', value: String(selectedGeneratedReport.resumo.quantidade_pedidos_clientes || 0), icon: ShoppingCart, color: '#2563eb' },
                       { label: 'Pedidos manuais', value: String(selectedGeneratedReport.resumo.quantidade_pedidos_manuais || 0), icon: FileText, color: '#7c3aed' },
+                      { label: 'Pedidos fiado', value: String(selectedGeneratedReport.resumo.quantidade_pedidos_fiados || 0), icon: FileText, color: '#0f766e' },
                       { label: 'Valor bruto total', value: formatCurrency(selectedGeneratedReport.resumo.valor_bruto_total), icon: BarChart3, color: '#16a34a' },
                     ].map((item) => (
                       <div key={item.label} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
@@ -435,6 +452,8 @@ export function ReportsScreen() {
                             <th className="px-4 py-3 text-left">Data</th>
                             <th className="px-4 py-3 text-right">Clientes</th>
                             <th className="px-4 py-3 text-right">Manuais</th>
+                            <th className="px-4 py-3 text-right">Fiados</th>
+                            <th className="px-4 py-3 text-right">Salao</th>
                             <th className="px-4 py-3 text-right">Valor bruto</th>
                             <th className="px-4 py-3 text-right">A receber</th>
                           </tr>
@@ -445,6 +464,8 @@ export function ReportsScreen() {
                               <td className="px-4 py-3 font-medium text-gray-800">{formatDate(day.data)}</td>
                               <td className="px-4 py-3 text-right text-gray-600">{day.quantidade_pedidos_clientes}</td>
                               <td className="px-4 py-3 text-right text-gray-600">{day.quantidade_pedidos_manuais}</td>
+                              <td className="px-4 py-3 text-right text-gray-600">{day.quantidade_pedidos_fiados || 0}</td>
+                              <td className="px-4 py-3 text-right text-gray-600">{day.quantidade_pedidos_salao || 0}</td>
                               <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(day.valor_bruto_total)}</td>
                               <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatCurrency(day.valor_a_receber)}</td>
                             </tr>
@@ -466,6 +487,8 @@ export function ReportsScreen() {
                             <th className="px-4 py-3 text-left">Pedido</th>
                             <th className="px-4 py-3 text-left">Data</th>
                             <th className="px-4 py-3 text-left">Origem</th>
+                            <th className="px-4 py-3 text-left">Categoria</th>
+                            <th className="px-4 py-3 text-left">Fiado</th>
                             <th className="px-4 py-3 text-left">Status</th>
                             <th className="px-4 py-3 text-right">Total</th>
                             <th className="px-4 py-3 text-right">Cobrança</th>
@@ -478,9 +501,11 @@ export function ReportsScreen() {
                               <td className="px-4 py-3 text-gray-600">{formatDate(pedido.data)}</td>
                               <td className="px-4 py-3">
                                 <span className={`rounded-full px-2 py-1 text-xs font-medium ${pedido.origem_relatorio === 'manual' ? 'bg-purple-50 text-purple-700' : 'bg-green-50 text-green-700'}`}>
-                                  {pedido.origem_relatorio === 'manual' ? 'Manual' : 'Cliente'}
+                                  {reportOriginLabel(pedido.origem_relatorio)}
                                 </span>
                               </td>
+                              <td className="px-4 py-3 text-gray-600">{pedido.categoria_cobranca_label || pedido.categoria_cobranca || '-'}</td>
+                              <td className="px-4 py-3 text-gray-600">{pedido.pedido_fiado ? 'Sim' : 'Nao'}</td>
                               <td className="px-4 py-3 text-gray-600">{pedido.status}</td>
                               <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(pedido.total)}</td>
                               <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatCurrency(pedido.valor_cobranca)}</td>
