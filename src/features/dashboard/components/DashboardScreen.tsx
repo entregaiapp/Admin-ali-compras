@@ -342,11 +342,15 @@ export function DashboardScreen() {
     a_receber_fiado: toNumber(fiadoResumo.saldo_aberto_total),
     a_receber_total: toNumber(paymentSummary.valor_previsto_receber) + toNumber(fiadoResumo.saldo_aberto_total),
     fiado_criado_periodo: toNumber(fiadoResumo.valor_fiado_periodo),
+    fiado_taxa_aplicada_periodo: toNumber(fiadoResumo.valor_taxa_aplicada_periodo),
+    fiado_pedidos_com_taxa_periodo: Number(fiadoResumo.pedidos_com_taxa_periodo || 0),
     fiado_pessoas_com_saldo: Number(fiadoResumo.pessoas_com_saldo || 0),
     fiado_pedidos_abertos: Number(fiadoResumo.pedidos_abertos || 0),
   };
   const receivedTotal = toNumber(financeSummary.recebido_total);
   const pendingTotal = toNumber(financeSummary.a_receber_total);
+  const fiadoTaxaAplicadaPeriodo = toNumber(financeSummary.fiado_taxa_aplicada_periodo ?? fiadoResumo.valor_taxa_aplicada_periodo);
+  const fiadoPedidosComTaxaPeriodo = Number(financeSummary.fiado_pedidos_com_taxa_periodo ?? fiadoResumo.pedidos_com_taxa_periodo ?? 0);
 
   // Fallbacks if data is not present
   const statCards = [
@@ -463,10 +467,11 @@ export function DashboardScreen() {
       </div>
       </TooltipProvider>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mt-4">
         {[
           { label: 'Pedidos recebidos', value: formatCurrency(financeSummary.recebido_pedidos), sub: `${paymentSummary.pagamentos_recebidos || 0} pagamento(s)`, icon: DollarSign, color: '#16a34a', bg: '#f0fdf4', tooltip: 'Somente pagamentos recebidos diretamente nos pedidos, sem contar baixas de fiado.' },
           { label: 'Fiado recebido', value: formatCurrency(financeSummary.recebido_fiado), sub: `${fiadoByMethod.reduce((sum: number, item: any) => sum + Number(item.quantidade || 0), 0)} baixa(s)`, icon: CreditCard, color: '#7c3aed', bg: '#f5f3ff', tooltip: 'Valor pago por clientes que tinham conta fiado. Entra no caixa no dia do recebimento, nao no dia do pedido.' },
+          { label: 'Taxa fiado aplicada', value: formatCurrency(fiadoTaxaAplicadaPeriodo), sub: `${fiadoPedidosComTaxaPeriodo} pedido(s)`, icon: DollarSign, color: '#0f766e', bg: '#ccfbf1', tooltip: 'Valor estimado da taxa de 2% embutida em pedidos fiado para nao colaboradores no periodo.' },
           { label: 'Pedidos a receber', value: formatCurrency(financeSummary.a_receber_pedidos), sub: `${paymentSummary.pagamentos_previstos || 0} pendente(s)`, icon: Clock, color: '#d97706', bg: '#fffbeb', tooltip: 'Pagamentos comuns ainda pendentes, como PIX/cartao em processamento ou cobranca na entrega ainda nao confirmada.' },
           { label: 'Fiado em aberto', value: formatCurrency(financeSummary.a_receber_fiado), sub: `${financeSummary.fiado_pessoas_com_saldo || 0} pessoa(s)`, icon: Users, color: '#0891b2', bg: '#ecfeff', tooltip: 'Saldo aberto das contas fiado. E valor a receber, mas ainda nao e faturamento recebido.' },
         ].map(card => (
