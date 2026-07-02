@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import type { MouseEvent } from "react";
 import { useSearchParams } from "react-router";
 import {
@@ -375,8 +375,6 @@ export function OrdersScreen() {
   const [viewMode, setViewMode] = useState<"lista" | "bairros" | "arquivados">(
     "lista",
   );
-  const [viewTransitioning, setViewTransitioning] = useState(false);
-  const viewTransitionTimeoutRef = useRef<number | null>(null);
   const [expandedBairros, setExpandedBairros] = useState<
     Record<string, boolean>
   >({});
@@ -558,15 +556,6 @@ export function OrdersScreen() {
   useEffect(() => {
     setSelectedOrderIds([]);
   }, [search, statusFilter, typeFilter, archivedTypeFilter, bairroFilter, viewMode]);
-
-  useEffect(
-    () => () => {
-      if (viewTransitionTimeoutRef.current !== null) {
-        window.clearTimeout(viewTransitionTimeoutRef.current);
-      }
-    },
-    [],
-  );
 
   const fetchAuxiliaryData = async () => {
     try {
@@ -809,16 +798,7 @@ export function OrdersScreen() {
 
   const changeViewMode = (nextMode: "lista" | "bairros" | "arquivados") => {
     if (nextMode === viewMode) return;
-
-    if (viewTransitionTimeoutRef.current !== null) {
-      window.clearTimeout(viewTransitionTimeoutRef.current);
-    }
-    setViewTransitioning(true);
-    viewTransitionTimeoutRef.current = window.setTimeout(() => {
-      setViewMode(nextMode);
-      setViewTransitioning(false);
-      viewTransitionTimeoutRef.current = null;
-    }, 90);
+    setViewMode(nextMode);
   };
 
   const handleNewOrdersButton = () => {
@@ -2375,17 +2355,6 @@ export function OrdersScreen() {
     }
   };
 
-  if (loading && orders.length === 0) {
-    return (
-      <div className="p-5 flex-1 h-full flex items-center justify-center">
-        <div
-          className="w-8 h-8 border-4 border-gray-200 border-t-primary rounded-full animate-spin"
-          style={{ borderColor: `${PRIMARY}40`, borderTopColor: PRIMARY }}
-        ></div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex h-full">
       {manualOrderOpen && canCreateManualOrder && user?.loja_id && (
@@ -2411,7 +2380,7 @@ export function OrdersScreen() {
       )}
       {/* Left panel: list or bairros */}
       <div
-        className={`flex flex-col transition-opacity duration-100 ${viewTransitioning ? "opacity-0" : "opacity-100"} ${selected ? "hidden lg:flex lg:w-1/2 xl:w-3/5" : "flex-1"}`}
+        className={`flex flex-col ${selected ? "hidden lg:flex lg:w-1/2 xl:w-3/5" : "flex-1"}`}
       >
         <div className="border-b border-gray-200 bg-white px-4 pt-2">
           {viewMode === "arquivados" ? (
@@ -2861,6 +2830,15 @@ export function OrdersScreen() {
             )}
 
             <div className="flex-1 overflow-y-auto bg-slate-50/50 p-4 space-y-4">
+              {loading && orders.length === 0 && (
+                <div className="flex min-h-[320px] flex-col items-center justify-center text-gray-400">
+                  <div
+                    className="mb-3 h-8 w-8 animate-spin rounded-full border-4 border-gray-200"
+                    style={{ borderColor: `${PRIMARY}40`, borderTopColor: PRIMARY }}
+                  />
+                  <p className="text-sm">Carregando pedidos...</p>
+                </div>
+              )}
               {activeListGroup && (
                 <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
                   <div className="divide-y divide-gray-100">
@@ -3172,7 +3150,16 @@ export function OrdersScreen() {
         {/* ── POR BAIRRO VIEW ────────────────────────── */}
         {viewMode === "bairros" && (
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {sortedBairros.length === 0 && (
+            {loading && orders.length === 0 && (
+              <div className="flex min-h-[320px] flex-col items-center justify-center text-gray-400">
+                <div
+                  className="mb-3 h-8 w-8 animate-spin rounded-full border-4 border-gray-200"
+                  style={{ borderColor: `${PRIMARY}40`, borderTopColor: PRIMARY }}
+                />
+                <p className="text-sm">Carregando pedidos...</p>
+              </div>
+            )}
+            {sortedBairros.length === 0 && !loading && (
               <div className="flex flex-col items-center justify-center py-16 text-gray-400">
                 <TruckIcon className="w-10 h-10 mb-3 opacity-40" />
                 <p className="text-sm">Nenhum pedido de entrega encontrado</p>
