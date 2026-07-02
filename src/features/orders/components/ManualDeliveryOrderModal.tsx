@@ -10,6 +10,26 @@ const list = (response: any) => {
   const data = unwrap(response);
   return Array.isArray(data) ? data : data?.data || [];
 };
+const PRODUCT_CATALOG_PAGE_SIZE = 100;
+const paginatedList = (response: any) => {
+  const rawData = response?.data;
+  const data = Array.isArray(rawData?.data)
+    ? rawData
+    : Array.isArray(rawData?.data?.data)
+      ? rawData.data
+      : unwrap(response);
+  const products = Array.isArray(data) ? data : data?.data || [];
+  return {
+    products,
+    total: Number(data?.total ?? products.length),
+    page: Number(data?.page ?? 1),
+    totalPages: Math.max(1, Number(data?.total_pages ?? 1)),
+  };
+};
+const mergeUniqueProducts = (current: any[], next: any[]) => {
+  const known = new Set(current.map((product) => product.id));
+  return [...current, ...next.filter((product) => !known.has(product.id))];
+};
 const apiError = (error: any) =>
   error?.response?.data?.error?.message || error?.response?.data?.message || "Não foi possível concluir a operação.";
 const money = (value: any) => Number(value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -27,9 +47,16 @@ const hexToRgba = (hex: string, alpha: number) => {
 };
 const effectivePrice = (item: any) => {
   if (item?.preco_app_taxa_ativa) {
-    return Number(item?.preco_promocional_app ?? item?.preco_app ?? item?.preco_promocional ?? item?.preco ?? 0);
+    return Number(item?.preco_promocional_app ?? item?.preco_app ?? item?.preco_a_partir_de ?? item?.preco_promocional ?? item?.preco ?? 0);
   }
-  return Number(item?.preco_promocional ?? item?.preco ?? 0);
+  return Number(item?.preco_a_partir_de ?? item?.preco_promocional ?? item?.preco ?? 0);
+};
+const productPriceLabel = (product: any) => {
+  const price = effectivePrice(product);
+  if (!Number.isFinite(price) || price <= 0) {
+    return product?.modo_compra === "configuravel" ? "Preco na configuracao" : "Sem preco";
+  }
+  return product?.modo_compra === "configuravel" ? `A partir de ${money(price)}` : money(price);
 };
 const isPromotionActive = (promotional: any, endsAt: any) =>
   promotional != null && (!endsAt || new Date(endsAt).getTime() >= Date.now());
@@ -80,7 +107,12 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
   const [quick, setQuick] = useState({ nome: "", telefone: "" });
   const [products, setProducts] = useState<any[]>([]);
   const [productSearch, setProductSearch] = useState("");
+  const [debouncedProductSearch, setDebouncedProductSearch] = useState("");
   const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogLoadingMore, setCatalogLoadingMore] = useState(false);
+  const [catalogPage, setCatalogPage] = useState(1);
+  const [catalogTotal, setCatalogTotal] = useState(0);
+  const [catalogTotalPages, setCatalogTotalPages] = useState(1);
   const [lines, setLines] = useState<any[]>([]);
   const [configuring, setConfiguring] = useState<any>(null);
   const [selectedVariation, setSelectedVariation] = useState("");
@@ -105,12 +137,37 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
   const buttonStyle = { backgroundColor: primary };
 
   useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedProductSearch(productSearch.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [productSearch]);
+
+  useEffect(() => {
+    let cancelled = false;
     setCatalogLoading(true);
-    api.get("/produtos_loja", { params: { ativo: true, per_page: 100 } })
-      .then((response) => setProducts(list(response)))
-      .catch(() => setError("Não foi possível carregar o catálogo."))
-      .finally(() => setCatalogLoading(false));
-  }, []);
+    api.get("/produtos_loja", {
+      params: {
+        ativo: true,
+        busca: debouncedProductSearch || undefined,
+        page: 1,
+        per_page: PRODUCT_CATALOG_PAGE_SIZE,
+      },
+    })
+      .then((response) => {
+        if (cancelled) return;
+        const payload = paginatedList(response);
+        setProducts(payload.products);
+        setCatalogPage(payload.page);
+        setCatalogTotal(payload.total);
+        setCatalogTotalPages(payload.totalPages);
+      })
+      .catch(() => {
+        if (!cancelled) setError("Nao foi possivel carregar o catalogo.");
+      })
+      .finally(() => {
+        if (!cancelled) setCatalogLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [debouncedProductSearch]);
 
   useEffect(() => {
     Promise.allSettled([
@@ -176,14 +233,30 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
     }, []));
   }, [configuring, selectedVariation]);
 
-  const filteredProducts = useMemo(() => {
-    const search = productSearch.trim().toLocaleLowerCase("pt-BR");
-    if (!search) return products;
-    return products.filter((product) =>
-      [product.nome, product.codigo_interno, product.categoria_nome]
-        .some((value) => String(value || "").toLocaleLowerCase("pt-BR").includes(search))
-    );
-  }, [products, productSearch]);
+  const hasMoreCatalogProducts = catalogPage < catalogTotalPages;
+  const loadMoreProducts = async () => {
+    if (catalogLoadingMore || !hasMoreCatalogProducts) return;
+    setCatalogLoadingMore(true);
+    try {
+      const response = await api.get("/produtos_loja", {
+        params: {
+          ativo: true,
+          busca: debouncedProductSearch || undefined,
+          page: catalogPage + 1,
+          per_page: PRODUCT_CATALOG_PAGE_SIZE,
+        },
+      });
+      const payload = paginatedList(response);
+      setProducts((current) => mergeUniqueProducts(current, payload.products));
+      setCatalogPage(payload.page);
+      setCatalogTotal(payload.total);
+      setCatalogTotalPages(payload.totalPages);
+    } catch {
+      setError("Nao foi possivel carregar mais produtos.");
+    } finally {
+      setCatalogLoadingMore(false);
+    }
+  };
 
   const estimatedSubtotal = useMemo(() => lines.reduce(
     (sum, line) => sum + Number(line.preco || 0) * Number(line.quantidade || 0), 0,
@@ -384,8 +457,8 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
   let optionSearchRefAssigned = false;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 p-2 backdrop-blur-sm sm:p-5">
-      <div className="flex max-h-[95vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 p-2 backdrop-blur-sm sm:p-3">
+      <div className="flex h-[calc(100vh-1rem)] w-[98vw] max-w-[96rem] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:h-[calc(100vh-1.5rem)]">
         <header className="border-b bg-white px-5 py-4 sm:px-7">
           <div className="flex items-center justify-between">
             <div>
@@ -493,30 +566,49 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
           )}
 
           {step === 2 && (
-            <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px]">
               <section className="rounded-xl border bg-white p-4">
                 <div className="mb-3">
                   <h3 className="font-bold text-slate-900">Adicionar produtos</h3>
                   <p className="text-sm text-slate-500">Pesquise pelo nome, código ou categoria.</p>
+                  {catalogTotal > 0 && (
+                    <p className="mt-1 text-xs font-semibold text-slate-500">{products.length} de {catalogTotal} produtos carregados</p>
+                  )}
                 </div>
                 <div className="relative mb-3">
                   <Search className="absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
                   <input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Buscar produto pelo nome..." className="w-full rounded-lg border py-2 pl-10 pr-3" />
                 </div>
-                <div className="max-h-[430px] overflow-y-auto rounded-lg border">
+                <div className="max-h-[58vh] overflow-y-auto rounded-lg border xl:max-h-[620px]">
                   {catalogLoading ? (
                     <div className="flex justify-center p-8"><Loader2 className="animate-spin" style={{ color: primary }} /></div>
-                  ) : filteredProducts.length ? filteredProducts.map((product) => (
-                    <button key={product.id} onClick={() => addProduct(product)} className="flex w-full items-center justify-between gap-3 border-b p-3 text-left last:border-0 hover:bg-slate-50">
-                      <span className="min-w-0">
-                        <b className="block truncate text-slate-800">{product.nome}</b>
-                        <small className="text-slate-500">{product.modo_compra === "configuravel" ? "Escolher tamanho e opções" : money(effectivePrice(product))}</small>
-                      </span>
-                      <span className="flex h-8 w-8 items-center justify-center rounded-full" style={{ backgroundColor: primarySoft, color: primary }}>
-                        <Plus className="h-4 w-4" />
-                      </span>
-                    </button>
-                  )) : <p className="p-8 text-center text-sm text-slate-500">Nenhum produto encontrado.</p>}
+                  ) : products.length ? (
+                    <>
+                      {products.map((product) => (
+                        <button key={product.id} onClick={() => addProduct(product)} className="flex w-full items-center justify-between gap-3 border-b p-3 text-left last:border-0 hover:bg-slate-50">
+                          <span className="min-w-0">
+                            <b className="block truncate text-slate-800">{product.nome}</b>
+                            <small className="text-slate-500">{product.categoria_nome || (product.modo_compra === "configuravel" ? "Configurar opcoes" : "Produto")}</small>
+                          </span>
+                          <span className="ml-auto shrink-0 text-right">
+                            <b className="block text-sm text-slate-900">{productPriceLabel(product)}</b>
+                            {product.modo_compra === "configuravel" && <small className="text-slate-500">Configurar</small>}
+                          </span>
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: primarySoft, color: primary }}>
+                            <Plus className="h-4 w-4" />
+                          </span>
+                        </button>
+                      ))}
+                      {hasMoreCatalogProducts && (
+                        <div className="border-t bg-white p-3 text-center">
+                          <button type="button" disabled={catalogLoadingMore} onClick={loadMoreProducts} className="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50">
+                            {catalogLoadingMore && <Loader2 className="h-4 w-4 animate-spin" />}
+                            Carregar mais produtos
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  ) : <p className="p-8 text-center text-sm text-slate-500">Nenhum produto encontrado.</p>}
                 </div>
               </section>
 
@@ -642,7 +734,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
 
       {configuring && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/50 p-3">
-          <div className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
+          <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
             <div className="flex justify-between border-b pb-4">
               <div>
                 <h3 className="text-lg font-bold">Configurar {configuring.produto?.nome}</h3>
