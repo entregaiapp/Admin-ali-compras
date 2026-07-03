@@ -2227,10 +2227,11 @@ export function OrdersScreen() {
     ) === "admin_dashboard";
   const selectedCanProceed =
     selectedIsPaid ||
+    selectedIsFiado ||
     selectedIsAdminDashboardOrder ||
     (selectedIsPendingCash && !selectedIsFiado);
   const selectedPaymentKeepsConfirmationPending =
-    !selectedIsPaid && (selectedIsPendingCash || selectedIsAdminDashboardOrder);
+    !selectedIsPaid && !selectedIsFiado && (selectedIsPendingCash || selectedIsAdminDashboardOrder);
   const selectedCanAdminAddItems = Boolean(selected?.id) && !selectedBlocksAdminAdjustment;
   const selectedCanChangePendingPayment =
     Boolean(selected?.id) &&

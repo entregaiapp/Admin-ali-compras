@@ -660,7 +660,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto bg-slate-50 p-5 sm:p-7">
+        <main className="min-h-0 flex-1 overflow-y-auto bg-slate-50 p-5 pb-24 sm:p-7 sm:pb-28">
           {error && <div className="mb-5 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
           {step === STEP_CONTACT && (
@@ -960,8 +960,8 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
 
       {configuring && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/50 p-3">
-          <div className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
-            <div className="flex justify-between border-b pb-4">
+          <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex justify-between border-b p-5 pb-4">
               <div>
                 <h3 className="text-lg font-bold">Configurar {configuring.produto?.nome}</h3>
                 <p className="text-sm text-slate-500">Escolha variação e opções obrigatórias.</p>
@@ -969,92 +969,100 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
               <button onClick={() => setConfiguring(null)}><X /></button>
             </div>
 
-            {(configuring.variacoes || []).length > 0 && (
-              <div className="mt-5">
-                <p className="mb-2 text-sm font-bold">Variação</p>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {(configuring.variacoes || []).map((variation: any) => {
-                    const selected = selectedVariation === variation.id;
-                    return (
-                      <button key={variation.id} onClick={() => setSelectedVariation(variation.id)} className="rounded-xl border-2 p-3 text-left" style={selected ? { borderColor: primary, backgroundColor: primarySoft } : { borderColor: "#e2e8f0" }}>
-                        <b>{variation.nome}</b>
-                        <span className="float-right text-sm">{money(effectivePrice(variation, usePricesWithoutAppTax))}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {(configuring.grupos || []).map((group: any) => {
-              const limits = getGroupLimits(group);
-              const count = countGroupSelections(group);
-              const searchable = (group.opcoes || []).length > 5;
-              const visibleOptions = getVisibleOptions(group);
-              const attachSearchRef = searchable && !optionSearchRefAssigned;
-              if (attachSearchRef) optionSearchRefAssigned = true;
-              return (
-                <section key={group.id} className="mt-5">
-                  <div className="flex justify-between">
-                    <p className="font-bold">{group.nome}</p>
-                    <span className={`rounded-full px-2 py-0.5 text-xs ${count >= limits.minimum ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{count}/{limits.maximum}</span>
-                  </div>
-                  <p className="mb-2 text-xs text-slate-500">Escolha de {limits.minimum} até {limits.maximum}</p>
-                  {searchable && (
-                    <div className="relative mb-3">
-                      <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                      <input
-                        ref={attachSearchRef ? firstOptionSearchRef : undefined}
-                        value={optionSearches[group.id] || ""}
-                        onChange={(event) => setOptionSearches((current) => ({ ...current, [group.id]: event.target.value }))}
-                        placeholder={`Buscar em ${group.nome}`}
-                        className="w-full rounded-lg border py-2 pl-9 pr-3 text-sm outline-none"
-                      />
-                    </div>
-                  )}
-                  <div className="space-y-2">
-                    {visibleOptions.length ? visibleOptions.map((option: any) => {
-                      const selected = optionSelection(group.id, option.id);
-                      const limitReached = !selected && count >= limits.maximum;
-                      const optionPrice = getOptionPrice(option);
+            <div className="flex-1 overflow-y-auto px-5 pb-28">
+              {(configuring.variacoes || []).length > 0 && (
+                <div className="mt-5">
+                  <p className="mb-2 text-sm font-bold">Variação</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {(configuring.variacoes || []).map((variation: any) => {
+                      const selected = selectedVariation === variation.id;
                       return (
-                        <div key={option.id} className="flex items-center justify-between rounded-xl border p-3" style={selected ? { borderColor: primary, backgroundColor: primarySoft } : { borderColor: "#e2e8f0" }}>
-                          <button disabled={limitReached} onClick={() => toggleOption(group, option)} className="flex flex-1 items-center gap-3 text-left disabled:cursor-not-allowed disabled:opacity-45">
-                            <span
-                              className="h-5 w-5 border-2"
-                              style={{
-                                ...(selected ? { borderColor: primary, backgroundColor: primary, boxShadow: "inset 0 0 0 3px white" } : { borderColor: "#cbd5e1" }),
-                                borderRadius: group.tipo_selecao === "unica" ? "9999px" : "6px",
-                              }}
-                            />
-                            <span>
-                              <b className="block text-sm">{option.nome}</b>
-                              {optionPrice > 0 && <small className="text-slate-500">+ {money(optionPrice)}</small>}
-                            </span>
-                          </button>
-                          {selected && group.permite_quantidade && (
-                            <div className="flex items-center rounded-lg border bg-white">
-                              <button onClick={() => changeOptionQuantity(group, option, -1)} className="p-1.5"><Minus className="h-3 w-3" /></button>
-                              <b className="w-7 text-center text-sm">{selected.quantidade}</b>
-                              <button disabled={count >= limits.maximum} onClick={() => changeOptionQuantity(group, option, 1)} className="p-1.5 disabled:cursor-not-allowed disabled:opacity-40"><Plus className="h-3 w-3" /></button>
-                            </div>
-                          )}
-                        </div>
+                        <button key={variation.id} onClick={() => setSelectedVariation(variation.id)} className="rounded-xl border-2 p-3 text-left" style={selected ? { borderColor: primary, backgroundColor: primarySoft } : { borderColor: "#e2e8f0" }}>
+                          <b>{variation.nome}</b>
+                          <span className="float-right text-sm">{money(effectivePrice(variation, usePricesWithoutAppTax))}</span>
+                        </button>
                       );
-                    }) : <p className="rounded-xl border border-dashed p-4 text-center text-sm text-slate-500">Nenhum adicional encontrado.</p>}
+                    })}
                   </div>
-                </section>
-              );
-            })}
+                </div>
+              )}
 
-            <label className="mt-5 block text-sm font-semibold text-slate-700">
-              Observação do item
-              <textarea value={configurationNotes} onChange={(event) => setConfigurationNotes(event.target.value)} maxLength={500} placeholder="Ex.: sem cebola, molho separado..." className="mt-1 min-h-20 w-full resize-y rounded-xl border border-slate-200 p-3 font-normal outline-none" />
-            </label>
+              {(configuring.grupos || []).map((group: any) => {
+                const limits = getGroupLimits(group);
+                const count = countGroupSelections(group);
+                const searchable = (group.opcoes || []).length > 5;
+                const visibleOptions = getVisibleOptions(group);
+                const attachSearchRef = searchable && !optionSearchRefAssigned;
+                if (attachSearchRef) optionSearchRefAssigned = true;
+                return (
+                  <section key={group.id} className="mt-5">
+                    <div className="flex justify-between">
+                      <p className="font-bold">{group.nome}</p>
+                      <span className={`rounded-full px-2 py-0.5 text-xs ${count >= limits.minimum ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{count}/{limits.maximum}</span>
+                    </div>
+                    <p className="mb-2 text-xs text-slate-500">Escolha de {limits.minimum} até {limits.maximum}</p>
+                    {searchable && (
+                      <div className="relative mb-3">
+                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                        <input
+                          ref={attachSearchRef ? firstOptionSearchRef : undefined}
+                          value={optionSearches[group.id] || ""}
+                          onChange={(event) => setOptionSearches((current) => ({ ...current, [group.id]: event.target.value }))}
+                          placeholder={`Buscar em ${group.nome}`}
+                          className="w-full rounded-lg border py-2 pl-9 pr-3 text-sm outline-none"
+                        />
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      {visibleOptions.length ? visibleOptions.map((option: any) => {
+                        const selected = optionSelection(group.id, option.id);
+                        const limitReached = !selected && count >= limits.maximum;
+                        const optionPrice = getOptionPrice(option);
+                        return (
+                          <div key={option.id} className="flex items-center justify-between rounded-xl border p-3" style={selected ? { borderColor: primary, backgroundColor: primarySoft } : { borderColor: "#e2e8f0" }}>
+                            <button disabled={limitReached} onClick={() => toggleOption(group, option)} className="flex flex-1 items-center gap-3 text-left disabled:cursor-not-allowed disabled:opacity-45">
+                              <span
+                                className="h-5 w-5 border-2"
+                                style={{
+                                  ...(selected ? { borderColor: primary, backgroundColor: primary, boxShadow: "inset 0 0 0 3px white" } : { borderColor: "#cbd5e1" }),
+                                  borderRadius: group.tipo_selecao === "unica" ? "9999px" : "6px",
+                                }}
+                              />
+                              <span>
+                                <b className="block text-sm">{option.nome}</b>
+                                {optionPrice > 0 && <small className="text-slate-500">+ {money(optionPrice)}</small>}
+                              </span>
+                            </button>
+                            {selected && group.permite_quantidade && (
+                              <div className="flex items-center rounded-lg border bg-white">
+                                <button onClick={() => changeOptionQuantity(group, option, -1)} className="p-1.5"><Minus className="h-3 w-3" /></button>
+                                <b className="w-7 text-center text-sm">{selected.quantidade}</b>
+                                <button disabled={count >= limits.maximum} onClick={() => changeOptionQuantity(group, option, 1)} className="p-1.5 disabled:cursor-not-allowed disabled:opacity-40"><Plus className="h-3 w-3" /></button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      }) : <p className="rounded-xl border border-dashed p-4 text-center text-sm text-slate-500">Nenhum adicional encontrado.</p>}
+                    </div>
+                  </section>
+                );
+              })}
+
+              <label className="mt-5 block text-sm font-semibold text-slate-700">
+                Observação do item
+                <textarea
+                  value={configurationNotes}
+                  onChange={(event) => setConfigurationNotes(event.target.value)}
+                  maxLength={500}
+                  placeholder="Ex.: sem cebola, molho separado..."
+                  className="mt-1 min-h-20 w-full resize-y rounded-xl border border-slate-200 p-3 font-normal outline-none"
+                />
+              </label>
+            </div>
             <div
-              className={`mt-6 flex flex-col gap-3 border-t bg-white pt-4 sm:flex-row sm:items-center sm:justify-between ${
+              className={`flex flex-col gap-3 border-t bg-white p-5 sm:flex-row sm:items-center sm:justify-between ${
                 stickyConfigurationCheckout
-                  ? "sticky bottom-0 z-20 -mx-5 px-5 pb-5 shadow-[0_-8px_18px_rgba(15,23,42,0.08)]"
+                  ? "shadow-[0_-8px_18px_rgba(15,23,42,0.08)]"
                   : ""
               }`}
             >
