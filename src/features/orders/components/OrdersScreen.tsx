@@ -61,6 +61,7 @@ import {
   getPreferredOrderPayment,
   hexToRgba,
   isDeliveryOrder,
+  isCurrentPaymentRecord,
   isFiadoOrder,
   isOrderPaid,
   isOrderPendingCash,
@@ -2097,6 +2098,10 @@ export function OrdersScreen() {
     selected,
     selectedPayment,
   );
+  const selectedPaymentStatusLabel =
+    selectedIsFiado && selectedIsPaid && selectedPaymentStatus === "Aprovado"
+      ? "Pagamento efetivado"
+      : selectedPaymentStatus;
   const selectedCashChangeInfo = formatCashChangeInfo(selectedPayment, selected);
   const selectedIsCardOnDelivery = isCardOnDeliveryPayment(selectedPayment);
   const selectedCashChangeValue = parseCurrencyNumber(
@@ -2132,7 +2137,7 @@ export function OrdersScreen() {
     selectedCancellationResolving;
   const selectedPaymentStatusClass = ["Aprovado", "Confirmado"].includes(
     selectedPaymentStatus,
-  )
+  ) || selectedPaymentStatusLabel === "Pagamento efetivado"
     ? "text-green-600"
     : ["Rejeitado", "Cancelado", "Estornado", "Expirado"].includes(
           selectedPaymentStatus,
@@ -4297,7 +4302,7 @@ export function OrdersScreen() {
                 </p>
                 {selectedPaymentStatus !== "NÃ£o informado" && (
                   <div className={`mt-2 text-xs font-semibold ${selectedPaymentStatusClass}`}>
-                    {selectedPaymentStatus}
+                    {selectedPaymentStatusLabel}
                   </div>
                 )}
               </div>
@@ -4315,7 +4320,7 @@ export function OrdersScreen() {
                   className={`mt-1 text-xs font-medium ${selectedPaymentStatusClass}`}
                 >
                   {selectedIsPaid ? "✓ " : ""}
-                  {selectedPaymentStatus}
+                  {selectedPaymentStatusLabel}
                 </div>
               )}
               {selectedPayments.length > 1 && (
@@ -4325,8 +4330,16 @@ export function OrdersScreen() {
                   </div>
                   {selectedPayments.map((payment) => {
                     const isComplement = payment?.metadata?.tipo === "pagamento_complementar";
+                    const isCurrent = payment?.id === selectedPayment?.id || isCurrentPaymentRecord(payment);
                     return (
-                      <div key={payment.id} className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-xs">
+                      <div
+                        key={payment.id}
+                        className={`rounded-lg border px-3 py-2 text-xs transition-opacity ${
+                          isCurrent
+                            ? "border-blue-100 bg-blue-50 opacity-100"
+                            : "border-gray-100 bg-gray-50 opacity-50"
+                        }`}
+                      >
                         <div className="flex items-center justify-between gap-2">
                           <span className="font-semibold text-gray-700">
                             {isComplement ? "Complemento" : "Original"} - {getOrderPaymentMethod({ pagamento: payment }, payment)}
