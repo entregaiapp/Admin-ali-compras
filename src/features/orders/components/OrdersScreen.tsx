@@ -233,6 +233,59 @@ const formatCashChangeInfo = (payment: any, order?: any) => {
 
   return "";
 };
+const getOrderEmbeddedPayments = (order: any) =>
+  Array.isArray(order?.pagamentos) ? order.pagamentos : [];
+const getCashChangeStatusLabel = (payment: any, order?: any) => {
+  if (!isDeliveryOrder(order || {})) return "";
+  if (isCardOnDeliveryPayment(payment) || isCardOnDeliveryPayment(order?.pagamento)) {
+    return "";
+  }
+
+  const method = normalizePaymentText(
+    firstPresent(
+      payment?.forma_pagamento,
+      payment?.metodo,
+      payment?.method,
+      order?.pagamento?.forma_pagamento,
+      order?.pagamento?.metodo,
+      order?.pagamento?.method,
+      order?.payment,
+    ),
+  );
+  const paymentOnDeliveryMethod =
+    getPaymentOnDeliveryMethod(payment) ||
+    getPaymentOnDeliveryMethod(order?.pagamento);
+  const isCashPayment =
+    method === "dinheiro" || paymentOnDeliveryMethod === "dinheiro";
+
+  if (!isCashPayment) return "";
+
+  const explicitChangeValue = firstPresent(
+    payment?.troco_valor,
+    order?.pagamento?.troco_valor,
+    order?.troco_valor,
+  );
+  const changeFor = firstPresent(
+    payment?.troco_para,
+    order?.pagamento?.troco_para,
+    order?.troco_para,
+  );
+  const orderTotal = firstPresent(
+    payment?.valor,
+    order?.valor_total,
+    order?.total,
+  );
+  const changeValue =
+    explicitChangeValue !== undefined
+      ? parseCurrencyNumber(explicitChangeValue)
+      : parseCurrencyNumber(changeFor) - parseCurrencyNumber(orderTotal);
+  if (changeValue <= 0) return "";
+
+  return payment?.troco_pago_ao_entregador === true ||
+    order?.pagamento?.troco_pago_ao_entregador === true
+    ? "Troco repassado"
+    : "Falta o troco";
+};
 const isPendingCardPaymentForDelivery = (order: any, payments: any[] = []) => {
   const payment = getPreferredOrderPayment(order, payments);
   const status = normalizePaymentText(getOrderPaymentStatus(order, payment));
@@ -866,6 +919,7 @@ export function OrdersScreen() {
             order.id === orderId
               ? {
                   ...order,
+                  pagamentos: payments,
                   pagamento: preferredPayment,
                   payment_status: preferredPayment.status || order.payment_status,
                 }
@@ -889,6 +943,7 @@ export function OrdersScreen() {
               order.id === orderId
                 ? {
                     ...order,
+                    pagamentos: payments,
                     pagamento: preferredPayment,
                     payment_status: preferredPayment.status || order.payment_status,
                   }
@@ -975,15 +1030,20 @@ export function OrdersScreen() {
   };
 
   const handleSelectOrder = (order: any) => {
+    const embeddedPayments = getOrderEmbeddedPayments(order);
     setSelected(order);
     setSelectedItems([]);
-    setSelectedPayments([]);
+    setSelectedPayments(embeddedPayments);
     setSelectedRefunds([]);
     setCurrentDelivery(null);
     fetchOrderItems(order.id);
-    fetchOrderPayments(order.id).then((payments) =>
-      fetchOrderRefunds(payments),
-    );
+    if (embeddedPayments.length > 0) {
+      fetchOrderRefunds(embeddedPayments);
+    } else {
+      fetchOrderPayments(order.id).then((payments) =>
+        fetchOrderRefunds(payments),
+      );
+    }
     if ((order.tipo_pedido || order.type || "").toLowerCase() === "entrega") {
       fetchOrderDelivery(order.id);
     }
@@ -2103,6 +2163,10 @@ export function OrdersScreen() {
       ? "Pagamento efetivado"
       : selectedPaymentStatus;
   const selectedCashChangeInfo = formatCashChangeInfo(selectedPayment, selected);
+  const selectedCashChangeStatusLabel = getCashChangeStatusLabel(
+    selectedPayment,
+    selected,
+  );
   const selectedIsCardOnDelivery = isCardOnDeliveryPayment(selectedPayment);
   const selectedCashChangeValue = parseCurrencyNumber(
     firstPresent(
@@ -2985,9 +3049,19 @@ export function OrdersScreen() {
                       };
                     const isEntrega = isDeliveryOrder(order);
                     const orderPayments =
-                      selected?.id === order.id ? selectedPayments : [];
+                      selected?.id === order.id
+                        ? selectedPayments
+                        : getOrderEmbeddedPayments(order);
+                    const orderPayment = getPreferredOrderPayment(
+                      order,
+                      orderPayments,
+                    );
                     const orderPaymentIsPending =
                       hasPendingPaymentForDisplay(order, orderPayments);
+                    const cashChangeStatusLabel = getCashChangeStatusLabel(
+                      orderPayment,
+                      order,
+                    );
                     const canSelectForDelivery =
                       viewMode !== "arquivados" &&
                       canSelectOrderForDeliveryAssignment(
@@ -3157,8 +3231,19 @@ export function OrdersScreen() {
                                 </span>
                                 <span className="text-xs text-gray-400 flex items-center gap-1">
                                   <CreditCard className="w-3 h-3" />
-                                  {getOrderPaymentMethod(order)}
+                                  {getOrderPaymentMethod(order, orderPayment)}
                                 </span>
+                                {cashChangeStatusLabel && (
+                                  <span
+                                    className={`text-xs font-semibold flex items-center gap-1 ${
+                                      cashChangeStatusLabel === "Troco repassado"
+                                        ? "text-green-600"
+                                        : "text-red-600"
+                                    }`}
+                                  >
+                                    {cashChangeStatusLabel}
+                                  </span>
+                                )}
                                 {isEntrega && (
                                   <span className="text-xs text-gray-400 flex items-center gap-1">
                                     <MapPin className="w-3 h-3" />
@@ -3428,9 +3513,19 @@ export function OrdersScreen() {
                             text: "#666",
                           };
                         const orderPayments =
-                          selected?.id === order.id ? selectedPayments : [];
+                          selected?.id === order.id
+                            ? selectedPayments
+                            : getOrderEmbeddedPayments(order);
+                        const orderPayment = getPreferredOrderPayment(
+                          order,
+                          orderPayments,
+                        );
                         const orderPaymentIsPending =
                           hasPendingPaymentForDisplay(order, orderPayments);
+                        const cashChangeStatusLabel = getCashChangeStatusLabel(
+                          orderPayment,
+                          order,
+                        );
                         const canSelectForDelivery =
                           canSelectOrderForDeliveryAssignment(
                             order,
@@ -3556,8 +3651,19 @@ export function OrdersScreen() {
                                   {order.cliente?.telefone || order.phone}
                                 </span>
                                 <span className="text-[11px] text-gray-400">
-                                  · {getOrderPaymentMethod(order)}
+                                  · {getOrderPaymentMethod(order, orderPayment)}
                                 </span>
+                                {cashChangeStatusLabel && (
+                                  <span
+                                    className={`text-[11px] font-semibold ${
+                                      cashChangeStatusLabel === "Troco repassado"
+                                        ? "text-green-600"
+                                        : "text-red-600"
+                                    }`}
+                                  >
+                                    · {cashChangeStatusLabel}
+                                  </span>
+                                )}
                               </div>
                             </div>
                             <div className="text-right flex-shrink-0">
@@ -4330,7 +4436,8 @@ export function OrdersScreen() {
                   </div>
                   {selectedPayments.map((payment) => {
                     const isComplement = payment?.metadata?.tipo === "pagamento_complementar";
-                    const isCurrent = payment?.id === selectedPayment?.id || isCurrentPaymentRecord(payment);
+                    const isSelectedCurrent = payment?.id === selectedPayment?.id;
+                    const isCurrent = isSelectedCurrent || isCurrentPaymentRecord(payment);
                     return (
                       <div
                         key={payment.id}
@@ -4341,9 +4448,16 @@ export function OrdersScreen() {
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <span className="font-semibold text-gray-700">
-                            {isComplement ? "Complemento" : "Original"} - {getOrderPaymentMethod({ pagamento: payment }, payment)}
-                          </span>
+                          <div className="min-w-0">
+                            <span className="font-semibold text-gray-700">
+                              {isComplement ? "Complemento" : "Original"} - {getOrderPaymentMethod({ pagamento: payment }, payment)}
+                            </span>
+                            {isSelectedCurrent && (
+                              <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                                Atual
+                              </span>
+                            )}
+                          </div>
                           <span className="font-semibold text-gray-800">{formatCurrency(payment.valor)}</span>
                         </div>
                         <div className="mt-1 flex items-center justify-between gap-2 text-gray-500">
@@ -4395,6 +4509,17 @@ export function OrdersScreen() {
                   <div className="mt-0.5 text-sm font-semibold text-gray-700">
                     {selectedCashChangeInfo}
                   </div>
+                  {selectedCashChangeStatusLabel && (
+                    <div
+                      className={`mt-1 text-xs font-semibold ${
+                        selectedCashChangeStatusLabel === "Troco repassado"
+                          ? "text-green-600"
+                          : "text-red-600"
+                      }`}
+                    >
+                      {selectedCashChangeStatusLabel}
+                    </div>
+                  )}
                 </div>
               )}
               {selectedNeedsCashChange && (

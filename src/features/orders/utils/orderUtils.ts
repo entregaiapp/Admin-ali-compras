@@ -205,7 +205,7 @@ export const isApprovedPayment = (payment: any) =>
     cleanText(payment?.status).toLowerCase() === "aprovado");
 
 export const isFiadoOrder = (order: any, payments: any[] = []) =>
-  payments.some(isFiadoPayment) ||
+  (payments.length > 0 ? payments : getEmbeddedOrderPayments(order)).some(isFiadoPayment) ||
   isFiadoPayment(order?.pagamento) ||
   isFiadoPayment(order);
 
@@ -247,6 +247,9 @@ const INACTIVE_PAYMENT_STATUSES = new Set([
 
 const ACTIVE_PAYMENT_STATUSES = new Set(["pendente", "em_processamento", "processando"]);
 
+const getEmbeddedOrderPayments = (order: any) =>
+  Array.isArray(order?.pagamentos) ? order.pagamentos : [];
+
 export const isCurrentPaymentRecord = (payment: any) => {
   const status = cleanText(payment?.status || payment?.payment_status || payment?.paymentStatus).toLowerCase();
   return (
@@ -260,7 +263,8 @@ export const isPendingCashPayment = (payment: any) =>
   cleanText(payment?.status || payment?.payment_status || payment?.paymentStatus).toLowerCase() === "pendente";
 
 export const getPreferredOrderPayment = (order: any, payments: any[] = []) => {
-  const currentPayments = payments.filter(isCurrentPaymentRecord);
+  const availablePayments = payments.length > 0 ? payments : getEmbeddedOrderPayments(order);
+  const currentPayments = availablePayments.filter(isCurrentPaymentRecord);
   const pendingPayment = currentPayments.find((payment) =>
     ACTIVE_PAYMENT_STATUSES.has(
       cleanText(payment?.status || payment?.payment_status || payment?.paymentStatus).toLowerCase(),
@@ -272,8 +276,8 @@ export const getPreferredOrderPayment = (order: any, payments: any[] = []) => {
     pendingPayment ||
     currentPayments[0] ||
     (isCurrentPaymentRecord(order?.pagamento) ? order?.pagamento : null) ||
-    payments.find(isApprovedPayment) ||
-    payments[0] ||
+    availablePayments.find(isApprovedPayment) ||
+    availablePayments[0] ||
     order?.pagamento ||
     null
   );
@@ -292,12 +296,14 @@ export const getCurrentPaymentMethodValue = (payment: any) => {
 };
 
 export const isOrderPaid = (order: any, payments: any[] = []) =>
-  payments.some(isApprovedPayment) ||
+  (payments.length > 0 ? payments : getEmbeddedOrderPayments(order)).some(isApprovedPayment) ||
   isApprovedPayment(order?.pagamento) ||
   cleanText(order?.payment_status).toLowerCase() === "aprovado";
 
 export const isOrderPendingCash = (order: any, payments: any[] = []) =>
-  payments.some(isPendingCashPayment) || isPendingCashPayment(order?.pagamento) || isPendingCashPayment(order);
+  (payments.length > 0 ? payments : getEmbeddedOrderPayments(order)).some(isPendingCashPayment) ||
+  isPendingCashPayment(order?.pagamento) ||
+  isPendingCashPayment(order);
 
 export const getOrderPaymentMethod = (order: any, payment?: any) => {
   const paymentOnDeliveryMethod = cleanText(
