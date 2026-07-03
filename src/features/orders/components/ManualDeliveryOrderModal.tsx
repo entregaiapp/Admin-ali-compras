@@ -78,11 +78,17 @@ const paymentMethodCaption = (value: string) =>
   value === "dinheiro" || CARD_PAYMENT_VALUES.has(value)
     ? "Pagar na entrega"
     : "Pagamento externo ao app";
+const STEP_CONTACT = 1;
+const STEP_COLLABORATOR = 2;
+const STEP_PRODUCTS = 3;
+const STEP_ADDRESS = 4;
+const STEP_PAYMENT = 5;
 const STEPS = [
-  { id: 1, label: "Contato", icon: UserRound },
-  { id: 2, label: "Produtos", icon: ShoppingBasket },
-  { id: 3, label: "Endereço", icon: MapPin },
-  { id: 4, label: "Pagamento", icon: CreditCard },
+  { id: STEP_CONTACT, label: "Contato", icon: UserRound },
+  { id: STEP_COLLABORATOR, label: "Colaborador", icon: UserRound },
+  { id: STEP_PRODUCTS, label: "Produtos", icon: ShoppingBasket },
+  { id: STEP_ADDRESS, label: "Endereço", icon: MapPin },
+  { id: STEP_PAYMENT, label: "Pagamento", icon: CreditCard },
 ];
 
 const EMPTY_ADDRESS = {
@@ -184,15 +190,18 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
   const primarySoft = hexToRgba(primary, 0.1);
   const primaryBorder = hexToRgba(primary, 0.35);
   const buttonStyle = { backgroundColor: primary };
+  const activeSteps = useMemo(
+    () => (fiadoEnabled ? STEPS : STEPS.filter((item) => item.id !== STEP_COLLABORATOR)),
+    [fiadoEnabled],
+  );
+  const currentStepIndex = activeSteps.findIndex((item) => item.id === step);
+  const previousStep = currentStepIndex > 0 ? activeSteps[currentStepIndex - 1]?.id : null;
+  const nextStep = currentStepIndex >= 0 ? activeSteps[currentStepIndex + 1]?.id : null;
   const inferredQuickContact = useMemo(() => inferQuickContactFromQuery(contactQuery), [contactQuery]);
   const hasInferredQuickContact = Boolean(inferredQuickContact.nome || inferredQuickContact.telefone);
   const usePricesWithoutAppTax = fiadoEnabled && fiadoColaborador === true;
-  const visiblePaymentMethods = useMemo(() => {
-    if (!usePricesWithoutAppTax) return acceptedPaymentMethods;
-    const fiadoMethods = acceptedPaymentMethods.filter((method) => PAYMENT_METHOD_VALUES[method] === "fiado");
-    return fiadoMethods.length ? fiadoMethods : ["Fiado"];
-  }, [acceptedPaymentMethods, usePricesWithoutAppTax]);
-  const contactStepBlocked = step === 1 && (!contact || (fiadoEnabled && fiadoColaborador === null));
+  const contactStepBlocked = step === STEP_CONTACT && !contact;
+  const collaboratorStepBlocked = step === STEP_COLLABORATOR && fiadoColaborador === null;
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedProductSearch(productSearch.trim()), 300);
@@ -243,10 +252,6 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
       setPayment(PAYMENT_METHOD_VALUES[nextMethods[0]] || String(nextMethods[0]).toLowerCase());
     });
   }, [fiadoEnabled, lojaId, primaryColor]);
-
-  useEffect(() => {
-    if (usePricesWithoutAppTax) setPayment("fiado");
-  }, [usePricesWithoutAppTax]);
 
   useEffect(() => {
     if (!configuring) return;
@@ -350,15 +355,14 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
     setAddress(normalizeSavedAddress(selected.ultimo_endereco));
     setPickupAtStore(false);
     setError("");
-    setStep(fiadoEnabled ? 1 : 2);
+    setStep(fiadoEnabled ? STEP_COLLABORATOR : STEP_PRODUCTS);
   };
   const answerFiadoCollaborator = (isCollaborator: boolean) => {
     setFiadoColaborador(isCollaborator);
     setLines([]);
     setConfiguring(null);
-    if (isCollaborator) setPayment("fiado");
     setError("");
-    setStep(2);
+    setStep(STEP_PRODUCTS);
   };
   const mergeQuickContactDraft = (draft = inferredQuickContact) => {
     if (!draft.nome && !draft.telefone) return;
@@ -542,7 +546,8 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
         },
         pagamento: {
           forma_pagamento: payment,
-          fiado_colaborador: payment === "fiado" ? fiadoColaborador === true : undefined,
+          colaborador: fiadoEnabled ? fiadoColaborador === true : undefined,
+          fiado_colaborador: fiadoEnabled ? fiadoColaborador === true : undefined,
           sem_troco: payment === "dinheiro" ? semTroco : undefined,
           troco_para: payment === "dinheiro" && !semTroco ? Number(trocoPara.replace(",", ".")) : undefined,
         },
@@ -566,11 +571,12 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
               <X className="h-5 w-5" />
             </button>
           </div>
-          <div className="mt-5 grid grid-cols-4 gap-2">
-            {STEPS.map((item) => {
+          <div className="mt-5 grid gap-2" style={{ gridTemplateColumns: `repeat(${activeSteps.length}, minmax(0, 1fr))` }}>
+            {activeSteps.map((item) => {
               const Icon = item.icon;
               const active = item.id === step;
-              const done = item.id < step;
+              const itemIndex = activeSteps.findIndex((candidate) => candidate.id === item.id);
+              const done = itemIndex >= 0 && currentStepIndex >= 0 && itemIndex < currentStepIndex;
               const highlighted = active || done;
               return (
                 <div key={item.id} className="flex items-center gap-2">
@@ -592,35 +598,8 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
         <main className="min-h-0 flex-1 overflow-y-auto bg-slate-50 p-5 sm:p-7">
           {error && <div className="mb-5 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
-          {step === 1 && (
+          {step === STEP_CONTACT && (
             <div className="mx-auto max-w-2xl space-y-6">
-              {contact && fiadoEnabled && fiadoColaborador === null && (
-                <section className="rounded-xl border bg-white p-5">
-                  <h3 className="font-bold text-slate-900">{contact.nome} e colaborador?</h3>
-                  <p className="mt-1 text-sm text-slate-500">
-                    Essa escolha define se o pedido fiado usa os precos internos ou os precos com a taxa do app.
-                  </p>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <button
-                      type="button"
-                      onClick={() => answerFiadoCollaborator(true)}
-                      className="rounded-xl border-2 p-4 text-left"
-                      style={{ borderColor: primary, backgroundColor: primarySoft }}
-                    >
-                      <b className="block text-slate-900">Sim, sem taxa</b>
-                      <small className="text-slate-500">O pedido sera fiado e os produtos aparecem no preco normal.</small>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => answerFiadoCollaborator(false)}
-                      className="rounded-xl border-2 border-slate-200 p-4 text-left hover:bg-slate-50"
-                    >
-                      <b className="block text-slate-900">Nao, aplicar taxa</b>
-                      <small className="text-slate-500">Os produtos aparecem com a regra de taxa do app.</small>
-                    </button>
-                  </div>
-                </section>
-              )}
               <section className="rounded-xl border bg-white p-5">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
@@ -709,7 +688,38 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
             </div>
           )}
 
-          {step === 2 && (
+          {step === STEP_COLLABORATOR && (
+            <div className="mx-auto max-w-xl">
+              <section className="rounded-xl border bg-white p-6 text-center">
+                <p className="text-sm font-semibold uppercase tracking-wide text-slate-400">Colaborador</p>
+                <h3 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">
+                  {contact?.nome} é colaborador?
+                </h3>
+                <p className="mt-2 text-sm text-slate-500">
+                  Se não for colaborador, a taxa do app será aplicada quando estiver configurada.
+                </p>
+                <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => answerFiadoCollaborator(true)}
+                    className="rounded-xl border-2 px-5 py-4 text-base font-bold text-slate-900"
+                    style={{ borderColor: primary, backgroundColor: primarySoft }}
+                  >
+                    Sim
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => answerFiadoCollaborator(false)}
+                    className="rounded-xl border-2 border-slate-200 px-5 py-4 text-base font-bold text-slate-900 hover:bg-slate-50"
+                  >
+                    Não
+                  </button>
+                </div>
+              </section>
+            </div>
+          )}
+
+          {step === STEP_PRODUCTS && (
             <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px]">
               <section className="rounded-xl border bg-white p-4">
                 <div className="mb-3">
@@ -717,7 +727,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
                   <p className="text-sm text-slate-500">Pesquise pelo nome, código ou categoria.</p>
                   {fiadoEnabled && fiadoColaborador !== null && (
                     <p className="mt-1 text-xs font-semibold" style={{ color: primary }}>
-                      {usePricesWithoutAppTax ? "Pedido fiado de colaborador: precos sem taxa" : "Pedido com taxa do app quando configurada"}
+                      {usePricesWithoutAppTax ? "Colaborador: preços sem taxa" : "Não colaborador: taxa do app aplicada quando configurada"}
                     </p>
                   )}
                   {catalogTotal > 0 && (
@@ -801,7 +811,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
             </div>
           )}
 
-          {step === 3 && (
+          {step === STEP_ADDRESS && (
             <div className="mx-auto max-w-3xl space-y-4">
               <button
                 type="button"
@@ -832,13 +842,13 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
             </div>
           )}
 
-          {step === 4 && (
+          {step === STEP_PAYMENT && (
             <div className="mx-auto grid max-w-3xl gap-5 md:grid-cols-2">
               <section className="rounded-xl border bg-white p-5">
                 <h3 className="font-bold">Forma de pagamento</h3>
                 <p className="mt-1 text-xs text-slate-500">Apenas para controle. Cartão e dinheiro serão cobrados na entrega.</p>
                 <div className="mt-4 space-y-2">
-                  {visiblePaymentMethods.map((method) => {
+                  {acceptedPaymentMethods.map((method) => {
                     const value = PAYMENT_METHOD_VALUES[method] || String(method).toLowerCase();
                     const selected = payment === value;
                     return (
@@ -872,9 +882,9 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
         </main>
 
         <footer className="flex items-center justify-between border-t bg-white px-5 py-4 sm:px-7">
-          <button disabled={step === 1 || busy} onClick={() => { setError(""); setStep(step - 1); }} className="inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 font-semibold text-slate-700 disabled:opacity-40"><ArrowLeft className="h-4 w-4" /> Voltar</button>
-          {step < 4 ? (
-            <button disabled={contactStepBlocked || (step === 2 && !lines.length) || (step === 3 && !pickupAtStore && (!address.rua || !address.numero || !address.bairro || !address.cidade || !address.estado))} onClick={() => { setError(""); setStep(step + 1); }} className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-white disabled:opacity-40" style={buttonStyle}>Continuar <ArrowRight className="h-4 w-4" /></button>
+          <button disabled={!previousStep || busy} onClick={() => { setError(""); if (previousStep) setStep(previousStep); }} className="inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 font-semibold text-slate-700 disabled:opacity-40"><ArrowLeft className="h-4 w-4" /> Voltar</button>
+          {nextStep ? (
+            <button disabled={contactStepBlocked || collaboratorStepBlocked || (step === STEP_PRODUCTS && !lines.length) || (step === STEP_ADDRESS && !pickupAtStore && (!address.rua || !address.numero || !address.bairro || !address.cidade || !address.estado))} onClick={() => { setError(""); setStep(nextStep); }} className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-white disabled:opacity-40" style={buttonStyle}>Continuar <ArrowRight className="h-4 w-4" /></button>
           ) : (
             <button disabled={busy || (payment === "dinheiro" && !semTroco && !trocoPara)} onClick={submit} className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-white disabled:opacity-50" style={buttonStyle}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Criar pedido</button>
           )}
