@@ -363,6 +363,10 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
   const estimatedSubtotal = useMemo(() => lines.reduce(
     (sum, line) => sum + Number(line.preco || 0) * Number(line.quantidade || 0), 0,
   ), [lines]);
+  const totalItemsInOrder = useMemo(
+    () => lines.reduce((sum, line) => sum + Number(line.quantidade || 0), 0),
+    [lines],
+  );
 
   const profileContact = useMemo(() => {
     const name = loggedUser?.nome || loggedUser?.name || store?.nome || "Usuário da loja";
@@ -424,13 +428,40 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
     chooseContact({ id: `new-${Date.now()}`, ...quick, novo: true });
   };
 
+  const lineIdentity = (line: any) => JSON.stringify({
+    produto_loja_id: line.produto_loja_id || null,
+    variacao_produto_loja_id: line.variacao_produto_loja_id || null,
+    observacoes: String(line.observacoes || "").trim(),
+    selecoes: (line.selecoes || [])
+      .map((selection: any) => ({
+        grupo_id: selection.grupo_id,
+        opcao_id: selection.opcao_id,
+        quantidade: Number(selection.quantidade || 1),
+      }))
+      .sort((a: any, b: any) =>
+        `${a.grupo_id}:${a.opcao_id}`.localeCompare(`${b.grupo_id}:${b.opcao_id}`)
+      ),
+  });
+  const addOrIncrementLine = (line: any) => {
+    setLines((current) => {
+      const identity = lineIdentity(line);
+      const existingIndex = current.findIndex((item) => lineIdentity(item) === identity);
+      if (existingIndex < 0) return [...current, line];
+      return current.map((item, index) => (
+        index === existingIndex
+          ? { ...item, quantidade: Number(item.quantidade || 0) + Number(line.quantidade || 1) }
+          : item
+      ));
+    });
+  };
+
   const addProduct = async (product: any) => {
     setError("");
     if (product.modo_compra !== "configuravel") {
-      setLines((current) => [...current, {
+      addOrIncrementLine({
         client_line_id: crypto.randomUUID(), produto_loja_id: product.id,
         quantidade: 1, selecoes: [], nome: product.nome, preco: effectivePrice(product, usePricesWithoutAppTax),
-      }]);
+      });
       return;
     }
     setBusy(true);
@@ -542,14 +573,14 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
       }
     }
     const variation = (configuring.variacoes || []).find((item: any) => item.id === selectedVariation);
-    setLines((current) => [...current, {
+    addOrIncrementLine({
       client_line_id: crypto.randomUUID(), produto_loja_id: product.id,
       variacao_produto_loja_id: selectedVariation || null, quantidade: 1,
-      selecoes: selectedOptions, nome: product.nome,
+      selecoes: selectedOptions.map((selection) => ({ ...selection })), nome: product.nome,
       observacoes: configurationNotes.trim() || undefined,
       detalhe: [variation?.nome, selectedOptions.length ? `${selectedOptions.length} opção(ões)` : ""].filter(Boolean).join(" · "),
       preco: configuredUnitPrice,
-    }]);
+    });
     setConfiguring(null); setSelectedOptions([]); setConfigurationNotes(""); setError("");
   };
   const changeLineQuantity = (index: number, delta: number) => setLines((current) => current
@@ -808,7 +839,9 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
               <aside className="rounded-xl border bg-white p-4">
                 <div className="flex items-center justify-between">
                   <h3 className="font-bold text-slate-900">Resumo do pedido</h3>
-                  <span className="rounded-full px-2 py-1 text-xs font-bold" style={{ backgroundColor: primarySoft, color: primary }}>{lines.length} itens</span>
+                  <span className="rounded-full px-2 py-1 text-xs font-bold" style={{ backgroundColor: primarySoft, color: primary }}>
+                    {totalItemsInOrder} {totalItemsInOrder === 1 ? "item" : "itens"}
+                  </span>
                 </div>
                 <p className="mb-3 text-sm text-slate-500">Contato: {contact?.nome}</p>
                 <div className="max-h-[360px] space-y-2 overflow-y-auto">
@@ -906,7 +939,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
                 <dl className="mt-4 space-y-3 text-sm">
                   <div className="flex justify-between"><dt>Contato</dt><dd className="font-semibold">{contact?.nome}</dd></div>
                   <div className="flex justify-between"><dt>Telefone</dt><dd>{contact?.telefone}</dd></div>
-                  <div className="flex justify-between"><dt>Produtos</dt><dd>{lines.length}</dd></div>
+                  <div className="flex justify-between"><dt>Produtos</dt><dd>{totalItemsInOrder}</dd></div>
                   <div className="flex justify-between"><dt>{pickupAtStore ? "Retirada" : "Entrega"}</dt><dd className="max-w-[190px] text-right">{pickupAtStore ? (store?.nome || "Na loja") : `${address.rua}, ${address.numero}`}</dd></div>
                   <div className="flex justify-between border-t pt-3 text-base font-bold"><dt>Subtotal estimado</dt><dd>{money(estimatedSubtotal)}</dd></div>
                 </dl>
