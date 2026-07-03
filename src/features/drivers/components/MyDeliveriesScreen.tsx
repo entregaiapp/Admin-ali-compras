@@ -27,6 +27,7 @@ export type DriverStop = {
   latitude: number | null;
   longitude: number | null;
   status: 'pending' | 'delivered' | 'failed';
+  requiresReceiptKey?: boolean;
   note?: string;
   failedReason?: string;
   checkedAt?: string;

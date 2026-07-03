@@ -222,9 +222,12 @@ export function RouteDetailScreen() {
     chaveRecebimento?: string,
   ) => {
     if (!route) return;
+    const requiresReceiptKey = stop.requiresReceiptKey !== undefined
+      ? stop.requiresReceiptKey !== false
+      : route.requiresReceiptKey !== false;
 
     const queueConfirmation = async () => {
-      if (status === 'delivered' && route.requiresReceiptKey !== false && !chaveRecebimento) {
+      if (status === 'delivered' && requiresReceiptKey && !chaveRecebimento) {
         setReceiptKeyError('Informe a chave de recebimento com 4 dígitos.');
         return false;
       }
@@ -424,7 +427,11 @@ export function RouteDetailScreen() {
               disabled={!!updating || allFinished}
               updating={updating === stop.id}
               onDelivered={() => {
-                if (route.requiresReceiptKey !== false) {
+                const requiresReceiptKey = stop.requiresReceiptKey !== undefined
+                  ? stop.requiresReceiptKey !== false
+                  : route.requiresReceiptKey !== false;
+
+                if (requiresReceiptKey) {
                   setReceiptKeyFor(stop);
                   setReceiptKey('');
                   setReceiptKeyError(null);
