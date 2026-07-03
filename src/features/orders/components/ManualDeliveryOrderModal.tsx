@@ -35,6 +35,15 @@ const apiError = (error: any) =>
 const money = (value: any) => Number(value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const normalizeSearchText = (value: string) =>
   value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR");
+const toFinitePrice = (value: any) => {
+  if (value === null || value === undefined || value === "") return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+};
+const hasPriceValue = (item: any, field: string) =>
+  item?.[field] !== null && item?.[field] !== undefined && item?.[field] !== "";
+const appPriceValue = (item: any, appField: string, sourceField: string) =>
+  hasPriceValue(item, sourceField) ? toFinitePrice(item?.[appField]) : null;
 const hexToRgba = (hex: string, alpha: number) => {
   const clean = String(hex || "").replace("#", "").trim();
   const normalized = clean.length === 3 ? clean.split("").map((char) => char + char).join("") : clean;
@@ -46,10 +55,21 @@ const hexToRgba = (hex: string, alpha: number) => {
   return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 };
 const effectivePrice = (item: any, withoutAppTax = false) => {
+  const promotionActive = isPromotionActive(item?.preco_promocional, item?.promocao_ate);
   if (!withoutAppTax && item?.preco_app_taxa_ativa) {
-    return Number(item?.preco_promocional_app ?? item?.preco_app ?? item?.preco_a_partir_de_app ?? item?.preco_a_partir_de ?? item?.preco_promocional ?? item?.preco ?? 0);
+    const regular = appPriceValue(item, "preco_app", "preco")
+      ?? appPriceValue(item, "preco_a_partir_de_app", "preco_a_partir_de")
+      ?? toFinitePrice(item?.preco)
+      ?? toFinitePrice(item?.preco_a_partir_de)
+      ?? 0;
+    const promotional = promotionActive
+      ? appPriceValue(item, "preco_promocional_app", "preco_promocional")
+      : null;
+    return promotional !== null && promotional < regular ? promotional : regular;
   }
-  return Number(item?.preco_a_partir_de ?? item?.preco_promocional ?? item?.preco ?? 0);
+  const regular = toFinitePrice(item?.preco_a_partir_de) ?? toFinitePrice(item?.preco) ?? 0;
+  const promotional = promotionActive ? toFinitePrice(item?.preco_promocional) : null;
+  return promotional !== null && promotional < regular ? promotional : regular;
 };
 const productPriceLabel = (product: any, withoutAppTax = false) => {
   const price = effectivePrice(product, withoutAppTax);
@@ -60,6 +80,21 @@ const productPriceLabel = (product: any, withoutAppTax = false) => {
 };
 const isPromotionActive = (promotional: any, endsAt: any) =>
   promotional != null && (!endsAt || new Date(endsAt).getTime() >= Date.now());
+const additionalPrice = (item: any, withoutAppTax = false) => {
+  const promotionActive = isPromotionActive(item?.preco_promocional, item?.promocao_ate);
+  if (!withoutAppTax && item?.preco_app_taxa_ativa) {
+    const regular = appPriceValue(item, "preco_adicional_app", "preco_adicional")
+      ?? toFinitePrice(item?.preco_adicional)
+      ?? 0;
+    const promotional = promotionActive
+      ? appPriceValue(item, "preco_promocional_app", "preco_promocional")
+      : null;
+    return promotional !== null && promotional < regular ? promotional : regular;
+  }
+  const regular = toFinitePrice(item?.preco_adicional) ?? 0;
+  const promotional = promotionActive ? toFinitePrice(item?.preco_promocional) : null;
+  return promotional !== null && promotional < regular ? promotional : regular;
+};
 const DEFAULT_PAYMENT_METHODS = ["PIX", "Cartão de Crédito", "Cartão de Débito", "Dinheiro"];
 const PAYMENT_METHOD_VALUES: Record<string, string> = {
   "PIX": "pix",
@@ -423,12 +458,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
   const isOptionAvailable = (option: any) => getOptionOverride(option)?.disponivel !== false && option?.ativa !== false;
   const getOptionPrice = (option: any) => {
     const override = getOptionOverride(option);
-    const regularPrice = override?.preco_adicional ?? option.preco_adicional ?? 0;
-    const promotionalPrice = override ? override.preco_promocional : option.preco_promocional;
-    const promotionEndsAt = override ? override.promocao_ate : option.promocao_ate;
-    return isPromotionActive(promotionalPrice, promotionEndsAt) && Number(promotionalPrice) < Number(regularPrice)
-      ? Number(promotionalPrice)
-      : Number(regularPrice);
+    return additionalPrice(override || option, usePricesWithoutAppTax);
   };
   const getVisibleOptions = (group: any) => {
     const search = normalizeSearchText(optionSearches[group.id] || "");
@@ -557,6 +587,10 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
   };
 
   let optionSearchRefAssigned = false;
+  const hasLongConfigurableOptions = Boolean(
+    configuring && (configuring.grupos || []).some((group: any) => (group.opcoes || []).length > 5),
+  );
+  const stickyConfigurationCheckout = hasLongConfigurableOptions && selectedOptions.length > 0;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 p-2 backdrop-blur-sm sm:p-3">
@@ -984,7 +1018,13 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
               Observação do item
               <textarea value={configurationNotes} onChange={(event) => setConfigurationNotes(event.target.value)} maxLength={500} placeholder="Ex.: sem cebola, molho separado..." className="mt-1 min-h-20 w-full resize-y rounded-xl border border-slate-200 p-3 font-normal outline-none" />
             </label>
-            <div className="mt-6 flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <div
+              className={`mt-6 flex flex-col gap-3 border-t bg-white pt-4 sm:flex-row sm:items-center sm:justify-between ${
+                stickyConfigurationCheckout
+                  ? "sticky bottom-0 z-20 -mx-5 px-5 pb-5 shadow-[0_-8px_18px_rgba(15,23,42,0.08)]"
+                  : ""
+              }`}
+            >
               <div>
                 <p className="text-xs font-semibold uppercase text-slate-400">Total do item</p>
                 <p className="text-lg font-bold text-slate-900">{money(configuredUnitPrice)}</p>
