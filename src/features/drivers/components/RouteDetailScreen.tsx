@@ -59,6 +59,12 @@ const formatCurrency = (value: unknown) => {
   return `R$ ${safeNumber.toFixed(2).replace('.', ',')}`;
 };
 
+const stopRequiresReceiptKey = (stop: DriverStop, route: DriverRoute) => {
+  if (route.requiresReceiptKey === false) return false;
+  if (stop.requiresReceiptKey !== undefined) return stop.requiresReceiptKey !== false;
+  return route.requiresReceiptKey !== false;
+};
+
 const getCurrentPosition = () => new Promise<GeolocationPosition>((resolve, reject) => {
   if (!navigator.geolocation) {
     reject(new Error('Seu navegador não permite obter a localização atual.'));
@@ -123,6 +129,17 @@ export function RouteDetailScreen() {
       void saveAssignedDelivery(route).catch(() => undefined);
     }
   }, [route]);
+
+  useEffect(() => {
+    if (!route || !receiptKeyFor) return;
+
+    const currentStop = route.stops.find(stop => stop.id === receiptKeyFor.id) || receiptKeyFor;
+    if (stopRequiresReceiptKey(currentStop, route)) return;
+
+    setReceiptKeyFor(null);
+    setReceiptKey('');
+    setReceiptKeyError(null);
+  }, [route, receiptKeyFor]);
 
   useEffect(() => {
     void getPendingStopSync()
@@ -228,9 +245,7 @@ export function RouteDetailScreen() {
     chaveRecebimento?: string,
   ) => {
     if (!route) return;
-    const requiresReceiptKey = stop.requiresReceiptKey !== undefined
-      ? stop.requiresReceiptKey !== false
-      : route.requiresReceiptKey !== false;
+    const requiresReceiptKey = stopRequiresReceiptKey(stop, route);
 
     const queueConfirmation = async () => {
       if (status === 'delivered' && requiresReceiptKey && !chaveRecebimento) {
@@ -433,11 +448,7 @@ export function RouteDetailScreen() {
               disabled={!!updating || allFinished}
               updating={updating === stop.id}
               onDelivered={() => {
-                const requiresReceiptKey = stop.requiresReceiptKey !== undefined
-                  ? stop.requiresReceiptKey !== false
-                  : route.requiresReceiptKey !== false;
-
-                if (requiresReceiptKey) {
+                if (stopRequiresReceiptKey(stop, route)) {
                   setReceiptKeyFor(stop);
                   setReceiptKey('');
                   setReceiptKeyError(null);
