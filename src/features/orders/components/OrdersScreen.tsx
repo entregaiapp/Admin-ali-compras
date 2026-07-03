@@ -387,6 +387,7 @@ export function OrdersScreen() {
   const [unassigningDeliveryId, setUnassigningDeliveryId] = useState("");
   const [updatingStatusOrderId, setUpdatingStatusOrderId] = useState("");
   const [confirmingCashPaymentId, setConfirmingCashPaymentId] = useState("");
+  const [updatingCashChangePaymentId, setUpdatingCashChangePaymentId] = useState("");
   const [forceFinalizingOrderId, setForceFinalizingOrderId] = useState("");
   const [forceFinalizeCandidate, setForceFinalizeCandidate] = useState<any | null>(null);
   const [cancellingOrderId, setCancellingOrderId] = useState("");
@@ -1448,6 +1449,49 @@ export function OrdersScreen() {
     }
   };
 
+  const updateCashChangePaidToCourier = async (checked: boolean) => {
+    if (!selected?.id || !selectedPayment?.id) return;
+
+    try {
+      setUpdatingCashChangePaymentId(selectedPayment.id);
+      const response = await api.patch(
+        `/pagamentos/${selectedPayment.id}/troco-entregador`,
+        { troco_pago_ao_entregador: checked },
+      );
+      const updatedPayment = response.data.data || response.data;
+
+      setSelectedPayments((previous) =>
+        previous.map((payment) =>
+          payment.id === updatedPayment.id ? updatedPayment : payment,
+        ),
+      );
+      setSelected((previous: any) =>
+        previous ? { ...previous, pagamento: updatedPayment } : previous,
+      );
+      setOrders((previous) =>
+        previous.map((order) =>
+          order.id === selected.id
+            ? { ...order, pagamento: updatedPayment }
+            : order,
+        ),
+      );
+      showSystemNotice(
+        checked
+          ? "Troco marcado como pago ao entregador."
+          : "Troco marcado como não pago ao entregador.",
+      );
+    } catch (error) {
+      showSystemNotice(
+        getApiErrorMessage(
+          error,
+          "Não foi possível atualizar o troco pago ao entregador.",
+        ),
+      );
+    } finally {
+      setUpdatingCashChangePaymentId("");
+    }
+  };
+
   const openForceFinalizeConfirm = (order: any, event?: MouseEvent) => {
     event?.stopPropagation();
     if (!canForceFinalizeOrder(order)) return;
@@ -1993,6 +2037,18 @@ export function OrdersScreen() {
   );
   const selectedCashChangeInfo = formatCashChangeInfo(selectedPayment, selected);
   const selectedIsCardOnDelivery = isCardOnDeliveryPayment(selectedPayment);
+  const selectedCashChangeValue = parseCurrencyNumber(
+    firstPresent(
+      selectedPayment?.troco_valor,
+      selected?.pagamento?.troco_valor,
+      selected?.troco_valor,
+    ),
+  );
+  const selectedNeedsCashChange =
+    !selectedIsCardOnDelivery && selectedCashChangeValue > 0;
+  const selectedCashChangePaidToCourier =
+    selectedPayment?.troco_pago_ao_entregador === true ||
+    selected?.pagamento?.troco_pago_ao_entregador === true;
   const selectedStatusUpdating = updatingStatusOrderId === selected?.id;
   const selectedForceFinalizing = forceFinalizingOrderId === selected?.id;
   const selectedCancelling = cancellingOrderId === selected?.id;
@@ -4265,6 +4321,30 @@ export function OrdersScreen() {
                     {selectedCashChangeInfo}
                   </div>
                 </div>
+              )}
+              {selectedNeedsCashChange && (
+                <label className="mt-3 flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs font-semibold text-green-800">
+                  <input
+                    type="checkbox"
+                    checked={selectedCashChangePaidToCourier}
+                    disabled={
+                      !selectedPayment?.id ||
+                      updatingCashChangePaymentId === selectedPayment.id
+                    }
+                    onChange={(event) =>
+                      void updateCashChangePaidToCourier(event.target.checked)
+                    }
+                    className="mt-0.5 h-4 w-4 rounded border-green-300"
+                  />
+                  <span>
+                    Troco pago ao entregador
+                    {updatingCashChangePaymentId === selectedPayment?.id && (
+                      <span className="ml-2 font-medium text-green-700">
+                        Atualizando...
+                      </span>
+                    )}
+                  </span>
+                </label>
               )}
               {selectedRefunds.length > 0 && (
                 <div className="mt-3 border-t border-gray-100 pt-3">
