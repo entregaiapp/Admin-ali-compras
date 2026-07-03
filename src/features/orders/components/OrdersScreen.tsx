@@ -987,6 +987,52 @@ export function OrdersScreen() {
     }
   };
 
+  const moveOrderToSeparationForPrint = async (order: any) => {
+    if (!order?.id || getOrderType(order) === "salao") return order;
+
+    const currentStatus = getBackendStatus(order.status || "");
+    if (currentStatus === "em_separacao") return order;
+    if (!["pendente", "confirmado"].includes(currentStatus)) return order;
+
+    const statusesToApply =
+      currentStatus === "pendente"
+        ? ["confirmado", "em_separacao"]
+        : ["em_separacao"];
+    let nextOrder = order;
+
+    setUpdatingStatusOrderId(order.id);
+    try {
+      for (const status of statusesToApply) {
+        const response = await api.patch(`/pedidos/${order.id}/status`, {
+          status,
+        });
+        const updatedOrder = response.data?.data || response.data || {};
+        nextOrder = {
+          ...nextOrder,
+          ...updatedOrder,
+          status: updatedOrder.status || status,
+        };
+
+        setOrders((prev) =>
+          prev.map((item) =>
+            item.id === order.id ? { ...item, ...nextOrder } : item,
+          ),
+        );
+        if (selected?.id === order.id) {
+          setSelected((prev: any) =>
+            prev ? { ...prev, ...nextOrder } : prev,
+          );
+        }
+      }
+    } finally {
+      setUpdatingStatusOrderId((currentId) =>
+        currentId === order.id ? "" : currentId,
+      );
+    }
+
+    return nextOrder;
+  };
+
   const handlePrintComanda = async (order: any) => {
     const printWindow = window.open("", "_blank", "width=420,height=650");
     if (!printWindow) {
@@ -996,18 +1042,33 @@ export function OrdersScreen() {
       return;
     }
 
+    let printableOrder = order;
     try {
-      const items = await loadOrderItems(order.id);
+      printableOrder = await moveOrderToSeparationForPrint(order);
+    } catch (error) {
+      printWindow.close();
+      showSystemNotice(
+        getApiErrorMessage(
+          error,
+          "Não foi possível alterar o pedido para Em separação antes da impressão.",
+        ),
+      );
+      return;
+    }
+
+    try {
+      const items = await loadOrderItems(printableOrder.id);
       const orderPayment =
-        selected?.id === order.id
-          ? getPreferredOrderPayment(order, selectedPayments)
-          : getPreferredOrderPayment(order);
+        selected?.id === printableOrder.id
+          ? getPreferredOrderPayment(printableOrder, selectedPayments)
+          : getPreferredOrderPayment(printableOrder);
       printComanda(
-        { ...order, pagamento: orderPayment },
+        { ...printableOrder, pagamento: orderPayment },
         items,
         storePrintData,
         printWindow,
       );
+      void fetchOrders(1, true, { silent: true });
     } catch {
       printWindow.close();
       showSystemNotice(
