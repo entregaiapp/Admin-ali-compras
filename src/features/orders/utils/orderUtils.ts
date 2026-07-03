@@ -235,15 +235,61 @@ const isPaymentOnDelivery = (payment: any) => {
   );
 };
 
+const INACTIVE_PAYMENT_STATUSES = new Set([
+  "cancelado",
+  "cancelada",
+  "estornado",
+  "expirado",
+  "falhou",
+  "recusado",
+  "rejeitado",
+]);
+
+const ACTIVE_PAYMENT_STATUSES = new Set(["pendente", "em_processamento", "processando"]);
+
+export const isCurrentPaymentRecord = (payment: any) => {
+  const status = cleanText(payment?.status || payment?.payment_status || payment?.paymentStatus).toLowerCase();
+  return (
+    !INACTIVE_PAYMENT_STATUSES.has(status) &&
+    payment?.metadata?.substituido_por_ajuste_admin !== true
+  );
+};
+
 export const isPendingCashPayment = (payment: any) =>
   isPaymentOnDelivery(payment) &&
   cleanText(payment?.status || payment?.payment_status || payment?.paymentStatus).toLowerCase() === "pendente";
 
-export const getPreferredOrderPayment = (order: any, payments: any[] = []) =>
-  payments.find(isApprovedPayment) ||
-  payments[0] ||
-  order?.pagamento ||
-  null;
+export const getPreferredOrderPayment = (order: any, payments: any[] = []) => {
+  const currentPayments = payments.filter(isCurrentPaymentRecord);
+  const pendingPayment = currentPayments.find((payment) =>
+    ACTIVE_PAYMENT_STATUSES.has(
+      cleanText(payment?.status || payment?.payment_status || payment?.paymentStatus).toLowerCase(),
+    ),
+  );
+
+  return (
+    currentPayments.find(isApprovedPayment) ||
+    pendingPayment ||
+    currentPayments[0] ||
+    (isCurrentPaymentRecord(order?.pagamento) ? order?.pagamento : null) ||
+    payments.find(isApprovedPayment) ||
+    payments[0] ||
+    order?.pagamento ||
+    null
+  );
+};
+
+export const getCurrentPaymentMethodValue = (payment: any) => {
+  const method = cleanText(payment?.forma_pagamento || payment?.method || payment?.payment).toLowerCase();
+  const originalMethod = cleanText(payment?.metadata?.forma_pagamento_original).toLowerCase();
+  const paymentOnDeliveryMethod = getPaymentOnDeliveryMethod(payment);
+
+  if (method === "dinheiro" && paymentOnDeliveryMethod === "cartao" && originalMethod) {
+    return originalMethod;
+  }
+
+  return method || originalMethod || "dinheiro";
+};
 
 export const isOrderPaid = (order: any, payments: any[] = []) =>
   payments.some(isApprovedPayment) ||

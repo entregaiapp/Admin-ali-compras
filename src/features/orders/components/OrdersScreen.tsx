@@ -57,6 +57,7 @@ import {
   getOrderPaymentMethod,
   getOrderPaymentStatus,
   getOrderStreetAddress,
+  getCurrentPaymentMethodValue,
   getPreferredOrderPayment,
   hexToRgba,
   isDeliveryOrder,
@@ -2500,7 +2501,7 @@ export function OrdersScreen() {
       {pendingPaymentMethodOrder && (
         <PendingPaymentMethodModal
           order={pendingPaymentMethodOrder}
-          currentMethod={selectedPayment?.metadata?.forma_pagamento_original || selectedPayment?.forma_pagamento || "dinheiro"}
+          currentMethod={getCurrentPaymentMethodValue(selectedPayment)}
           primaryColor={primaryColor}
           onClose={() => setPendingPaymentMethodOrder(null)}
           onUpdated={(result) => void refreshSelectedOrderAfterAdminAdjustment(result, "Forma de pagamento pendente atualizada.")}
