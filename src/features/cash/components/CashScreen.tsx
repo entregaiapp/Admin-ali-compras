@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import {
   AlertTriangle,
   Banknote,
+  BarChart3,
   Check,
   CreditCard,
   Minus,
@@ -19,6 +20,7 @@ import {
   type CashMovementType,
   type CashPaymentMethod,
   type CashRegister,
+  type CashSummary,
   type CurrentCashResponse,
   cashService,
 } from '../services/cashService';
@@ -38,6 +40,31 @@ type TabKey = (typeof tabs)[number]['key'];
 
 const currency = (value: number | null | undefined) =>
   Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+const moneyNumber = (value: number | null | undefined) =>
+  Number(value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const formatMoneyInput = (value: number | null | undefined) => moneyNumber(value);
+
+const normalizeMoneyInput = (rawValue: string) => {
+  const raw = String(rawValue || '').trim();
+  if (!raw) return '';
+
+  const negative = raw.includes('-');
+  const unsigned = raw.replace(/-/g, '');
+  const separatorMatch = unsigned.match(/[,.](\d{1,2})$/);
+  if (separatorMatch) {
+    const integerPart = unsigned.slice(0, separatorMatch.index).replace(/\D/g, '') || '0';
+    const decimalPart = separatorMatch[1].padEnd(2, '0');
+    const parsed = Number(`${integerPart}.${decimalPart}`);
+    return `${negative && parsed !== 0 ? '-' : ''}${moneyNumber(parsed)}`;
+  }
+
+  const digits = unsigned.replace(/\D/g, '');
+  if (!digits) return negative ? '-0,00' : '';
+  const parsed = Number(digits) / 100;
+  return `${negative && parsed !== 0 ? '-' : ''}${moneyNumber(parsed)}`;
+};
 
 const parseMoney = (value: string) => {
   const normalized = String(value || '').replace(/\./g, '').replace(',', '.');
@@ -103,6 +130,87 @@ const paymentDetailRows = (summary: CashRegister['resumo']) => [
   },
 ];
 
+const buildCashSummary = (cash: CashRegister, movements: CashMovement[] = []): CashSummary => {
+  const summary: CashSummary = {
+    valor_inicial: Number(cash.resumo?.valor_inicial ?? cash.valor_inicial ?? 0),
+    vendas_dinheiro: Number(cash.resumo?.vendas_dinheiro ?? cash.vendas_dinheiro ?? 0),
+    vendas_pix: Number(cash.resumo?.vendas_pix ?? cash.vendas_pix ?? 0),
+    vendas_cartao_debito: Number(cash.resumo?.vendas_cartao_debito ?? cash.vendas_cartao_debito ?? 0),
+    vendas_cartao_credito: Number(cash.resumo?.vendas_cartao_credito ?? cash.vendas_cartao_credito ?? 0),
+    suprimentos_total: Number(cash.resumo?.suprimentos_total ?? cash.suprimentos_total ?? 0),
+    sangrias_total: Number(cash.resumo?.sangrias_total ?? cash.sangrias_total ?? 0),
+    despesas_total: Number(cash.resumo?.despesas_total ?? cash.despesas_total ?? 0),
+    suprimentos_dinheiro: Number(cash.resumo?.suprimentos_dinheiro ?? 0),
+    suprimentos_pix: Number(cash.resumo?.suprimentos_pix ?? 0),
+    suprimentos_cartao_debito: Number(cash.resumo?.suprimentos_cartao_debito ?? 0),
+    suprimentos_cartao_credito: Number(cash.resumo?.suprimentos_cartao_credito ?? 0),
+    sangrias_dinheiro: Number(cash.resumo?.sangrias_dinheiro ?? 0),
+    sangrias_pix: Number(cash.resumo?.sangrias_pix ?? 0),
+    sangrias_cartao_debito: Number(cash.resumo?.sangrias_cartao_debito ?? 0),
+    sangrias_cartao_credito: Number(cash.resumo?.sangrias_cartao_credito ?? 0),
+    despesas_dinheiro: Number(cash.resumo?.despesas_dinheiro ?? 0),
+    despesas_pix: Number(cash.resumo?.despesas_pix ?? 0),
+    despesas_cartao_debito: Number(cash.resumo?.despesas_cartao_debito ?? 0),
+    despesas_cartao_credito: Number(cash.resumo?.despesas_cartao_credito ?? 0),
+    total_esperado: Number(cash.resumo?.total_esperado ?? cash.total_esperado ?? 0),
+    saldo_dinheiro_esperado: Number(cash.resumo?.saldo_dinheiro_esperado ?? cash.saldo_dinheiro_esperado ?? 0),
+    saldo_pix_esperado: Number(cash.resumo?.saldo_pix_esperado ?? 0),
+    saldo_cartao_debito_esperado: Number(cash.resumo?.saldo_cartao_debito_esperado ?? 0),
+    saldo_cartao_credito_esperado: Number(cash.resumo?.saldo_cartao_credito_esperado ?? 0),
+    pedidos_rastreados: Number(cash.resumo?.pedidos_rastreados ?? 0),
+    pedidos_cancelados: Number(cash.resumo?.pedidos_cancelados ?? 0),
+    pedidos_total_bruto: Number(cash.resumo?.pedidos_total_bruto ?? 0),
+  };
+
+  if (!cash.resumo && movements.length > 0) {
+    summary.vendas_dinheiro = 0;
+    summary.vendas_pix = 0;
+    summary.vendas_cartao_debito = 0;
+    summary.vendas_cartao_credito = 0;
+    summary.pedidos_rastreados = 0;
+
+    for (const movement of movements) {
+      const value = Number(movement.valor || 0);
+      const method = movement.forma_pagamento as CashPaymentMethod;
+      const type = movement.tipo_movimentacao || movement.origem_inclusao;
+      if (movement.tipo_registro === 'pedido') {
+        summary.pedidos_rastreados += 1;
+        if (method === 'dinheiro') summary.vendas_dinheiro += value;
+        if (method === 'pix') summary.vendas_pix += value;
+        if (method === 'cartao_debito') summary.vendas_cartao_debito += value;
+        if (method === 'cartao_credito') summary.vendas_cartao_credito += value;
+      } else if (type === 'suprimento') {
+        if (method === 'dinheiro') summary.suprimentos_dinheiro += value;
+        if (method === 'pix') summary.suprimentos_pix += value;
+        if (method === 'cartao_debito') summary.suprimentos_cartao_debito += value;
+        if (method === 'cartao_credito') summary.suprimentos_cartao_credito += value;
+      } else if (type === 'sangria') {
+        if (method === 'dinheiro') summary.sangrias_dinheiro += value;
+        if (method === 'pix') summary.sangrias_pix += value;
+        if (method === 'cartao_debito') summary.sangrias_cartao_debito += value;
+        if (method === 'cartao_credito') summary.sangrias_cartao_credito += value;
+      } else if (type === 'despesa_rapida') {
+        if (method === 'dinheiro') summary.despesas_dinheiro += value;
+        if (method === 'pix') summary.despesas_pix += value;
+        if (method === 'cartao_debito') summary.despesas_cartao_debito += value;
+        if (method === 'cartao_credito') summary.despesas_cartao_credito += value;
+      }
+    }
+  }
+
+  summary.saldo_pix_esperado = Number(cash.resumo?.saldo_pix_esperado ?? (
+    summary.vendas_pix + summary.suprimentos_pix - summary.sangrias_pix - summary.despesas_pix
+  ));
+  summary.saldo_cartao_debito_esperado = Number(cash.resumo?.saldo_cartao_debito_esperado ?? (
+    summary.vendas_cartao_debito + summary.suprimentos_cartao_debito - summary.sangrias_cartao_debito - summary.despesas_cartao_debito
+  ));
+  summary.saldo_cartao_credito_esperado = Number(cash.resumo?.saldo_cartao_credito_esperado ?? (
+    summary.vendas_cartao_credito + summary.suprimentos_cartao_credito - summary.sangrias_cartao_credito - summary.despesas_cartao_credito
+  ));
+
+  return summary;
+};
+
 function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
@@ -154,6 +262,27 @@ function TextField({
   );
 }
 
+function MoneyField({
+  label,
+  value,
+  onChange,
+  placeholder = 'R$ 0,00',
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <TextField
+      label={label}
+      value={value}
+      onChange={(nextValue) => onChange(normalizeMoneyInput(nextValue))}
+      placeholder={placeholder}
+    />
+  );
+}
+
 function OpenCashModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const [orders, setOrders] = useState<AvailableCashOrder[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
@@ -195,7 +324,7 @@ function OpenCashModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
   return (
     <Modal title="Abrir caixa" onClose={onClose}>
       <div className="space-y-4">
-        <TextField label="Valor inicial em caixa" value={initialValue} onChange={setInitialValue} placeholder="R$ 0,00" />
+        <MoneyField label="Valor inicial em caixa" value={initialValue} onChange={setInitialValue} />
         <TextField label="Observação" value={note} onChange={setNote} placeholder="Opcional" />
 
         <div className="rounded-xl border border-gray-200">
@@ -298,7 +427,7 @@ function MovementModal({
   return (
     <Modal title={title} onClose={onClose}>
       <div className="space-y-4">
-        <TextField label="Valor" value={value} onChange={setValue} placeholder="R$ 0,00" />
+        <MoneyField label="Valor" value={value} onChange={setValue} />
         <label className="block">
           <span className="mb-1.5 block text-sm font-medium text-gray-700">Forma afetada</span>
           <select
@@ -330,25 +459,45 @@ function MovementModal({
   );
 }
 
-function CashDetailsModal({ cash, onClose }: { cash: CashRegister; onClose: () => void }) {
-  const rows = paymentDetailRows(cash.resumo);
+function CashDetailsModal({
+  cash,
+  movements = [],
+  loadingMovements = false,
+  onClose,
+}: {
+  cash: CashRegister;
+  movements?: CashMovement[];
+  loadingMovements?: boolean;
+  onClose: () => void;
+}) {
+  const resolvedSummary = useMemo(() => buildCashSummary(cash, movements), [cash, movements]);
+  const rows = paymentDetailRows(resolvedSummary);
+  const period = [
+    cash.aberto_em ? formatBrasiliaDate(cash.aberto_em, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : null,
+    cash.fechado_em ? formatBrasiliaDate(cash.fechado_em, { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : null,
+  ].filter(Boolean).join(' até ');
 
   return (
     <Modal title="Dashboard rápido do caixa" onClose={onClose}>
       <div className="space-y-4">
+        {period && (
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+            Fluxo: {period}
+          </div>
+        )}
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="rounded-xl border border-gray-200 p-4">
             <div className="text-xs text-gray-500">Pedidos rastreados</div>
-            <div className="mt-1 text-xl font-bold text-gray-950">{cash.resumo?.pedidos_rastreados || 0}</div>
+            <div className="mt-1 text-xl font-bold text-gray-950">{resolvedSummary.pedidos_rastreados || 0}</div>
           </div>
           <div className="rounded-xl border border-gray-200 p-4">
             <div className="text-xs text-gray-500">Total esperado</div>
-            <div className="mt-1 text-xl font-bold text-gray-950">{currency(cash.resumo?.total_esperado)}</div>
+            <div className="mt-1 text-xl font-bold text-gray-950">{currency(resolvedSummary.total_esperado)}</div>
           </div>
           <div className="rounded-xl border border-gray-200 p-4">
             <div className="text-xs text-gray-500">Movimentações</div>
             <div className="mt-1 text-xl font-bold text-gray-950">
-              {currency((cash.resumo?.suprimentos_total || 0) - (cash.resumo?.sangrias_total || 0) - (cash.resumo?.despesas_total || 0))}
+              {currency((resolvedSummary.suprimentos_total || 0) - (resolvedSummary.sangrias_total || 0) - (resolvedSummary.despesas_total || 0))}
             </div>
           </div>
         </div>
@@ -378,17 +527,67 @@ function CashDetailsModal({ cash, onClose }: { cash: CashRegister; onClose: () =
             </tbody>
           </table>
         </div>
+        <div className="rounded-xl border border-gray-200">
+          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+            <div className="text-sm font-semibold text-gray-900">Fluxo do dia</div>
+            <div className="text-xs text-gray-500">{movements.length} lançamento(s)</div>
+          </div>
+          <div className="max-h-72 overflow-y-auto">
+            {loadingMovements ? (
+              <div className="p-6 text-center text-sm text-gray-500">Carregando fluxo...</div>
+            ) : movements.length === 0 ? (
+              <div className="p-6 text-center text-sm text-gray-500">Nenhuma movimentação neste caixa.</div>
+            ) : (
+              movements.map((movement) => {
+                const type = movement.tipo_movimentacao || movement.origem_inclusao;
+                const isOut = ['sangria', 'despesa_rapida'].includes(type);
+                const title = movement.tipo_registro === 'pedido'
+                  ? `Venda #${movement.numero_pedido || '-'}`
+                  : paymentLabel[type] || type;
+                return (
+                  <div key={`${movement.tipo_registro}-${movement.id}`} className="flex items-center gap-3 border-b border-gray-100 px-4 py-3 last:border-b-0">
+                    <span className={`flex h-8 w-8 items-center justify-center rounded-full ${isOut ? 'bg-pink-100 text-pink-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                      {isOut ? <Minus className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-semibold text-gray-900">{title}</div>
+                      <div className="truncate text-xs text-gray-500">
+                        {movement.cliente_nome || movement.motivo || 'Caixa'} · {formatBrasiliaDate(movement.criado_em)}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className={`text-sm font-bold ${isOut ? 'text-pink-600' : 'text-emerald-600'}`}>
+                        {isOut ? '-' : '+'}{currency(movement.valor)}
+                      </div>
+                      <div className="text-xs font-semibold text-gray-500">{paymentLabel[movement.forma_pagamento] || movement.forma_pagamento}</div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
       </div>
     </Modal>
   );
 }
 
-function CloseCashModal({ cash, onClose, onDone }: { cash: CashRegister; onClose: () => void; onDone: () => void }) {
+function CloseCashModal({
+  cash,
+  movements = [],
+  onClose,
+  onDone,
+}: {
+  cash: CashRegister;
+  movements?: CashMovement[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
   const summary = cash.resumo;
-  const [dinheiro, setDinheiro] = useState(String(summary?.saldo_dinheiro_esperado || 0));
-  const [pix, setPix] = useState(String(summary?.saldo_pix_esperado || 0));
-  const [debit, setDebit] = useState(String(summary?.saldo_cartao_debito_esperado || 0));
-  const [credit, setCredit] = useState(String(summary?.saldo_cartao_credito_esperado || 0));
+  const [dinheiro, setDinheiro] = useState(formatMoneyInput(summary?.saldo_dinheiro_esperado));
+  const [pix, setPix] = useState(formatMoneyInput(summary?.saldo_pix_esperado));
+  const [debit, setDebit] = useState(formatMoneyInput(summary?.saldo_cartao_debito_esperado));
+  const [credit, setCredit] = useState(formatMoneyInput(summary?.saldo_cartao_credito_esperado));
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -436,10 +635,10 @@ function CloseCashModal({ cash, onClose, onDone }: { cash: CashRegister; onClose
             Ver dashboard
           </button>
         </div>
-        <TextField label="Dinheiro em caixa" value={dinheiro} onChange={setDinheiro} />
-        <TextField label="PIX recebido" value={pix} onChange={setPix} />
-        <TextField label="Cartão débito" value={debit} onChange={setDebit} />
-        <TextField label="Cartão crédito" value={credit} onChange={setCredit} />
+        <MoneyField label="Dinheiro em caixa" value={dinheiro} onChange={setDinheiro} />
+        <MoneyField label="PIX recebido" value={pix} onChange={setPix} />
+        <MoneyField label="Cartão débito" value={debit} onChange={setDebit} />
+        <MoneyField label="Cartão crédito" value={credit} onChange={setCredit} />
         {Math.abs(difference) >= 0.01 && (
           <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
             <AlertTriangle className="h-4 w-4" />
@@ -454,7 +653,7 @@ function CloseCashModal({ cash, onClose, onDone }: { cash: CashRegister; onClose
           </button>
         </div>
       </div>
-      {detailsOpen && <CashDetailsModal cash={cash} onClose={() => setDetailsOpen(false)} />}
+      {detailsOpen && <CashDetailsModal cash={cash} movements={movements} onClose={() => setDetailsOpen(false)} />}
     </Modal>
   );
 }
@@ -506,6 +705,9 @@ export function CashScreen() {
   const [closeModal, setCloseModal] = useState(false);
   const [openingClose, setOpeningClose] = useState(false);
   const [justifyCash, setJustifyCash] = useState<CashRegister | null>(null);
+  const [detailsCash, setDetailsCash] = useState<CashRegister | null>(null);
+  const [detailsMovements, setDetailsMovements] = useState<CashMovement[]>([]);
+  const [detailsLoading, setDetailsLoading] = useState(false);
 
   const cash = current?.caixa || null;
 
@@ -546,7 +748,10 @@ export function CashScreen() {
   const openCloseCashModal = async () => {
     try {
       setOpeningClose(true);
-      await loadCurrent();
+      const currentData = await loadCurrent();
+      if (currentData.caixa?.id) {
+        setMovements(await cashService.movements(currentData.caixa.id));
+      }
       setCloseModal(true);
     } catch (error) {
       showSystemNotice('Não foi possível atualizar o resumo do caixa.');
@@ -555,16 +760,42 @@ export function CashScreen() {
     }
   };
 
+  const openCashDashboard = async (cashRegister: CashRegister) => {
+    setDetailsCash(cashRegister);
+    setDetailsMovements([]);
+    setDetailsLoading(true);
+    try {
+      const data = await cashService.movements(cashRegister.id);
+      setDetailsMovements(data);
+    } catch (error) {
+      showSystemNotice('Não foi possível carregar o fluxo do caixa.');
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
+
   const renderCurrent = () => {
     if (!cash || current?.status === 'fechado') {
+      const lastClosure = closures[0];
       return (
         <div className="rounded-2xl border border-gray-200 bg-white p-10 text-center shadow-sm">
           <Wallet className="mx-auto mb-4 h-10 w-10 text-gray-300" />
           <div className="font-semibold text-gray-800">Caixa está fechado</div>
           <p className="mt-1 text-sm text-gray-500">{current?.pedidos_disponiveis || 0} pedido(s) disponível(is) para abertura</p>
-          <button onClick={() => setOpenModal(true)} className="mt-5 rounded-xl bg-emerald-600 px-8 py-3 text-sm font-semibold text-white">
-            Abrir caixa agora
-          </button>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            {lastClosure && (
+              <button
+                onClick={() => void openCashDashboard(lastClosure)}
+                className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-5 py-3 text-sm font-semibold text-gray-700"
+              >
+                <BarChart3 className="h-4 w-4" />
+                Ver dashboard
+              </button>
+            )}
+            <button onClick={() => setOpenModal(true)} className="rounded-xl bg-emerald-600 px-8 py-3 text-sm font-semibold text-white">
+              Abrir caixa agora
+            </button>
+          </div>
         </div>
       );
     }
@@ -673,6 +904,7 @@ export function CashScreen() {
             <th className="px-4 py-3">Informado</th>
             <th className="px-4 py-3">Diferença</th>
             <th className="px-4 py-3">Status</th>
+            <th className="px-4 py-3 text-right">Dashboard</th>
           </tr>
         </thead>
         <tbody>
@@ -688,6 +920,17 @@ export function CashScreen() {
                 <span className={`rounded-full px-2 py-1 text-xs font-semibold ${item.divergencia_status === 'sem_divergencia' ? 'bg-emerald-50 text-emerald-700' : item.divergencia_status === 'justificada' ? 'bg-indigo-50 text-indigo-700' : 'bg-amber-50 text-amber-700'}`}>
                   {item.divergencia_status === 'sem_divergencia' ? 'Sem divergência' : item.divergencia_status === 'justificada' ? 'Justificada' : 'Pendente'}
                 </span>
+              </td>
+              <td className="px-4 py-4 text-right">
+                <button
+                  type="button"
+                  title="Ver dashboard do caixa"
+                  aria-label="Ver dashboard do caixa"
+                  onClick={() => void openCashDashboard(item)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                >
+                  <BarChart3 className="h-4 w-4" />
+                </button>
               </td>
             </tr>
           ))}
@@ -715,6 +958,15 @@ export function CashScreen() {
           {item.divergencia_status !== 'justificada' && (
             <button onClick={() => setJustifyCash(item)} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Justificar</button>
           )}
+          <button
+            type="button"
+            title="Ver dashboard do caixa"
+            aria-label="Ver dashboard do caixa"
+            onClick={() => void openCashDashboard(item)}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-red-100 bg-white text-gray-600 hover:bg-red-50"
+          >
+            <BarChart3 className="h-4 w-4" />
+          </button>
         </div>
       ))}
     </div>
@@ -779,8 +1031,16 @@ export function CashScreen() {
 
       {openModal && <OpenCashModal onClose={() => setOpenModal(false)} onDone={() => loadAll()} />}
       {movementType && cash && <MovementModal cashId={cash.id} type={movementType} onClose={() => setMovementType(null)} onDone={() => loadAll()} />}
-      {closeModal && cash && <CloseCashModal cash={cash} onClose={() => setCloseModal(false)} onDone={() => loadAll()} />}
+      {closeModal && cash && <CloseCashModal cash={cash} movements={movements} onClose={() => setCloseModal(false)} onDone={() => loadAll()} />}
       {justifyCash && <JustifyModal cash={justifyCash} onClose={() => setJustifyCash(null)} onDone={() => loadAll()} />}
+      {detailsCash && (
+        <CashDetailsModal
+          cash={detailsCash}
+          movements={detailsMovements}
+          loadingMovements={detailsLoading}
+          onClose={() => setDetailsCash(null)}
+        />
+      )}
     </div>
   );
 }
