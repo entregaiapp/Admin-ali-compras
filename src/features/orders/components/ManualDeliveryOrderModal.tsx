@@ -10,11 +10,40 @@ const list = (response: any) => {
   const data = unwrap(response);
   return Array.isArray(data) ? data : data?.data || [];
 };
+const PRODUCT_CATALOG_PAGE_SIZE = 100;
+const paginatedList = (response: any) => {
+  const rawData = response?.data;
+  const data = Array.isArray(rawData?.data)
+    ? rawData
+    : Array.isArray(rawData?.data?.data)
+      ? rawData.data
+      : unwrap(response);
+  const products = Array.isArray(data) ? data : data?.data || [];
+  return {
+    products,
+    total: Number(data?.total ?? products.length),
+    page: Number(data?.page ?? 1),
+    totalPages: Math.max(1, Number(data?.total_pages ?? 1)),
+  };
+};
+const mergeUniqueProducts = (current: any[], next: any[]) => {
+  const known = new Set(current.map((product) => product.id));
+  return [...current, ...next.filter((product) => !known.has(product.id))];
+};
 const apiError = (error: any) =>
   error?.response?.data?.error?.message || error?.response?.data?.message || "Não foi possível concluir a operação.";
 const money = (value: any) => Number(value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const normalizeSearchText = (value: string) =>
   value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR");
+const toFinitePrice = (value: any) => {
+  if (value === null || value === undefined || value === "") return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+};
+const hasPriceValue = (item: any, field: string) =>
+  item?.[field] !== null && item?.[field] !== undefined && item?.[field] !== "";
+const appPriceValue = (item: any, appField: string, sourceField: string) =>
+  hasPriceValue(item, sourceField) ? toFinitePrice(item?.[appField]) : null;
 const hexToRgba = (hex: string, alpha: number) => {
   const clean = String(hex || "").replace("#", "").trim();
   const normalized = clean.length === 3 ? clean.split("").map((char) => char + char).join("") : clean;
@@ -25,14 +54,47 @@ const hexToRgba = (hex: string, alpha: number) => {
   const blue = number & 255;
   return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 };
-const effectivePrice = (item: any) => {
-  if (item?.preco_app_taxa_ativa) {
-    return Number(item?.preco_promocional_app ?? item?.preco_app ?? item?.preco_promocional ?? item?.preco ?? 0);
+const effectivePrice = (item: any, withoutAppTax = false) => {
+  const promotionActive = isPromotionActive(item?.preco_promocional, item?.promocao_ate);
+  if (!withoutAppTax && item?.preco_app_taxa_ativa) {
+    const regular = appPriceValue(item, "preco_app", "preco")
+      ?? appPriceValue(item, "preco_a_partir_de_app", "preco_a_partir_de")
+      ?? toFinitePrice(item?.preco)
+      ?? toFinitePrice(item?.preco_a_partir_de)
+      ?? 0;
+    const promotional = promotionActive
+      ? appPriceValue(item, "preco_promocional_app", "preco_promocional")
+      : null;
+    return promotional !== null && promotional < regular ? promotional : regular;
   }
-  return Number(item?.preco_promocional ?? item?.preco ?? 0);
+  const regular = toFinitePrice(item?.preco_a_partir_de) ?? toFinitePrice(item?.preco) ?? 0;
+  const promotional = promotionActive ? toFinitePrice(item?.preco_promocional) : null;
+  return promotional !== null && promotional < regular ? promotional : regular;
+};
+const productPriceLabel = (product: any, withoutAppTax = false) => {
+  const price = effectivePrice(product, withoutAppTax);
+  if (!Number.isFinite(price) || price <= 0) {
+    return product?.modo_compra === "configuravel" ? "Preco na configuracao" : "Sem preco";
+  }
+  return product?.modo_compra === "configuravel" ? `A partir de ${money(price)}` : money(price);
 };
 const isPromotionActive = (promotional: any, endsAt: any) =>
   promotional != null && (!endsAt || new Date(endsAt).getTime() >= Date.now());
+const additionalPrice = (item: any, withoutAppTax = false) => {
+  const promotionActive = isPromotionActive(item?.preco_promocional, item?.promocao_ate);
+  if (!withoutAppTax && item?.preco_app_taxa_ativa) {
+    const regular = appPriceValue(item, "preco_adicional_app", "preco_adicional")
+      ?? toFinitePrice(item?.preco_adicional)
+      ?? 0;
+    const promotional = promotionActive
+      ? appPriceValue(item, "preco_promocional_app", "preco_promocional")
+      : null;
+    return promotional !== null && promotional < regular ? promotional : regular;
+  }
+  const regular = toFinitePrice(item?.preco_adicional) ?? 0;
+  const promotional = promotionActive ? toFinitePrice(item?.preco_promocional) : null;
+  return promotional !== null && promotional < regular ? promotional : regular;
+};
 const DEFAULT_PAYMENT_METHODS = ["PIX", "Cartão de Crédito", "Cartão de Débito", "Dinheiro"];
 const PAYMENT_METHOD_VALUES: Record<string, string> = {
   "PIX": "pix",
@@ -41,18 +103,55 @@ const PAYMENT_METHOD_VALUES: Record<string, string> = {
   "Dinheiro": "dinheiro",
   "Vale Refeição": "vale_refeicao",
   "Vale Alimentação": "vale_alimentacao",
+  "Fiado": "fiado",
 };
 const CARD_PAYMENT_VALUES = new Set(["cartao_credito", "cartao_debito"]);
 const paymentMethodCaption = (value: string) =>
+  value === "fiado"
+    ? "Conta fiado do contato"
+    :
   value === "dinheiro" || CARD_PAYMENT_VALUES.has(value)
     ? "Pagar na entrega"
     : "Pagamento externo ao app";
+const STEP_CONTACT = 1;
+const STEP_COLLABORATOR = 2;
+const STEP_PRODUCTS = 3;
+const STEP_ADDRESS = 4;
+const STEP_PAYMENT = 5;
 const STEPS = [
-  { id: 1, label: "Contato", icon: UserRound },
-  { id: 2, label: "Produtos", icon: ShoppingBasket },
-  { id: 3, label: "Endereço", icon: MapPin },
-  { id: 4, label: "Pagamento", icon: CreditCard },
+  { id: STEP_CONTACT, label: "Contato", icon: UserRound },
+  { id: STEP_COLLABORATOR, label: "Colaborador", icon: UserRound },
+  { id: STEP_PRODUCTS, label: "Produtos", icon: ShoppingBasket },
+  { id: STEP_ADDRESS, label: "Endereço", icon: MapPin },
+  { id: STEP_PAYMENT, label: "Pagamento", icon: CreditCard },
 ];
+
+const EMPTY_ADDRESS = {
+  rua: "", numero: "", bairro: "", cidade: "", estado: "", cep: "", complemento: "", ponto_referencia: "",
+};
+
+const normalizeSavedAddress = (savedAddress: any) => {
+  if (!savedAddress) return { ...EMPTY_ADDRESS };
+  return {
+    rua: savedAddress.rua || "",
+    numero: savedAddress.numero || "",
+    bairro: savedAddress.bairro || "",
+    cidade: savedAddress.cidade || "",
+    estado: savedAddress.estado || "",
+    cep: savedAddress.cep || "",
+    complemento: savedAddress.complemento || "",
+    ponto_referencia: savedAddress.ponto_referencia || "",
+  };
+};
+
+const formatSavedAddress = (savedAddress: any) => {
+  if (!savedAddress) return "";
+  return [
+    [savedAddress.rua, savedAddress.numero].filter(Boolean).join(", "),
+    savedAddress.bairro,
+    savedAddress.cidade,
+  ].filter(Boolean).join(" - ");
+};
 
 const getLoggedUser = () => {
   try {
@@ -63,8 +162,29 @@ const getLoggedUser = () => {
   }
 };
 
-export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onClose, onCreated }: {
-  lojaId: string; primaryColor?: string; onClose: () => void; onCreated: () => void;
+const phoneSearchPattern = /(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?(?:9?\d{4})[-.\s]?\d{4}/;
+const onlyDigits = (value: string) => String(value || "").replace(/\D/g, "");
+const compactText = (value: string) => String(value || "").replace(/\s+/g, " ").trim();
+const inferQuickContactFromQuery = (query: string) => {
+  const value = compactText(query);
+  if (!value) return { nome: "", telefone: "" };
+
+  const phoneMatch = value.match(phoneSearchPattern);
+  const phoneText = phoneMatch?.[0]?.trim() || "";
+  const fallbackDigits = onlyDigits(value);
+  const hasPhone = onlyDigits(phoneText || value).length >= 8;
+
+  if (!hasPhone) return { nome: value, telefone: "" };
+
+  const nome = phoneMatch ? compactText(value.replace(phoneMatch[0], " ")) : "";
+  return {
+    nome,
+    telefone: phoneText || fallbackDigits || value,
+  };
+};
+
+export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fiadoEnabled = false, onClose, onCreated }: {
+  lojaId: string; primaryColor?: string; fiadoEnabled?: boolean; onClose: () => void; onCreated: () => void;
 }) {
   const [step, setStep] = useState(1);
   const [busy, setBusy] = useState(false);
@@ -73,19 +193,23 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onC
   const [contacts, setContacts] = useState<any[]>([]);
   const [contactLoading, setContactLoading] = useState(false);
   const [contact, setContact] = useState<any>(null);
+  const [fiadoColaborador, setFiadoColaborador] = useState<boolean | null>(null);
   const [quick, setQuick] = useState({ nome: "", telefone: "" });
   const [products, setProducts] = useState<any[]>([]);
   const [productSearch, setProductSearch] = useState("");
+  const [debouncedProductSearch, setDebouncedProductSearch] = useState("");
   const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogLoadingMore, setCatalogLoadingMore] = useState(false);
+  const [catalogPage, setCatalogPage] = useState(1);
+  const [catalogTotal, setCatalogTotal] = useState(0);
+  const [catalogTotalPages, setCatalogTotalPages] = useState(1);
   const [lines, setLines] = useState<any[]>([]);
   const [configuring, setConfiguring] = useState<any>(null);
   const [selectedVariation, setSelectedVariation] = useState("");
   const [selectedOptions, setSelectedOptions] = useState<any[]>([]);
   const [optionSearches, setOptionSearches] = useState<Record<string, string>>({});
   const [configurationNotes, setConfigurationNotes] = useState("");
-  const [address, setAddress] = useState<any>({
-    rua: "", numero: "", bairro: "", cidade: "", estado: "", cep: "", complemento: "", ponto_referencia: "",
-  });
+  const [address, setAddress] = useState<any>({ ...EMPTY_ADDRESS });
   const [pickupAtStore, setPickupAtStore] = useState(false);
   const [store, setStore] = useState<any>(null);
   const [themePrimary, setThemePrimary] = useState(primaryColor);
@@ -93,20 +217,59 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onC
   const [payment, setPayment] = useState("dinheiro");
   const [semTroco, setSemTroco] = useState(true);
   const [trocoPara, setTrocoPara] = useState("");
+  const quickNameRef = useRef<HTMLInputElement | null>(null);
+  const quickPhoneRef = useRef<HTMLInputElement | null>(null);
   const firstOptionSearchRef = useRef<HTMLInputElement | null>(null);
   const loggedUser = useMemo(() => getLoggedUser(), []);
   const primary = themePrimary || primaryColor || "#2563eb";
   const primarySoft = hexToRgba(primary, 0.1);
   const primaryBorder = hexToRgba(primary, 0.35);
   const buttonStyle = { backgroundColor: primary };
+  const activeSteps = useMemo(
+    () => (fiadoEnabled ? STEPS : STEPS.filter((item) => item.id !== STEP_COLLABORATOR)),
+    [fiadoEnabled],
+  );
+  const currentStepIndex = activeSteps.findIndex((item) => item.id === step);
+  const previousStep = currentStepIndex > 0 ? activeSteps[currentStepIndex - 1]?.id : null;
+  const nextStep = currentStepIndex >= 0 ? activeSteps[currentStepIndex + 1]?.id : null;
+  const inferredQuickContact = useMemo(() => inferQuickContactFromQuery(contactQuery), [contactQuery]);
+  const hasInferredQuickContact = Boolean(inferredQuickContact.nome || inferredQuickContact.telefone);
+  const usePricesWithoutAppTax = fiadoEnabled && fiadoColaborador === true;
+  const contactStepBlocked = step === STEP_CONTACT && !contact;
+  const collaboratorStepBlocked = step === STEP_COLLABORATOR && fiadoColaborador === null;
 
   useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedProductSearch(productSearch.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [productSearch]);
+
+  useEffect(() => {
+    let cancelled = false;
     setCatalogLoading(true);
-    api.get("/produtos_loja", { params: { ativo: true, per_page: 100 } })
-      .then((response) => setProducts(list(response)))
-      .catch(() => setError("Não foi possível carregar o catálogo."))
-      .finally(() => setCatalogLoading(false));
-  }, []);
+    api.get("/produtos_loja", {
+      params: {
+        ativo: true,
+        busca: debouncedProductSearch || undefined,
+        page: 1,
+        per_page: PRODUCT_CATALOG_PAGE_SIZE,
+      },
+    })
+      .then((response) => {
+        if (cancelled) return;
+        const payload = paginatedList(response);
+        setProducts(payload.products);
+        setCatalogPage(payload.page);
+        setCatalogTotal(payload.total);
+        setCatalogTotalPages(payload.totalPages);
+      })
+      .catch(() => {
+        if (!cancelled) setError("Nao foi possivel carregar o catalogo.");
+      })
+      .finally(() => {
+        if (!cancelled) setCatalogLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [debouncedProductSearch]);
 
   useEffect(() => {
     Promise.allSettled([
@@ -119,10 +282,11 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onC
       const methods = Array.isArray(config?.formas_pagamento) && config.formas_pagamento.length
         ? config.formas_pagamento
         : DEFAULT_PAYMENT_METHODS;
-      setAcceptedPaymentMethods(methods);
-      setPayment(PAYMENT_METHOD_VALUES[methods[0]] || String(methods[0]).toLowerCase());
+      const nextMethods = fiadoEnabled && !methods.includes("Fiado") ? [...methods, "Fiado"] : methods;
+      setAcceptedPaymentMethods(nextMethods);
+      setPayment(PAYMENT_METHOD_VALUES[nextMethods[0]] || String(nextMethods[0]).toLowerCase());
     });
-  }, [lojaId, primaryColor]);
+  }, [fiadoEnabled, lojaId, primaryColor]);
 
   useEffect(() => {
     if (!configuring) return;
@@ -171,18 +335,38 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onC
     }, []));
   }, [configuring, selectedVariation]);
 
-  const filteredProducts = useMemo(() => {
-    const search = productSearch.trim().toLocaleLowerCase("pt-BR");
-    if (!search) return products;
-    return products.filter((product) =>
-      [product.nome, product.codigo_interno, product.categoria_nome]
-        .some((value) => String(value || "").toLocaleLowerCase("pt-BR").includes(search))
-    );
-  }, [products, productSearch]);
+  const hasMoreCatalogProducts = catalogPage < catalogTotalPages;
+  const loadMoreProducts = async () => {
+    if (catalogLoadingMore || !hasMoreCatalogProducts) return;
+    setCatalogLoadingMore(true);
+    try {
+      const response = await api.get("/produtos_loja", {
+        params: {
+          ativo: true,
+          busca: debouncedProductSearch || undefined,
+          page: catalogPage + 1,
+          per_page: PRODUCT_CATALOG_PAGE_SIZE,
+        },
+      });
+      const payload = paginatedList(response);
+      setProducts((current) => mergeUniqueProducts(current, payload.products));
+      setCatalogPage(payload.page);
+      setCatalogTotal(payload.total);
+      setCatalogTotalPages(payload.totalPages);
+    } catch {
+      setError("Nao foi possivel carregar mais produtos.");
+    } finally {
+      setCatalogLoadingMore(false);
+    }
+  };
 
   const estimatedSubtotal = useMemo(() => lines.reduce(
     (sum, line) => sum + Number(line.preco || 0) * Number(line.quantidade || 0), 0,
   ), [lines]);
+  const totalItemsInOrder = useMemo(
+    () => lines.reduce((sum, line) => sum + Number(line.quantidade || 0), 0),
+    [lines],
+  );
 
   const profileContact = useMemo(() => {
     const name = loggedUser?.nome || loggedUser?.name || store?.nome || "Usuário da loja";
@@ -202,7 +386,40 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onC
   };
 
   const chooseContact = (selected: any) => {
-    setContact(selected); setQuick({ nome: selected.nome, telefone: selected.telefone }); setError(""); setStep(2);
+    setContact(selected);
+    setFiadoColaborador(null);
+    setLines([]);
+    setConfiguring(null);
+    setQuick({ nome: selected.nome, telefone: selected.telefone });
+    setAddress(normalizeSavedAddress(selected.ultimo_endereco));
+    setPickupAtStore(false);
+    setError("");
+    setStep(fiadoEnabled ? STEP_COLLABORATOR : STEP_PRODUCTS);
+  };
+  const answerFiadoCollaborator = (isCollaborator: boolean) => {
+    setFiadoColaborador(isCollaborator);
+    setLines([]);
+    setConfiguring(null);
+    setError("");
+    setStep(STEP_PRODUCTS);
+  };
+  const mergeQuickContactDraft = (draft = inferredQuickContact) => {
+    if (!draft.nome && !draft.telefone) return;
+    setQuick((current) => ({
+      nome: draft.nome || current.nome,
+      telefone: draft.telefone || current.telefone,
+    }));
+  };
+  const handleContactQueryChange = (value: string) => {
+    setContactQuery(value);
+    mergeQuickContactDraft(inferQuickContactFromQuery(value));
+  };
+  const useTypedContactDraft = () => {
+    mergeQuickContactDraft();
+    window.setTimeout(() => {
+      if (!inferredQuickContact.nome) quickNameRef.current?.focus();
+      else if (!inferredQuickContact.telefone) quickPhoneRef.current?.focus();
+    }, 0);
   };
   const createQuickContact = () => {
     if (!quick.nome.trim() || quick.telefone.replace(/\D/g, "").length < 8) {
@@ -211,13 +428,40 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onC
     chooseContact({ id: `new-${Date.now()}`, ...quick, novo: true });
   };
 
+  const lineIdentity = (line: any) => JSON.stringify({
+    produto_loja_id: line.produto_loja_id || null,
+    variacao_produto_loja_id: line.variacao_produto_loja_id || null,
+    observacoes: String(line.observacoes || "").trim(),
+    selecoes: (line.selecoes || [])
+      .map((selection: any) => ({
+        grupo_id: selection.grupo_id,
+        opcao_id: selection.opcao_id,
+        quantidade: Number(selection.quantidade || 1),
+      }))
+      .sort((a: any, b: any) =>
+        `${a.grupo_id}:${a.opcao_id}`.localeCompare(`${b.grupo_id}:${b.opcao_id}`)
+      ),
+  });
+  const addOrIncrementLine = (line: any) => {
+    setLines((current) => {
+      const identity = lineIdentity(line);
+      const existingIndex = current.findIndex((item) => lineIdentity(item) === identity);
+      if (existingIndex < 0) return [...current, line];
+      return current.map((item, index) => (
+        index === existingIndex
+          ? { ...item, quantidade: Number(item.quantidade || 0) + Number(line.quantidade || 1) }
+          : item
+      ));
+    });
+  };
+
   const addProduct = async (product: any) => {
     setError("");
     if (product.modo_compra !== "configuravel") {
-      setLines((current) => [...current, {
+      addOrIncrementLine({
         client_line_id: crypto.randomUUID(), produto_loja_id: product.id,
-        quantidade: 1, selecoes: [], nome: product.nome, preco: effectivePrice(product),
-      }]);
+        quantidade: 1, selecoes: [], nome: product.nome, preco: effectivePrice(product, usePricesWithoutAppTax),
+      });
       return;
     }
     setBusy(true);
@@ -245,12 +489,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onC
   const isOptionAvailable = (option: any) => getOptionOverride(option)?.disponivel !== false && option?.ativa !== false;
   const getOptionPrice = (option: any) => {
     const override = getOptionOverride(option);
-    const regularPrice = override?.preco_adicional ?? option.preco_adicional ?? 0;
-    const promotionalPrice = override ? override.preco_promocional : option.preco_promocional;
-    const promotionEndsAt = override ? override.promocao_ate : option.promocao_ate;
-    return isPromotionActive(promotionalPrice, promotionEndsAt) && Number(promotionalPrice) < Number(regularPrice)
-      ? Number(promotionalPrice)
-      : Number(regularPrice);
+    return additionalPrice(override || option, usePricesWithoutAppTax);
   };
   const getVisibleOptions = (group: any) => {
     const search = normalizeSearchText(optionSearches[group.id] || "");
@@ -297,7 +536,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onC
   });
   const configuredUnitPrice = useMemo(() => {
     if (!configuring?.produto) return 0;
-    let basePrice = effectivePrice(selectedVariationData) || effectivePrice(configuring.produto);
+    let basePrice = effectivePrice(selectedVariationData, usePricesWithoutAppTax) || effectivePrice(configuring.produto, usePricesWithoutAppTax);
     let optionsPrice = 0;
 
     for (const group of configuring.grupos || []) {
@@ -321,7 +560,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onC
     }
 
     return Number((basePrice + optionsPrice).toFixed(2));
-  }, [configuring, selectedOptions, selectedVariationData]);
+  }, [configuring, selectedOptions, selectedVariationData, usePricesWithoutAppTax]);
   const saveConfiguredLine = () => {
     const product = configuring?.produto;
     if (!product) return;
@@ -334,14 +573,14 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onC
       }
     }
     const variation = (configuring.variacoes || []).find((item: any) => item.id === selectedVariation);
-    setLines((current) => [...current, {
+    addOrIncrementLine({
       client_line_id: crypto.randomUUID(), produto_loja_id: product.id,
       variacao_produto_loja_id: selectedVariation || null, quantidade: 1,
-      selecoes: selectedOptions, nome: product.nome,
+      selecoes: selectedOptions.map((selection) => ({ ...selection })), nome: product.nome,
       observacoes: configurationNotes.trim() || undefined,
       detalhe: [variation?.nome, selectedOptions.length ? `${selectedOptions.length} opção(ões)` : ""].filter(Boolean).join(" · "),
       preco: configuredUnitPrice,
-    }]);
+    });
     setConfiguring(null); setSelectedOptions([]); setConfigurationNotes(""); setError("");
   };
   const changeLineQuantity = (index: number, delta: number) => setLines((current) => current
@@ -368,6 +607,8 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onC
         },
         pagamento: {
           forma_pagamento: payment,
+          colaborador: fiadoEnabled ? fiadoColaborador === true : undefined,
+          fiado_colaborador: fiadoEnabled ? fiadoColaborador === true : undefined,
           sem_troco: payment === "dinheiro" ? semTroco : undefined,
           troco_para: payment === "dinheiro" && !semTroco ? Number(trocoPara.replace(",", ".")) : undefined,
         },
@@ -377,10 +618,14 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onC
   };
 
   let optionSearchRefAssigned = false;
+  const hasLongConfigurableOptions = Boolean(
+    configuring && (configuring.grupos || []).some((group: any) => (group.opcoes || []).length > 5),
+  );
+  const stickyConfigurationCheckout = hasLongConfigurableOptions && selectedOptions.length > 0;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 p-2 backdrop-blur-sm sm:p-5">
-      <div className="flex max-h-[95vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 p-2 backdrop-blur-sm sm:p-3">
+      <div className="flex h-[calc(100vh-1rem)] w-[98vw] max-w-[96rem] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl sm:h-[calc(100vh-1.5rem)]">
         <header className="border-b bg-white px-5 py-4 sm:px-7">
           <div className="flex items-center justify-between">
             <div>
@@ -391,11 +636,12 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onC
               <X className="h-5 w-5" />
             </button>
           </div>
-          <div className="mt-5 grid grid-cols-4 gap-2">
-            {STEPS.map((item) => {
+          <div className="mt-5 grid gap-2" style={{ gridTemplateColumns: `repeat(${activeSteps.length}, minmax(0, 1fr))` }}>
+            {activeSteps.map((item) => {
               const Icon = item.icon;
               const active = item.id === step;
-              const done = item.id < step;
+              const itemIndex = activeSteps.findIndex((candidate) => candidate.id === item.id);
+              const done = itemIndex >= 0 && currentStepIndex >= 0 && itemIndex < currentStepIndex;
               const highlighted = active || done;
               return (
                 <div key={item.id} className="flex items-center gap-2">
@@ -414,10 +660,10 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onC
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-y-auto bg-slate-50 p-5 sm:p-7">
+        <main className="min-h-0 flex-1 overflow-y-auto bg-slate-50 p-5 pb-24 sm:p-7 sm:pb-28">
           {error && <div className="mb-5 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
-          {step === 1 && (
+          {step === STEP_CONTACT && (
             <div className="mx-auto max-w-2xl space-y-6">
               <section className="rounded-xl border bg-white p-5">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -440,7 +686,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onC
                   <input
                     autoFocus
                     value={contactQuery}
-                    onChange={(event) => setContactQuery(event.target.value)}
+                    onChange={(event) => handleContactQueryChange(event.target.value)}
                     placeholder="Ex.: Maria ou (81) 99999-9999"
                     className="w-full rounded-xl border py-2.5 pl-10 pr-10 outline-none"
                     style={{ borderColor: contactQuery ? primaryBorder : undefined }}
@@ -450,14 +696,39 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onC
                 {contactQuery && (
                   <div className="mt-3 overflow-hidden rounded-xl border">
                     {contacts.length ? contacts.map((item) => (
-                      <button key={item.id} onClick={() => chooseContact(item)} className="flex w-full items-center justify-between border-b bg-white p-3 text-left last:border-0 hover:bg-slate-50">
-                        <span>
+                      <button key={item.id} onClick={() => chooseContact(item)} className="flex w-full items-center justify-between gap-3 border-b bg-white p-3 text-left last:border-0 hover:bg-slate-50">
+                        <span className="min-w-0">
                           <b className="block text-slate-800">{item.nome}</b>
                           <small className="text-slate-500">{item.telefone}</small>
+                          {item.ultimo_endereco && (
+                            <small className="mt-1 block truncate text-slate-500">
+                              Ultimo endereco salvo: {formatSavedAddress(item.ultimo_endereco)}
+                            </small>
+                          )}
+                          {Number(item.fiado_saldo_aberto || 0) > 0 && (
+                            <small className="mt-1 block font-semibold text-amber-700">
+                              Fiado em aberto: {money(item.fiado_saldo_aberto)} em {Number(item.fiado_pedidos_abertos || 0)} pedido{Number(item.fiado_pedidos_abertos || 0) === 1 ? "" : "s"}
+                            </small>
+                          )}
                         </span>
-                        <ArrowRight className="h-4 w-4" style={{ color: primary }} />
+                        <ArrowRight className="h-4 w-4 shrink-0" style={{ color: primary }} />
                       </button>
-                    )) : !contactLoading && <p className="bg-white p-4 text-center text-sm text-slate-500">Nenhum contato encontrado.</p>}
+                    )) : !contactLoading && (
+                      <div className="bg-white p-4 text-center text-sm text-slate-500">
+                        <p>Nenhum contato encontrado.</p>
+                        {hasInferredQuickContact && (
+                          <button
+                            type="button"
+                            onClick={useTypedContactDraft}
+                            className="mt-3 inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-white"
+                            style={buttonStyle}
+                          >
+                            <Plus className="h-4 w-4" />
+                            Usar dado digitado
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </section>
@@ -468,11 +739,11 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onC
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="text-sm font-medium text-slate-700">
                     Nome
-                    <input value={quick.nome} onChange={(event) => setQuick({ ...quick, nome: event.target.value })} className="mt-1 w-full rounded-lg border p-2.5" placeholder="Nome do cliente" />
+                    <input ref={quickNameRef} value={quick.nome} onChange={(event) => setQuick({ ...quick, nome: event.target.value })} className="mt-1 w-full rounded-lg border p-2.5" placeholder="Nome do cliente" />
                   </label>
                   <label className="text-sm font-medium text-slate-700">
                     Telefone
-                    <input value={quick.telefone} onChange={(event) => setQuick({ ...quick, telefone: event.target.value })} className="mt-1 w-full rounded-lg border p-2.5" placeholder="(00) 00000-0000" />
+                    <input ref={quickPhoneRef} value={quick.telefone} onChange={(event) => setQuick({ ...quick, telefone: event.target.value })} className="mt-1 w-full rounded-lg border p-2.5" placeholder="(00) 00000-0000" />
                   </label>
                 </div>
                 <button onClick={createQuickContact} className="mt-4 rounded-lg px-4 py-2.5 font-semibold text-white" style={buttonStyle}>
@@ -482,38 +753,95 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onC
             </div>
           )}
 
-          {step === 2 && (
-            <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
+          {step === STEP_COLLABORATOR && (
+            <div className="mx-auto max-w-xl">
+              <section className="rounded-xl border bg-white p-6 text-center">
+                <p className="text-sm font-semibold uppercase tracking-wide text-slate-400">Colaborador</p>
+                <h3 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">
+                  {contact?.nome} é colaborador?
+                </h3>
+                <p className="mt-2 text-sm text-slate-500">
+                  Se não for colaborador, a taxa do app será aplicada quando estiver configurada.
+                </p>
+                <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => answerFiadoCollaborator(true)}
+                    className="rounded-xl border-2 px-5 py-4 text-base font-bold text-slate-900"
+                    style={{ borderColor: primary, backgroundColor: primarySoft }}
+                  >
+                    Sim
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => answerFiadoCollaborator(false)}
+                    className="rounded-xl border-2 border-slate-200 px-5 py-4 text-base font-bold text-slate-900 hover:bg-slate-50"
+                  >
+                    Não
+                  </button>
+                </div>
+              </section>
+            </div>
+          )}
+
+          {step === STEP_PRODUCTS && (
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px]">
               <section className="rounded-xl border bg-white p-4">
                 <div className="mb-3">
                   <h3 className="font-bold text-slate-900">Adicionar produtos</h3>
                   <p className="text-sm text-slate-500">Pesquise pelo nome, código ou categoria.</p>
+                  {fiadoEnabled && fiadoColaborador !== null && (
+                    <p className="mt-1 text-xs font-semibold" style={{ color: primary }}>
+                      {usePricesWithoutAppTax ? "Colaborador: preços sem taxa" : "Não colaborador: taxa do app aplicada quando configurada"}
+                    </p>
+                  )}
+                  {catalogTotal > 0 && (
+                    <p className="mt-1 text-xs font-semibold text-slate-500">{products.length} de {catalogTotal} produtos carregados</p>
+                  )}
                 </div>
                 <div className="relative mb-3">
                   <Search className="absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
                   <input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Buscar produto pelo nome..." className="w-full rounded-lg border py-2 pl-10 pr-3" />
                 </div>
-                <div className="max-h-[430px] overflow-y-auto rounded-lg border">
+                <div className="max-h-[58vh] overflow-y-auto rounded-lg border xl:max-h-[620px]">
                   {catalogLoading ? (
                     <div className="flex justify-center p-8"><Loader2 className="animate-spin" style={{ color: primary }} /></div>
-                  ) : filteredProducts.length ? filteredProducts.map((product) => (
-                    <button key={product.id} onClick={() => addProduct(product)} className="flex w-full items-center justify-between gap-3 border-b p-3 text-left last:border-0 hover:bg-slate-50">
-                      <span className="min-w-0">
-                        <b className="block truncate text-slate-800">{product.nome}</b>
-                        <small className="text-slate-500">{product.modo_compra === "configuravel" ? "Escolher tamanho e opções" : money(effectivePrice(product))}</small>
-                      </span>
-                      <span className="flex h-8 w-8 items-center justify-center rounded-full" style={{ backgroundColor: primarySoft, color: primary }}>
-                        <Plus className="h-4 w-4" />
-                      </span>
-                    </button>
-                  )) : <p className="p-8 text-center text-sm text-slate-500">Nenhum produto encontrado.</p>}
+                  ) : products.length ? (
+                    <>
+                      {products.map((product) => (
+                        <button key={product.id} onClick={() => addProduct(product)} className="flex w-full items-center justify-between gap-3 border-b p-3 text-left last:border-0 hover:bg-slate-50">
+                          <span className="min-w-0">
+                            <b className="block truncate text-slate-800">{product.nome}</b>
+                            <small className="text-slate-500">{product.categoria_nome || (product.modo_compra === "configuravel" ? "Configurar opcoes" : "Produto")}</small>
+                          </span>
+                          <span className="ml-auto shrink-0 text-right">
+                            <b className="block text-sm text-slate-900">{productPriceLabel(product, usePricesWithoutAppTax)}</b>
+                            {product.modo_compra === "configuravel" && <small className="text-slate-500">Configurar</small>}
+                          </span>
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: primarySoft, color: primary }}>
+                            <Plus className="h-4 w-4" />
+                          </span>
+                        </button>
+                      ))}
+                      {hasMoreCatalogProducts && (
+                        <div className="border-t bg-white p-3 text-center">
+                          <button type="button" disabled={catalogLoadingMore} onClick={loadMoreProducts} className="inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50">
+                            {catalogLoadingMore && <Loader2 className="h-4 w-4 animate-spin" />}
+                            Carregar mais produtos
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  ) : <p className="p-8 text-center text-sm text-slate-500">Nenhum produto encontrado.</p>}
                 </div>
               </section>
 
               <aside className="rounded-xl border bg-white p-4">
                 <div className="flex items-center justify-between">
                   <h3 className="font-bold text-slate-900">Resumo do pedido</h3>
-                  <span className="rounded-full px-2 py-1 text-xs font-bold" style={{ backgroundColor: primarySoft, color: primary }}>{lines.length} itens</span>
+                  <span className="rounded-full px-2 py-1 text-xs font-bold" style={{ backgroundColor: primarySoft, color: primary }}>
+                    {totalItemsInOrder} {totalItemsInOrder === 1 ? "item" : "itens"}
+                  </span>
                 </div>
                 <p className="mb-3 text-sm text-slate-500">Contato: {contact?.nome}</p>
                 <div className="max-h-[360px] space-y-2 overflow-y-auto">
@@ -550,7 +878,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onC
             </div>
           )}
 
-          {step === 3 && (
+          {step === STEP_ADDRESS && (
             <div className="mx-auto max-w-3xl space-y-4">
               <button
                 type="button"
@@ -581,7 +909,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onC
             </div>
           )}
 
-          {step === 4 && (
+          {step === STEP_PAYMENT && (
             <div className="mx-auto grid max-w-3xl gap-5 md:grid-cols-2">
               <section className="rounded-xl border bg-white p-5">
                 <h3 className="font-bold">Forma de pagamento</h3>
@@ -611,7 +939,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onC
                 <dl className="mt-4 space-y-3 text-sm">
                   <div className="flex justify-between"><dt>Contato</dt><dd className="font-semibold">{contact?.nome}</dd></div>
                   <div className="flex justify-between"><dt>Telefone</dt><dd>{contact?.telefone}</dd></div>
-                  <div className="flex justify-between"><dt>Produtos</dt><dd>{lines.length}</dd></div>
+                  <div className="flex justify-between"><dt>Produtos</dt><dd>{totalItemsInOrder}</dd></div>
                   <div className="flex justify-between"><dt>{pickupAtStore ? "Retirada" : "Entrega"}</dt><dd className="max-w-[190px] text-right">{pickupAtStore ? (store?.nome || "Na loja") : `${address.rua}, ${address.numero}`}</dd></div>
                   <div className="flex justify-between border-t pt-3 text-base font-bold"><dt>Subtotal estimado</dt><dd>{money(estimatedSubtotal)}</dd></div>
                 </dl>
@@ -621,9 +949,9 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onC
         </main>
 
         <footer className="flex items-center justify-between border-t bg-white px-5 py-4 sm:px-7">
-          <button disabled={step === 1 || busy} onClick={() => { setError(""); setStep(step - 1); }} className="inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 font-semibold text-slate-700 disabled:opacity-40"><ArrowLeft className="h-4 w-4" /> Voltar</button>
-          {step < 4 ? (
-            <button disabled={(step === 2 && !lines.length) || (step === 3 && !pickupAtStore && (!address.rua || !address.numero || !address.bairro || !address.cidade || !address.estado))} onClick={() => { setError(""); setStep(step + 1); }} className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-white disabled:opacity-40" style={buttonStyle}>Continuar <ArrowRight className="h-4 w-4" /></button>
+          <button disabled={!previousStep || busy} onClick={() => { setError(""); if (previousStep) setStep(previousStep); }} className="inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 font-semibold text-slate-700 disabled:opacity-40"><ArrowLeft className="h-4 w-4" /> Voltar</button>
+          {nextStep ? (
+            <button disabled={contactStepBlocked || collaboratorStepBlocked || (step === STEP_PRODUCTS && !lines.length) || (step === STEP_ADDRESS && !pickupAtStore && (!address.rua || !address.numero || !address.bairro || !address.cidade || !address.estado))} onClick={() => { setError(""); setStep(nextStep); }} className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-white disabled:opacity-40" style={buttonStyle}>Continuar <ArrowRight className="h-4 w-4" /></button>
           ) : (
             <button disabled={busy || (payment === "dinheiro" && !semTroco && !trocoPara)} onClick={submit} className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-white disabled:opacity-50" style={buttonStyle}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Criar pedido</button>
           )}
@@ -632,8 +960,8 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onC
 
       {configuring && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/50 p-3">
-          <div className="max-h-[88vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
-            <div className="flex justify-between border-b pb-4">
+          <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className="flex justify-between border-b p-5 pb-4">
               <div>
                 <h3 className="text-lg font-bold">Configurar {configuring.produto?.nome}</h3>
                 <p className="text-sm text-slate-500">Escolha variação e opções obrigatórias.</p>
@@ -641,89 +969,103 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", onC
               <button onClick={() => setConfiguring(null)}><X /></button>
             </div>
 
-            {(configuring.variacoes || []).length > 0 && (
-              <div className="mt-5">
-                <p className="mb-2 text-sm font-bold">Variação</p>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {(configuring.variacoes || []).map((variation: any) => {
-                    const selected = selectedVariation === variation.id;
-                    return (
-                      <button key={variation.id} onClick={() => setSelectedVariation(variation.id)} className="rounded-xl border-2 p-3 text-left" style={selected ? { borderColor: primary, backgroundColor: primarySoft } : { borderColor: "#e2e8f0" }}>
-                        <b>{variation.nome}</b>
-                        <span className="float-right text-sm">{money(effectivePrice(variation))}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {(configuring.grupos || []).map((group: any) => {
-              const limits = getGroupLimits(group);
-              const count = countGroupSelections(group);
-              const searchable = (group.opcoes || []).length > 5;
-              const visibleOptions = getVisibleOptions(group);
-              const attachSearchRef = searchable && !optionSearchRefAssigned;
-              if (attachSearchRef) optionSearchRefAssigned = true;
-              return (
-                <section key={group.id} className="mt-5">
-                  <div className="flex justify-between">
-                    <p className="font-bold">{group.nome}</p>
-                    <span className={`rounded-full px-2 py-0.5 text-xs ${count >= limits.minimum ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{count}/{limits.maximum}</span>
-                  </div>
-                  <p className="mb-2 text-xs text-slate-500">Escolha de {limits.minimum} até {limits.maximum}</p>
-                  {searchable && (
-                    <div className="relative mb-3">
-                      <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                      <input
-                        ref={attachSearchRef ? firstOptionSearchRef : undefined}
-                        value={optionSearches[group.id] || ""}
-                        onChange={(event) => setOptionSearches((current) => ({ ...current, [group.id]: event.target.value }))}
-                        placeholder={`Buscar em ${group.nome}`}
-                        className="w-full rounded-lg border py-2 pl-9 pr-3 text-sm outline-none"
-                      />
-                    </div>
-                  )}
-                  <div className="space-y-2">
-                    {visibleOptions.length ? visibleOptions.map((option: any) => {
-                      const selected = optionSelection(group.id, option.id);
-                      const limitReached = !selected && count >= limits.maximum;
-                      const optionPrice = getOptionPrice(option);
+            <div className="flex-1 overflow-y-auto px-5 pb-28">
+              {(configuring.variacoes || []).length > 0 && (
+                <div className="mt-5">
+                  <p className="mb-2 text-sm font-bold">Variação</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {(configuring.variacoes || []).map((variation: any) => {
+                      const selected = selectedVariation === variation.id;
                       return (
-                        <div key={option.id} className="flex items-center justify-between rounded-xl border p-3" style={selected ? { borderColor: primary, backgroundColor: primarySoft } : { borderColor: "#e2e8f0" }}>
-                          <button disabled={limitReached} onClick={() => toggleOption(group, option)} className="flex flex-1 items-center gap-3 text-left disabled:cursor-not-allowed disabled:opacity-45">
-                            <span
-                              className="h-5 w-5 border-2"
-                              style={{
-                                ...(selected ? { borderColor: primary, backgroundColor: primary, boxShadow: "inset 0 0 0 3px white" } : { borderColor: "#cbd5e1" }),
-                                borderRadius: group.tipo_selecao === "unica" ? "9999px" : "6px",
-                              }}
-                            />
-                            <span>
-                              <b className="block text-sm">{option.nome}</b>
-                              {optionPrice > 0 && <small className="text-slate-500">+ {money(optionPrice)}</small>}
-                            </span>
-                          </button>
-                          {selected && group.permite_quantidade && (
-                            <div className="flex items-center rounded-lg border bg-white">
-                              <button onClick={() => changeOptionQuantity(group, option, -1)} className="p-1.5"><Minus className="h-3 w-3" /></button>
-                              <b className="w-7 text-center text-sm">{selected.quantidade}</b>
-                              <button disabled={count >= limits.maximum} onClick={() => changeOptionQuantity(group, option, 1)} className="p-1.5 disabled:cursor-not-allowed disabled:opacity-40"><Plus className="h-3 w-3" /></button>
-                            </div>
-                          )}
-                        </div>
+                        <button key={variation.id} onClick={() => setSelectedVariation(variation.id)} className="rounded-xl border-2 p-3 text-left" style={selected ? { borderColor: primary, backgroundColor: primarySoft } : { borderColor: "#e2e8f0" }}>
+                          <b>{variation.nome}</b>
+                          <span className="float-right text-sm">{money(effectivePrice(variation, usePricesWithoutAppTax))}</span>
+                        </button>
                       );
-                    }) : <p className="rounded-xl border border-dashed p-4 text-center text-sm text-slate-500">Nenhum adicional encontrado.</p>}
+                    })}
                   </div>
-                </section>
-              );
-            })}
+                </div>
+              )}
 
-            <label className="mt-5 block text-sm font-semibold text-slate-700">
-              Observação do item
-              <textarea value={configurationNotes} onChange={(event) => setConfigurationNotes(event.target.value)} maxLength={500} placeholder="Ex.: sem cebola, molho separado..." className="mt-1 min-h-20 w-full resize-y rounded-xl border border-slate-200 p-3 font-normal outline-none" />
-            </label>
-            <div className="mt-6 flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+              {(configuring.grupos || []).map((group: any) => {
+                const limits = getGroupLimits(group);
+                const count = countGroupSelections(group);
+                const searchable = (group.opcoes || []).length > 5;
+                const visibleOptions = getVisibleOptions(group);
+                const attachSearchRef = searchable && !optionSearchRefAssigned;
+                if (attachSearchRef) optionSearchRefAssigned = true;
+                return (
+                  <section key={group.id} className="mt-5">
+                    <div className="flex justify-between">
+                      <p className="font-bold">{group.nome}</p>
+                      <span className={`rounded-full px-2 py-0.5 text-xs ${count >= limits.minimum ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{count}/{limits.maximum}</span>
+                    </div>
+                    <p className="mb-2 text-xs text-slate-500">Escolha de {limits.minimum} até {limits.maximum}</p>
+                    {searchable && (
+                      <div className="relative mb-3">
+                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                        <input
+                          ref={attachSearchRef ? firstOptionSearchRef : undefined}
+                          value={optionSearches[group.id] || ""}
+                          onChange={(event) => setOptionSearches((current) => ({ ...current, [group.id]: event.target.value }))}
+                          placeholder={`Buscar em ${group.nome}`}
+                          className="w-full rounded-lg border py-2 pl-9 pr-3 text-sm outline-none"
+                        />
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      {visibleOptions.length ? visibleOptions.map((option: any) => {
+                        const selected = optionSelection(group.id, option.id);
+                        const limitReached = !selected && count >= limits.maximum;
+                        const optionPrice = getOptionPrice(option);
+                        return (
+                          <div key={option.id} className="flex items-center justify-between rounded-xl border p-3" style={selected ? { borderColor: primary, backgroundColor: primarySoft } : { borderColor: "#e2e8f0" }}>
+                            <button disabled={limitReached} onClick={() => toggleOption(group, option)} className="flex flex-1 items-center gap-3 text-left disabled:cursor-not-allowed disabled:opacity-45">
+                              <span
+                                className="h-5 w-5 border-2"
+                                style={{
+                                  ...(selected ? { borderColor: primary, backgroundColor: primary, boxShadow: "inset 0 0 0 3px white" } : { borderColor: "#cbd5e1" }),
+                                  borderRadius: group.tipo_selecao === "unica" ? "9999px" : "6px",
+                                }}
+                              />
+                              <span>
+                                <b className="block text-sm">{option.nome}</b>
+                                {optionPrice > 0 && <small className="text-slate-500">+ {money(optionPrice)}</small>}
+                              </span>
+                            </button>
+                            {selected && group.permite_quantidade && (
+                              <div className="flex items-center rounded-lg border bg-white">
+                                <button onClick={() => changeOptionQuantity(group, option, -1)} className="p-1.5"><Minus className="h-3 w-3" /></button>
+                                <b className="w-7 text-center text-sm">{selected.quantidade}</b>
+                                <button disabled={count >= limits.maximum} onClick={() => changeOptionQuantity(group, option, 1)} className="p-1.5 disabled:cursor-not-allowed disabled:opacity-40"><Plus className="h-3 w-3" /></button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      }) : <p className="rounded-xl border border-dashed p-4 text-center text-sm text-slate-500">Nenhum adicional encontrado.</p>}
+                    </div>
+                  </section>
+                );
+              })}
+
+              <label className="mt-5 block text-sm font-semibold text-slate-700">
+                Observação do item
+                <textarea
+                  value={configurationNotes}
+                  onChange={(event) => setConfigurationNotes(event.target.value)}
+                  maxLength={500}
+                  placeholder="Ex.: sem cebola, molho separado..."
+                  className="mt-1 min-h-20 w-full resize-y rounded-xl border border-slate-200 p-3 font-normal outline-none"
+                />
+              </label>
+            </div>
+            <div
+              className={`flex flex-col gap-3 border-t bg-white p-5 sm:flex-row sm:items-center sm:justify-between ${
+                stickyConfigurationCheckout
+                  ? "shadow-[0_-8px_18px_rgba(15,23,42,0.08)]"
+                  : ""
+              }`}
+            >
               <div>
                 <p className="text-xs font-semibold uppercase text-slate-400">Total do item</p>
                 <p className="text-lg font-bold text-slate-900">{money(configuredUnitPrice)}</p>

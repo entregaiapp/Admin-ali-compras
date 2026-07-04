@@ -5,11 +5,12 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
 import {
-  ShoppingCart, TrendingUp, Truck, XCircle, DollarSign, Users,
-  Package, AlertTriangle, ArrowRight, Clock, CheckCircle2, Activity, Calendar, Zap, CreditCard
+  ShoppingCart, Truck, XCircle, DollarSign, Users,
+  Package, AlertTriangle, ArrowRight, Clock, CheckCircle2, Activity, Calendar, Zap, CreditCard, Info
 } from 'lucide-react';
 import api from '@/shared/lib/api';
 import { dateInputInBrasilia, formatBrasiliaTime, hourInBrasilia } from '@/shared/lib/dateTime';
+import { Tooltip as UiTooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/shared/components/ui/tooltip';
 import {
   AdminCacheWarmupModal,
   getAdminCachedData,
@@ -53,6 +54,28 @@ const formatCurrency = (value: unknown) => {
   const number = typeof value === 'number' ? value : Number(String(value ?? 0).replace(',', '.'));
   return number.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
+
+const toNumber = (value: unknown) => {
+  const number = typeof value === 'number' ? value : Number(String(value ?? 0).replace(',', '.'));
+  return Number.isFinite(number) ? number : 0;
+};
+
+const MetricInfo = ({ text }: { text: string }) => (
+  <UiTooltip>
+    <TooltipTrigger asChild>
+      <button
+        type="button"
+        className="inline-flex h-6 w-6 items-center justify-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+        aria-label="Explicacao da metrica"
+      >
+        <Info className="h-3.5 w-3.5" />
+      </button>
+    </TooltipTrigger>
+    <TooltipContent side="top" className="max-w-xs bg-slate-950 text-white">
+      {text}
+    </TooltipContent>
+  </UiTooltip>
+);
 
 const paymentMethodLabel = (value: unknown) => {
   const labels: Record<string, string> = {
@@ -307,23 +330,44 @@ export function DashboardScreen() {
     );
   }
 
-  // Fallbacks if data is not present
-  const statCards = [
-    { label: 'Pedidos', value: metrics?.pedidosHoje?.total || '0', sub: 'No dia', icon: ShoppingCart, color: '#2563eb', bg: '#eff6ff' },
-    { label: 'Em Andamento', value: metrics?.pedidosAndamento || '0', sub: 'Atuais', icon: Activity, color: '#d97706', bg: '#fffbeb' },
-    { label: 'Entregues', value: metrics?.pedidosEntregues || '0', sub: 'Concluídos', icon: CheckCircle2, color: '#16a34a', bg: '#f0fdf4' },
-    { label: 'Cancelados', value: metrics?.pedidosCancelados || '0', sub: 'Cancelados', icon: XCircle, color: '#dc2626', bg: '#fef2f2' },
-    { label: 'Faturamento', value: `R$ ${parseFloat(metrics?.faturamentoDiario?.total || '0').toFixed(2)}`, sub: 'No dia', icon: DollarSign, color: PRIMARY, bg: '#eef2f9' },
-    { label: 'Ticket Médio', value: `R$ ${parseFloat(metrics?.ticketMedio || '0').toFixed(2)}`, sub: 'Por pedido', icon: TrendingUp, color: '#7c3aed', bg: '#f5f3ff' },
-    { label: 'Clientes Novos', value: metrics?.novosClientes || '0', sub: 'No dia', icon: Users, color: '#0891b2', bg: '#ecfeff' },
-    { label: 'Em Rota', value: metrics?.pedidosEmRota || '0', sub: 'Atuais', icon: Truck, color: '#ea580c', bg: '#fff7ed' },
-  ];
-
   const paymentDetails = metrics?.financeiro?.pagamentos_detalhados || {};
   const paymentSummary = paymentDetails.resumo || {};
+  const fiados = metrics?.financeiro?.fiados || {};
+  const fiadoResumo = fiados.resumo || {};
+  const financeSummary = metrics?.financeiro?.consolidado || {
+    recebido_pedidos: toNumber(paymentSummary.valor_recebido),
+    recebido_fiado: toNumber(fiadoResumo.recebido_periodo),
+    recebido_total: toNumber(paymentSummary.valor_recebido) + toNumber(fiadoResumo.recebido_periodo),
+    a_receber_pedidos: toNumber(paymentSummary.valor_previsto_receber),
+    a_receber_fiado: toNumber(fiadoResumo.saldo_aberto_total),
+    a_receber_total: toNumber(paymentSummary.valor_previsto_receber) + toNumber(fiadoResumo.saldo_aberto_total),
+    fiado_criado_periodo: toNumber(fiadoResumo.valor_fiado_periodo),
+    fiado_taxa_aplicada_periodo: toNumber(fiadoResumo.valor_taxa_aplicada_periodo),
+    fiado_pedidos_com_taxa_periodo: Number(fiadoResumo.pedidos_com_taxa_periodo || 0),
+    fiado_pessoas_com_saldo: Number(fiadoResumo.pessoas_com_saldo || 0),
+    fiado_pedidos_abertos: Number(fiadoResumo.pedidos_abertos || 0),
+  };
+  const receivedTotal = toNumber(financeSummary.recebido_total);
+  const pendingTotal = toNumber(financeSummary.a_receber_total);
+  const fiadoTaxaAplicadaPeriodo = toNumber(financeSummary.fiado_taxa_aplicada_periodo ?? fiadoResumo.valor_taxa_aplicada_periodo);
+  const fiadoPedidosComTaxaPeriodo = Number(financeSummary.fiado_pedidos_com_taxa_periodo ?? fiadoResumo.pedidos_com_taxa_periodo ?? 0);
+
+  // Fallbacks if data is not present
+  const statCards = [
+    { label: 'Pedidos', value: metrics?.pedidosHoje?.total || '0', sub: 'No dia', icon: ShoppingCart, color: '#2563eb', bg: '#eff6ff', tooltip: 'Quantidade de pedidos considerados no periodo selecionado.' },
+    { label: 'Em Andamento', value: metrics?.pedidosAndamento || '0', sub: 'Atuais', icon: Activity, color: '#d97706', bg: '#fffbeb', tooltip: 'Pedidos pendentes, confirmados, em separacao ou prontos.' },
+    { label: 'Entregues', value: metrics?.pedidosEntregues || '0', sub: 'Concluidos', icon: CheckCircle2, color: '#16a34a', bg: '#f0fdf4', tooltip: 'Pedidos finalizados operacionalmente no periodo.' },
+    { label: 'Cancelados', value: metrics?.pedidosCancelados || '0', sub: 'Cancelados', icon: XCircle, color: '#dc2626', bg: '#fef2f2', tooltip: 'Pedidos cancelados no periodo.' },
+    { label: 'Recebido total', value: formatCurrency(receivedTotal), sub: `${formatCurrency(financeSummary.recebido_fiado)} de fiado`, icon: DollarSign, color: PRIMARY, bg: '#eef2f9', tooltip: 'Dinheiro que entrou no periodo: pagamentos recebidos de pedidos comuns mais recebimentos registrados no modulo Fiados.' },
+    { label: 'A receber', value: formatCurrency(pendingTotal), sub: `${formatCurrency(financeSummary.a_receber_fiado)} em fiado aberto`, icon: Clock, color: '#d97706', bg: '#fffbeb', tooltip: 'Valores ainda pendentes: pagamentos comuns previstos mais saldo aberto das contas fiado.' },
+    { label: 'Fiado criado', value: formatCurrency(financeSummary.fiado_criado_periodo), sub: `${financeSummary.fiado_pedidos_abertos || 0} pedidos abertos`, icon: CreditCard, color: '#7c3aed', bg: '#f5f3ff', tooltip: 'Novos lancamentos fiado criados no periodo. Nao contam como dinheiro recebido ate o cliente pagar.' },
+    { label: 'Em Rota', value: metrics?.pedidosEmRota || '0', sub: 'Atuais', icon: Truck, color: '#ea580c', bg: '#fff7ed', tooltip: 'Pedidos que ja sairam para entrega.' },
+  ];
+
   const paymentsByMethod = Array.isArray(paymentDetails.por_forma_pagamento) ? paymentDetails.por_forma_pagamento : [];
   const paymentsByChannel = Array.isArray(paymentDetails.por_canal_pagamento) ? paymentDetails.por_canal_pagamento : [];
   const paymentsByMethodChannel = Array.isArray(paymentDetails.por_forma_e_canal) ? paymentDetails.por_forma_e_canal : [];
+  const fiadoByMethod = Array.isArray(fiados.recebimentos_por_forma_pagamento) ? fiados.recebimentos_por_forma_pagamento : [];
 
   const rawSalesData = Array.isArray(metrics?.hourlyData) && metrics.hourlyData.length
     ? metrics.hourlyData
@@ -405,6 +449,7 @@ export function DashboardScreen() {
       </div>
 
       {/* Stats grid */}
+      <TooltipProvider delayDuration={150}>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
         {statCards.map(card => (
           <div key={card.label} className="bg-white rounded-xl border border-gray-200 p-4">
@@ -412,6 +457,7 @@ export function DashboardScreen() {
               <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: card.bg }}>
                 <card.icon className="w-4.5 h-4.5" style={{ color: card.color }} />
               </div>
+              <MetricInfo text={card.tooltip} />
             </div>
             <div className="text-gray-900 font-semibold text-xl leading-tight">{card.value}</div>
             <div className="text-gray-500 text-xs mt-0.5">{card.label}</div>
@@ -419,19 +465,22 @@ export function DashboardScreen() {
           </div>
         ))}
       </div>
+      </TooltipProvider>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mt-4">
         {[
-          { label: 'Recebido real', value: formatCurrency(paymentSummary.valor_recebido), sub: `${paymentSummary.pagamentos_recebidos || 0} pagamento(s)`, icon: DollarSign, color: '#16a34a', bg: '#f0fdf4' },
-          { label: 'Previsto a receber', value: formatCurrency(paymentSummary.valor_previsto_receber), sub: `${paymentSummary.pagamentos_previstos || 0} pendente(s)`, icon: Clock, color: '#d97706', bg: '#fffbeb' },
-          { label: 'Na entrega', value: formatCurrency(paymentSummary.valor_na_entrega), sub: `${paymentSummary.pagamentos_na_entrega || 0} dinheiro/cartão`, icon: Truck, color: '#0891b2', bg: '#ecfeff' },
-          { label: 'No app', value: formatCurrency(paymentSummary.valor_no_app), sub: `${paymentSummary.pagamentos_no_app || 0} pix/cartão`, icon: CreditCard, color: '#7c3aed', bg: '#f5f3ff' },
+          { label: 'Pedidos recebidos', value: formatCurrency(financeSummary.recebido_pedidos), sub: `${paymentSummary.pagamentos_recebidos || 0} pagamento(s)`, icon: DollarSign, color: '#16a34a', bg: '#f0fdf4', tooltip: 'Somente pagamentos recebidos diretamente nos pedidos, sem contar baixas de fiado.' },
+          { label: 'Fiado recebido', value: formatCurrency(financeSummary.recebido_fiado), sub: `${fiadoByMethod.reduce((sum: number, item: any) => sum + Number(item.quantidade || 0), 0)} baixa(s)`, icon: CreditCard, color: '#7c3aed', bg: '#f5f3ff', tooltip: 'Valor pago por clientes que tinham conta fiado. Entra no caixa no dia do recebimento, nao no dia do pedido.' },
+          { label: 'Taxa fiado aplicada', value: formatCurrency(fiadoTaxaAplicadaPeriodo), sub: `${fiadoPedidosComTaxaPeriodo} pedido(s)`, icon: DollarSign, color: '#0f766e', bg: '#ccfbf1', tooltip: 'Valor estimado da taxa de 2% embutida em pedidos fiado para nao colaboradores no periodo.' },
+          { label: 'Pedidos a receber', value: formatCurrency(financeSummary.a_receber_pedidos), sub: `${paymentSummary.pagamentos_previstos || 0} pendente(s)`, icon: Clock, color: '#d97706', bg: '#fffbeb', tooltip: 'Pagamentos comuns ainda pendentes, como PIX/cartao em processamento ou cobranca na entrega ainda nao confirmada.' },
+          { label: 'Fiado em aberto', value: formatCurrency(financeSummary.a_receber_fiado), sub: `${financeSummary.fiado_pessoas_com_saldo || 0} pessoa(s)`, icon: Users, color: '#0891b2', bg: '#ecfeff', tooltip: 'Saldo aberto das contas fiado. E valor a receber, mas ainda nao e faturamento recebido.' },
         ].map(card => (
           <div key={card.label} className="bg-white rounded-xl border border-gray-200 p-4">
             <div className="flex items-start justify-between mb-3">
               <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: card.bg }}>
                 <card.icon className="w-4.5 h-4.5" style={{ color: card.color }} />
               </div>
+              <MetricInfo text={card.tooltip} />
             </div>
             <div className="text-gray-900 font-semibold text-xl leading-tight">{card.value}</div>
             <div className="text-gray-500 text-xs mt-0.5">{card.label}</div>
@@ -456,6 +505,25 @@ export function DashboardScreen() {
                 </div>
               </div>
             ))}
+            {fiadoByMethod.length > 0 && (
+              <div className="border-t border-gray-100 pt-3">
+                <div className="mb-2 flex items-center gap-1 text-xs font-semibold uppercase text-gray-400">
+                  Baixas de fiado
+                  <MetricInfo text="Formas de pagamento usadas para receber contas fiado no periodo. Esses valores entram no recebido total." />
+                </div>
+                <div className="space-y-2">
+                  {fiadoByMethod.map((item: any) => (
+                    <div key={`fiado-${item.forma_pagamento}`} className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-medium text-gray-700">{paymentMethodLabel(item.forma_pagamento)}</div>
+                        <div className="text-xs text-gray-400">{item.quantidade || 0} baixa(s)</div>
+                      </div>
+                      <div className="text-sm font-semibold text-gray-900">{formatCurrency(item.valor_recebido)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

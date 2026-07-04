@@ -170,6 +170,7 @@ export const formatPaymentMethod = (value: unknown) => {
     cartao_credito: "Cartão de crédito",
     cartao_debito: "Cartão de débito",
     dinheiro: "Dinheiro",
+    fiado: "Fiado",
   };
 
   if (!method) return "Não informado";
@@ -193,9 +194,20 @@ export const formatPaymentStatus = (value: unknown) => {
   return labels[status] || status.replace(/_/g, " ").replace(/^\w/, (char) => char.toUpperCase());
 };
 
+export const isFiadoPayment = (payment: any) => {
+  const method = cleanText(payment?.forma_pagamento || payment?.method || payment?.payment).toLowerCase();
+  const metadataType = cleanText(payment?.metadata?.tipo).toLowerCase();
+  return method === "fiado" || metadataType === "fiado";
+};
+
 export const isApprovedPayment = (payment: any) =>
-  Boolean(payment?.pago_em || payment?.paidAt) ||
-  cleanText(payment?.status).toLowerCase() === "aprovado";
+  (Boolean(payment?.pago_em || payment?.paidAt) ||
+    cleanText(payment?.status).toLowerCase() === "aprovado");
+
+export const isFiadoOrder = (order: any, payments: any[] = []) =>
+  (payments.length > 0 ? payments : getEmbeddedOrderPayments(order)).some(isFiadoPayment) ||
+  isFiadoPayment(order?.pagamento) ||
+  isFiadoPayment(order);
 
 const getPaymentOnDeliveryMethod = (payment: any) =>
   cleanText(
@@ -214,8 +226,35 @@ const isPaymentOnDelivery = (payment: any) => {
   return (
     method === "dinheiro" ||
     metadataType === "pagamento_entrega" ||
+    metadataType === "pagamento_manual_pendente" ||
+    metadataType === "pagamento_externo" ||
+    cleanText(payment?.metadata?.origem).toLowerCase() === "admin_dashboard" ||
+    payment?.metadata?.pagamento_realizado_fora_do_app === true ||
     cardWithoutGateway ||
     ["dinheiro", "cartao"].includes(getPaymentOnDeliveryMethod(payment))
+  );
+};
+
+const INACTIVE_PAYMENT_STATUSES = new Set([
+  "cancelado",
+  "cancelada",
+  "estornado",
+  "expirado",
+  "falhou",
+  "recusado",
+  "rejeitado",
+]);
+
+const ACTIVE_PAYMENT_STATUSES = new Set(["pendente", "em_processamento", "processando"]);
+
+const getEmbeddedOrderPayments = (order: any) =>
+  Array.isArray(order?.pagamentos) ? order.pagamentos : [];
+
+export const isCurrentPaymentRecord = (payment: any) => {
+  const status = cleanText(payment?.status || payment?.payment_status || payment?.paymentStatus).toLowerCase();
+  return (
+    !INACTIVE_PAYMENT_STATUSES.has(status) &&
+    payment?.metadata?.substituido_por_ajuste_admin !== true
   );
 };
 
@@ -223,19 +262,48 @@ export const isPendingCashPayment = (payment: any) =>
   isPaymentOnDelivery(payment) &&
   cleanText(payment?.status || payment?.payment_status || payment?.paymentStatus).toLowerCase() === "pendente";
 
-export const getPreferredOrderPayment = (order: any, payments: any[] = []) =>
-  payments.find(isApprovedPayment) ||
-  payments[0] ||
-  order?.pagamento ||
-  null;
+export const getPreferredOrderPayment = (order: any, payments: any[] = []) => {
+  const availablePayments = payments.length > 0 ? payments : getEmbeddedOrderPayments(order);
+  const currentPayments = availablePayments.filter(isCurrentPaymentRecord);
+  const pendingPayment = currentPayments.find((payment) =>
+    ACTIVE_PAYMENT_STATUSES.has(
+      cleanText(payment?.status || payment?.payment_status || payment?.paymentStatus).toLowerCase(),
+    ),
+  );
+
+  return (
+    currentPayments.find(isApprovedPayment) ||
+    pendingPayment ||
+    currentPayments[0] ||
+    (isCurrentPaymentRecord(order?.pagamento) ? order?.pagamento : null) ||
+    availablePayments.find(isApprovedPayment) ||
+    availablePayments[0] ||
+    order?.pagamento ||
+    null
+  );
+};
+
+export const getCurrentPaymentMethodValue = (payment: any) => {
+  const method = cleanText(payment?.forma_pagamento || payment?.method || payment?.payment).toLowerCase();
+  const originalMethod = cleanText(payment?.metadata?.forma_pagamento_original).toLowerCase();
+  const paymentOnDeliveryMethod = getPaymentOnDeliveryMethod(payment);
+
+  if (method === "dinheiro" && paymentOnDeliveryMethod === "cartao" && originalMethod) {
+    return originalMethod;
+  }
+
+  return method || originalMethod || "dinheiro";
+};
 
 export const isOrderPaid = (order: any, payments: any[] = []) =>
-  payments.some(isApprovedPayment) ||
+  (payments.length > 0 ? payments : getEmbeddedOrderPayments(order)).some(isApprovedPayment) ||
   isApprovedPayment(order?.pagamento) ||
   cleanText(order?.payment_status).toLowerCase() === "aprovado";
 
 export const isOrderPendingCash = (order: any, payments: any[] = []) =>
-  payments.some(isPendingCashPayment) || isPendingCashPayment(order?.pagamento) || isPendingCashPayment(order);
+  (payments.length > 0 ? payments : getEmbeddedOrderPayments(order)).some(isPendingCashPayment) ||
+  isPendingCashPayment(order?.pagamento) ||
+  isPendingCashPayment(order);
 
 export const getOrderPaymentMethod = (order: any, payment?: any) => {
   const paymentOnDeliveryMethod = cleanText(
@@ -260,13 +328,15 @@ export const getOrderPaymentMethod = (order: any, payment?: any) => {
 };
 
 export const getOrderPaymentStatus = (order: any, payment?: any) =>
-  formatPaymentStatus(
-    firstText(
-      payment?.status,
-      order?.pagamento?.status,
-      order?.payment_status,
-    ),
-  );
+  cleanText(payment?.status_detalhado || order?.pagamento?.status_detalhado).toLowerCase() === "pago_parcial"
+    ? "Pago parcial"
+    : formatPaymentStatus(
+        firstText(
+          payment?.status,
+          order?.pagamento?.status,
+          order?.payment_status,
+        ),
+      );
 
 export const getDeliveryLabel = (route: any) => {
   if (route.status === "completed") return "Concluída";

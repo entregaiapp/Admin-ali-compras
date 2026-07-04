@@ -44,14 +44,17 @@ export const salaoService = {
   addItem: async (comandaId: string, data: Record<string, unknown>) =>
     unwrap(await api.post(`/salao/comandas/${comandaId}/itens`, data)),
 
+  removeItem: async (comandaId: string, itemId: string) =>
+    unwrap(await api.delete(`/salao/comandas/${comandaId}/itens/${itemId}`)),
+
   regeneratePin: async (comandaId: string) =>
     unwrap(await api.post(`/salao/comandas/${comandaId}/gerar-novo-pin`)),
 
   closeAccount: async (comandaId: string, data: Record<string, unknown>) =>
     unwrap(await api.post(`/salao/comandas/${comandaId}/fechar-conta`, data)),
 
-  confirmPayment: async (comandaId: string) =>
-    unwrap(await api.post(`/salao/comandas/${comandaId}/confirmar-pagamento`)),
+  confirmPayment: async (comandaId: string, data?: Record<string, unknown>) =>
+    unwrap(await api.post(`/salao/comandas/${comandaId}/confirmar-pagamento`, data || {})),
 
   unblockParticipant: async (participantId: string) =>
     unwrap(await api.post(`/salao/participantes/${participantId}/desbloquear-pin`)),

@@ -19,6 +19,7 @@ export type DriverStop = {
   id: string;
   orderId: string;
   orderNumber?: string;
+  dailyTicketNumber?: string | null;
   sequence: number;
   customerName: string;
   customerPhone: string;
@@ -27,7 +28,15 @@ export type DriverStop = {
   latitude: number | null;
   longitude: number | null;
   status: 'pending' | 'delivered' | 'failed';
+  requiresReceiptKey?: boolean;
   note?: string;
+  paymentMethod?: string | null;
+  paymentStatus?: string | null;
+  paymentValue?: number | string | null;
+  needsCashChange?: boolean;
+  cashChangeFor?: number | string | null;
+  cashChangeValue?: number | string | null;
+  cashChangePaidToCourier?: boolean;
   failedReason?: string;
   checkedAt?: string;
   finishedAt?: string;

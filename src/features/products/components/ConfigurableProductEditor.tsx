@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ImagePlus, Info, Plus, Trash2, X } from "lucide-react";
 import { showSystemNotice } from "@/shared/components/SystemNoticeModal";
+import { dateTimeInputInBrasilia } from "@/shared/lib/dateTime";
 import { productsService } from "../services/productsService";
 import type {
   ConfigurableGroup,
@@ -22,11 +23,10 @@ const nullableNumberValue = (value: string | number | null | undefined) => {
 };
 const dateTimeLocalValue = (value: string | null | undefined) => {
   if (!value) return "";
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) return value.slice(0, 16);
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "";
-  const pad = (number: number) => String(number).padStart(2, "0");
-  return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}T${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?$/.test(value)) {
+    return value.slice(0, 16);
+  }
+  return dateTimeInputInBrasilia(value);
 };
 const dateTimePayloadValue = (value: string) => value.trim() || null;
 type CatalogItemType = "adicionais" | "pizza";

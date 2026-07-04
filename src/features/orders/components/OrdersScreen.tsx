@@ -18,6 +18,7 @@ import {
   Printer,
   List,
   Archive,
+  CalendarDays,
   Map as MapIcon,
   ChevronDown,
   ChevronRight,
@@ -27,6 +28,7 @@ import {
   RefreshCw,
   AlertTriangle,
   RotateCcw,
+  Plus,
 } from "lucide-react";
 import api from "@/shared/lib/api";
 import { formatBrasiliaDate } from "@/shared/lib/dateTime";
@@ -46,6 +48,7 @@ import {
   getApiList,
   getBackendStatus,
   getOrderAddress,
+  getOrderItemConfigurationLines,
   getOrderItemChecklistId,
   getOrderItemName,
   getOrderItemQuantity,
@@ -54,15 +57,20 @@ import {
   getOrderPaymentMethod,
   getOrderPaymentStatus,
   getOrderStreetAddress,
+  getCurrentPaymentMethodValue,
   getPreferredOrderPayment,
   hexToRgba,
   isDeliveryOrder,
+  isCurrentPaymentRecord,
+  isFiadoOrder,
   isOrderPaid,
   isOrderPendingCash,
 } from "@/features/orders/utils/orderUtils";
 import { DeliveryAssignmentModal } from "@/features/orders/components/DeliveryAssignmentModal";
 import { OrderItemsChecklistModal } from "@/features/orders/components/OrderItemsChecklistModal";
 import { ManualDeliveryOrderModal } from "@/features/orders/components/ManualDeliveryOrderModal";
+import { AddOrderItemsModal } from "@/features/orders/components/AddOrderItemsModal";
+import { PendingPaymentMethodModal } from "@/features/orders/components/PendingPaymentMethodModal";
 import { showSystemNotice } from "@/shared/components/SystemNoticeModal";
 import {
   MfaApprovalModal,
@@ -97,8 +105,20 @@ const getCancellationRequest = (order: any) =>
 const hasPendingCancellationRequest = (order: any) =>
   getCancellationRequest(order)?.status === "pendente";
 const parseCurrencyInput = (value: string) => Number(value.replace(",", "."));
+const parseCurrencyNumber = (value: unknown) => {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+
+  const text = String(value ?? "").trim();
+  if (!text) return 0;
+
+  const normalized = text.includes(",")
+    ? text.replace(/\./g, "").replace(",", ".")
+    : text;
+  const number = Number(normalized);
+  return Number.isFinite(number) ? number : 0;
+};
 const formatCurrency = (value: unknown) =>
-  `R$ ${Number(value || 0)
+  `R$ ${parseCurrencyNumber(value)
     .toFixed(2)
     .replace(".", ",")}`;
 const getDailyTicketNumber = (order: any) => {
@@ -111,7 +131,24 @@ const getDailyTicketNumber = (order: any) => {
     : "";
 };
 const toCurrencyCents = (value: unknown) =>
-  Math.round(Number(value || 0) * 100);
+  Math.round(parseCurrencyNumber(value) * 100);
+const firstPresent = (...values: unknown[]) =>
+  values.find((value) => value !== undefined && value !== null && value !== "");
+const normalizePaymentText = (value: any) =>
+  String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+const getPaymentOnDeliveryMethod = (payment: any) =>
+  normalizePaymentText(
+    firstPresent(
+      payment?.pagamento_entrega_tipo,
+      payment?.paymentOnDeliveryMethod,
+      payment?.metadata?.pagamento_entrega_tipo,
+    ),
+  );
+const isCardOnDeliveryPayment = (payment: any) =>
+  getPaymentOnDeliveryMethod(payment) === "cartao";
 const calculateMissingItemsRefundAfterDiscount = (
   order: any,
   grossRefundValue: number,
@@ -133,32 +170,122 @@ const calculateMissingItemsRefundAfterDiscount = (
   );
   return Math.max(0, grossRefundInCents - allocatedDiscountInCents) / 100;
 };
-const formatCashChangeInfo = (payment: any) => {
-  if (payment?.forma_pagamento !== "dinheiro" && payment?.method !== "dinheiro") {
+const formatCashChangeInfo = (payment: any, order?: any) => {
+  const method = normalizePaymentText(
+    firstPresent(
+      payment?.forma_pagamento,
+      payment?.metodo,
+      payment?.method,
+      order?.pagamento?.forma_pagamento,
+      order?.pagamento?.metodo,
+      order?.pagamento?.method,
+      order?.payment,
+    ),
+  );
+  const paymentOnDeliveryMethod =
+    getPaymentOnDeliveryMethod(payment) ||
+    getPaymentOnDeliveryMethod(order?.pagamento);
+  const isCashPayment =
+    method === "dinheiro" || paymentOnDeliveryMethod === "dinheiro";
+
+  if (!isCashPayment) {
     return "";
   }
 
-  if (isCardOnDeliveryPayment(payment)) {
+  if (
+    isCardOnDeliveryPayment(payment) ||
+    isCardOnDeliveryPayment(order?.pagamento)
+  ) {
     return "Cobrar com cartão na entrega";
   }
 
   if (payment?.sem_troco === true) return "Não precisa de troco";
 
-  if (payment?.troco_para != null) {
-    return `Troco para ${formatCurrency(payment.troco_para)} · devolver ${formatCurrency(payment.troco_valor || 0)}`;
+  if (order?.pagamento?.sem_troco === true) return "Não precisa de troco";
+
+  const changeFor = firstPresent(
+    payment?.troco_para,
+    order?.pagamento?.troco_para,
+    order?.troco_para,
+  );
+
+  if (changeFor !== undefined) {
+    const explicitChange = firstPresent(
+      payment?.troco_valor,
+      order?.pagamento?.troco_valor,
+      order?.troco_valor,
+    );
+    const orderTotal = firstPresent(
+      payment?.valor,
+      order?.valor_total,
+      order?.total,
+    );
+    const changeValue =
+      explicitChange !== undefined
+        ? parseCurrencyNumber(explicitChange)
+        : parseCurrencyNumber(changeFor) - parseCurrencyNumber(orderTotal);
+    const safeChangeValue = Number.isFinite(changeValue)
+      ? Math.max(0, changeValue)
+      : 0;
+
+    return `Troco para ${formatCurrency(changeFor)} · devolver ${formatCurrency(safeChangeValue)}`;
   }
 
   return "";
 };
-const isCardOnDeliveryPayment = (payment: any) =>
-  (payment?.pagamento_entrega_tipo ||
-    payment?.paymentOnDeliveryMethod ||
-    payment?.metadata?.pagamento_entrega_tipo) === "cartao";
-const normalizePaymentText = (value: any) =>
-  String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
+const getOrderEmbeddedPayments = (order: any) =>
+  Array.isArray(order?.pagamentos) ? order.pagamentos : [];
+const getCashChangeStatusLabel = (payment: any, order?: any) => {
+  if (!isDeliveryOrder(order || {})) return "";
+  if (isCardOnDeliveryPayment(payment) || isCardOnDeliveryPayment(order?.pagamento)) {
+    return "";
+  }
+
+  const method = normalizePaymentText(
+    firstPresent(
+      payment?.forma_pagamento,
+      payment?.metodo,
+      payment?.method,
+      order?.pagamento?.forma_pagamento,
+      order?.pagamento?.metodo,
+      order?.pagamento?.method,
+      order?.payment,
+    ),
+  );
+  const paymentOnDeliveryMethod =
+    getPaymentOnDeliveryMethod(payment) ||
+    getPaymentOnDeliveryMethod(order?.pagamento);
+  const isCashPayment =
+    method === "dinheiro" || paymentOnDeliveryMethod === "dinheiro";
+
+  if (!isCashPayment) return "";
+
+  const explicitChangeValue = firstPresent(
+    payment?.troco_valor,
+    order?.pagamento?.troco_valor,
+    order?.troco_valor,
+  );
+  const changeFor = firstPresent(
+    payment?.troco_para,
+    order?.pagamento?.troco_para,
+    order?.troco_para,
+  );
+  const orderTotal = firstPresent(
+    payment?.valor,
+    order?.valor_total,
+    order?.total,
+  );
+  const changeValue =
+    explicitChangeValue !== undefined
+      ? parseCurrencyNumber(explicitChangeValue)
+      : parseCurrencyNumber(changeFor) - parseCurrencyNumber(orderTotal);
+  if (changeValue <= 0) return "";
+
+  return payment?.troco_pago_ao_entregador === true ||
+    order?.pagamento?.troco_pago_ao_entregador === true
+    ? "Troco repassado"
+    : "Falta o troco";
+};
 const isPendingCardPaymentForDelivery = (order: any, payments: any[] = []) => {
   const payment = getPreferredOrderPayment(order, payments);
   const status = normalizePaymentText(getOrderPaymentStatus(order, payment));
@@ -173,6 +300,8 @@ const isPendingCardPaymentForDelivery = (order: any, payments: any[] = []) => {
   );
 };
 const hasPendingPaymentForDisplay = (order: any, payments: any[] = []) => {
+  if (isOrderPaid(order, payments)) return false;
+
   const payment = getPreferredOrderPayment(order, payments);
   return (
     normalizePaymentText(getOrderPaymentStatus(order, payment)) === "pendente" ||
@@ -182,9 +311,9 @@ const hasPendingPaymentForDisplay = (order: any, payments: any[] = []) => {
 };
 const canOrderProceedForFulfillment = (order: any, payments: any[] = []) =>
   isOrderPaid(order, payments) ||
+  isFiadoOrder(order, payments) ||
   isOrderPendingCash(order, payments) ||
-  isPendingCardPaymentForDelivery(order, payments) ||
-  order?.origem_checkout === "admin_dashboard";
+  isPendingCardPaymentForDelivery(order, payments);
 const DELIVERY_ASSIGNMENT_BLOCKED_STATUSES = new Set([
   "entregue",
   "nao_entregue",
@@ -197,7 +326,14 @@ const ORDER_TABS = [
   { value: "Salao", label: "Salão" },
 ] as const;
 type OrderTab = (typeof ORDER_TABS)[number]["value"];
+type ArchivedOrderTypeFilter = "Todos" | OrderTab;
+type ArchivedDailySummary = {
+  date: string;
+  count: number;
+  total: number;
+};
 type OrderType = "entrega" | "retirada" | "salao";
+type OrderCounterKey = OrderType;
 const getOrderType = (order: any): OrderType => {
   const type = String(order?.tipo_pedido || order?.type || "").toLowerCase();
   return type === "salao" || type === "retirada" ? type : "entrega";
@@ -215,8 +351,43 @@ const canTakeSalaoOrderToTable = (order: any) =>
   getSalaoComandaStatus(order) === "aberta";
 const canForceFinalizeOrder = (order: any) =>
   Boolean(order?.id) && getBackendStatus(order?.status || "") !== "entregue";
+const canQuickArchiveOrder = (order: any) =>
+  Boolean(order?.id) &&
+  !order?.arquivado &&
+  getBackendStatus(order?.status || "") === "entregue";
 const formatOrderDateTime = (value: Date | string) =>
   formatBrasiliaDate(value, { dateStyle: "short", timeStyle: "short" });
+const getOrderCreatedTimestamp = (order: any) =>
+  order?.criado_em ||
+  order?.created_at ||
+  order?.realizado_em ||
+  new Date();
+const getArchivedOrderTimestamp = (order: any) =>
+  order?.realizado_em || getOrderCreatedTimestamp(order);
+const getValidDate = (value: any) => {
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+};
+const padDatePart = (value: number) => String(value).padStart(2, "0");
+const getDateKey = (value: any) => {
+  const date = getValidDate(value);
+  return [
+    date.getFullYear(),
+    padDatePart(date.getMonth() + 1),
+    padDatePart(date.getDate()),
+  ].join("-");
+};
+const formatArchivedDayLabel = (value: any) => {
+  const date = getValidDate(value);
+  return `[${padDatePart(date.getDate())}/${padDatePart(date.getMonth() + 1)}]`;
+};
+const formatArchivedDayDescription = (value: any) =>
+  getValidDate(value).toLocaleDateString("pt-BR", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
 const canSelectOrderForDeliveryAssignment = (
   order: any,
   assignedOrderIds: Set<any>,
@@ -235,6 +406,8 @@ export function OrdersScreen() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("Todos");
   const [typeFilter, setTypeFilter] = useState<OrderTab>("Entrega");
+  const [archivedTypeFilter, setArchivedTypeFilter] =
+    useState<ArchivedOrderTypeFilter>("Todos");
   const [bairroFilter, setBairroFilter] = useState("Todos");
   const [selected, setSelected] = useState<any | null>(null);
   const [selectedItems, setSelectedItems] = useState<any[]>([]);
@@ -271,6 +444,7 @@ export function OrdersScreen() {
   const [unassigningDeliveryId, setUnassigningDeliveryId] = useState("");
   const [updatingStatusOrderId, setUpdatingStatusOrderId] = useState("");
   const [confirmingCashPaymentId, setConfirmingCashPaymentId] = useState("");
+  const [updatingCashChangePaymentId, setUpdatingCashChangePaymentId] = useState("");
   const [forceFinalizingOrderId, setForceFinalizingOrderId] = useState("");
   const [forceFinalizeCandidate, setForceFinalizeCandidate] = useState<any | null>(null);
   const [cancellingOrderId, setCancellingOrderId] = useState("");
@@ -290,14 +464,17 @@ export function OrdersScreen() {
   const [primaryColor, setPrimaryColor] = useState(PRIMARY);
   const [storePrintData, setStorePrintData] = useState<any | null>(null);
   const [manualOrderOpen, setManualOrderOpen] = useState(false);
+  const [adminAddItemsOrder, setAdminAddItemsOrder] = useState<any | null>(null);
+  const [pendingPaymentMethodOrder, setPendingPaymentMethodOrder] = useState<any | null>(null);
   const [manualOrderCreationAllowed, setManualOrderCreationAllowed] = useState(false);
   const [salaoEnabled, setSalaoEnabled] = useState(false);
-  const [newOrdersCount, setNewOrdersCount] = useState<Record<OrderType, number>>({
+  const [fiadoEnabled, setFiadoEnabled] = useState(false);
+  const [newOrdersCount, setNewOrdersCount] = useState<Record<OrderCounterKey, number>>({
     entrega: 0,
     retirada: 0,
     salao: 0,
   });
-  const [lastOrdersLoadedAt, setLastOrdersLoadedAt] = useState<Record<OrderType, string>>(() => {
+  const [lastOrdersLoadedAt, setLastOrdersLoadedAt] = useState<Record<OrderCounterKey, string>>(() => {
     const initialCursor = new Date(0).toISOString();
     return { entrega: initialCursor, retirada: initialCursor, salao: initialCursor };
   });
@@ -305,6 +482,10 @@ export function OrdersScreen() {
   const [checkingNewOrders, setCheckingNewOrders] = useState(false);
   const [archivedStartDate, setArchivedStartDate] = useState("");
   const [archivedEndDate, setArchivedEndDate] = useState("");
+  const [archivedDailySummary, setArchivedDailySummary] = useState<
+    ArchivedDailySummary[]
+  >([]);
+  const [loadingArchivedDayKey, setLoadingArchivedDayKey] = useState("");
   const [cancelApprovalOrderId, setCancelApprovalOrderId] = useState("");
   const [cancellationReviewOrder, setCancellationReviewOrder] = useState<
     any | null
@@ -331,23 +512,39 @@ export function OrdersScreen() {
     setPage(1);
     fetchOrders(1, true);
     fetchAuxiliaryData();
-  }, [statusFilter, typeFilter, viewMode, archivedStartDate, archivedEndDate]);
+  }, [
+    statusFilter,
+    typeFilter,
+    archivedTypeFilter,
+    viewMode,
+    archivedStartDate,
+    archivedEndDate,
+    fiadoEnabled,
+  ]);
 
   useEffect(() => {
     if (!user?.loja_id) return;
     api.get(`/salao/lojas/${user.loja_id}/modulos`).then((modulesResult) => {
       const modules = modulesResult.data?.data ?? modulesResult.data ?? [];
       setSalaoEnabled(Array.isArray(modules) && modules.some((module: any) => module.slug === "salao" && module.enabled === true));
-    }).catch(() => setSalaoEnabled(false));
+      setFiadoEnabled(Array.isArray(modules) && modules.some((module: any) => module.slug === "fiado" && module.enabled === true));
+    }).catch(() => {
+      setSalaoEnabled(false);
+      setFiadoEnabled(false);
+    });
   }, [user?.loja_id]);
 
   useEffect(() => {
     if (!user?.loja_id) return;
 
-    const types: OrderType[] = ["entrega", "retirada", "salao"];
+    const types: OrderCounterKey[] = [
+      "entrega",
+      "retirada",
+      ...(salaoEnabled ? ["salao" as const] : []),
+    ];
     Promise.all(
       types.map((type) => api.get("/pedidos/novos/contagem", {
-        params: { tipo_pedido: type, arquivado: "false" },
+        params: getNewOrdersQueryParams(type),
       })),
     ).then((responses) => {
       const initializedAt = new Date().toISOString();
@@ -364,7 +561,7 @@ export function OrdersScreen() {
       const now = new Date().toISOString();
       setLastOrdersLoadedAt({ entrega: now, retirada: now, salao: now });
     }).finally(() => setNewOrderCursorsReady(true));
-  }, [user?.loja_id]);
+  }, [user?.loja_id, salaoEnabled]);
 
   useEffect(() => {
     if (!user?.loja_id) {
@@ -416,7 +613,7 @@ export function OrdersScreen() {
 
   useEffect(() => {
     setSelectedOrderIds([]);
-  }, [search, statusFilter, typeFilter, bairroFilter, viewMode]);
+  }, [search, statusFilter, typeFilter, archivedTypeFilter, bairroFilter, viewMode]);
 
   const fetchAuxiliaryData = async () => {
     try {
@@ -452,12 +649,21 @@ export function OrdersScreen() {
     return () => clearTimeout(timer);
   }, [search]);
 
+  const getOrderCounterKey = (): OrderCounterKey =>
+    typeFilter.toLowerCase() as OrderType;
+
+  const getActiveOrderTypeFilter = () =>
+    viewMode === "arquivados" ? archivedTypeFilter : typeFilter;
+
   const getOrderQueryParams = (pageNum = 1) => ({
     page: pageNum,
     per_page: PER_PAGE,
     arquivado: viewMode === "arquivados" ? "true" : "false",
     status: frontendToBackendStatus[statusFilter],
-    tipo_pedido: typeFilter.toLowerCase(),
+    tipo_pedido:
+      getActiveOrderTypeFilter() === "Todos"
+        ? undefined
+        : String(getActiveOrderTypeFilter()).toLowerCase(),
     busca: search || undefined,
     realizado_em_inicial:
       viewMode === "arquivados" ? archivedStartDate || undefined : undefined,
@@ -465,7 +671,25 @@ export function OrdersScreen() {
       viewMode === "arquivados" ? archivedEndDate || undefined : undefined,
   });
 
-  const getNewOrdersQueryParams = (type: OrderType) => ({
+  const normalizeDailySummary = (summary: any[] = []): ArchivedDailySummary[] =>
+    summary
+      .map((item) => ({
+        date: String(item?.date || item?.data || ""),
+        count: Number(item?.count ?? item?.total_pedidos ?? 0),
+        total: Number(item?.total ?? item?.valor_total ?? 0),
+      }))
+      .filter((item) => item.date && Number.isFinite(item.count))
+      .sort((a, b) => b.date.localeCompare(a.date));
+
+  const getArchivedDayQueryParams = (dayKey: string, pageNum = 1) => ({
+    ...getOrderQueryParams(pageNum),
+    page: pageNum,
+    per_page: 100,
+    realizado_em_inicial: dayKey,
+    realizado_em_final: dayKey,
+  });
+
+  const getNewOrdersQueryParams = (type: OrderCounterKey) => ({
     tipo_pedido: type,
     arquivado: "false",
     criado_apos: lastOrdersLoadedAt[type],
@@ -483,6 +707,9 @@ export function OrdersScreen() {
       const response = await api.get("/pedidos", { params });
       const rawData = response.data.data;
       const data = Array.isArray(rawData) ? rawData : rawData?.data || [];
+      const nextDailySummary = Array.isArray(rawData?.daily_summary)
+        ? normalizeDailySummary(rawData.daily_summary)
+        : [];
 
       const more = Array.isArray(rawData)
         ? data.length > PER_PAGE
@@ -491,6 +718,14 @@ export function OrdersScreen() {
         Array.isArray(rawData) && more ? data.slice(0, PER_PAGE) : data;
 
       setHasMore(more);
+      if (reset && viewMode === "arquivados") {
+        setArchivedDailySummary(nextDailySummary);
+        setActiveListGroupKey((currentKey) =>
+          nextDailySummary.some((item) => item.date === currentKey)
+            ? currentKey
+            : nextDailySummary[0]?.date || currentKey,
+        );
+      }
       setOrders((prev) =>
         reset
           ? displayData
@@ -503,8 +738,8 @@ export function OrdersScreen() {
             ],
       );
       setPage(pageNum);
-      if (reset) {
-        const activeType = typeFilter.toLowerCase() as OrderType;
+      if (reset && viewMode !== "arquivados") {
+        const activeType = getOrderCounterKey();
         setLastOrdersLoadedAt((current) => ({
           ...current,
           [activeType]: rawData?.checked_at || new Date().toISOString(),
@@ -521,9 +756,11 @@ export function OrdersScreen() {
   const checkNewOrders = async () => {
     try {
       setCheckingNewOrders(true);
-      const types: OrderType[] = salaoEnabled
-        ? ["entrega", "retirada", "salao"]
-        : ["entrega", "retirada"];
+      const types: OrderCounterKey[] = [
+        "entrega",
+        "retirada",
+        ...(salaoEnabled ? ["salao" as const] : []),
+      ];
       const responses = await Promise.all(
         types.map((type) => api.get("/pedidos/novos/contagem", {
           params: getNewOrdersQueryParams(type),
@@ -569,14 +806,71 @@ export function OrdersScreen() {
     await Promise.all([fetchOrders(1, true), fetchAuxiliaryData()]);
   };
 
+  const fetchArchivedDayOrders = async (dayKey: string) => {
+    if (!dayKey) return;
+
+    try {
+      setLoadingArchivedDayKey(dayKey);
+
+      const firstResponse = await api.get("/pedidos", {
+        params: getArchivedDayQueryParams(dayKey, 1),
+      });
+      const firstPayload = firstResponse.data.data;
+      const firstData = Array.isArray(firstPayload)
+        ? firstPayload
+        : firstPayload?.data || [];
+      const totalPages = Math.max(1, Number(firstPayload?.total_pages || 1));
+      const allOrders = [...firstData];
+
+      if (totalPages > 1) {
+        const responses = await Promise.all(
+          Array.from({ length: totalPages - 1 }, (_, index) =>
+            api.get("/pedidos", {
+              params: getArchivedDayQueryParams(dayKey, index + 2),
+            }),
+          ),
+        );
+        responses.forEach((response) => {
+          const payload = response.data.data;
+          allOrders.push(
+            ...(Array.isArray(payload) ? payload : payload?.data || []),
+          );
+        });
+      }
+
+      setOrders(allOrders);
+      setPage(1);
+      setHasMore(false);
+      setActiveListGroupKey(dayKey);
+    } catch (error) {
+      console.error("Error fetching archived day orders:", error);
+      showSystemNotice(
+        "NÃ£o foi possÃ­vel carregar todos os pedidos deste dia.",
+      );
+    } finally {
+      setLoadingArchivedDayKey((currentKey) =>
+        currentKey === dayKey ? "" : currentKey,
+      );
+    }
+  };
+
+  const changeViewMode = (nextMode: "lista" | "bairros" | "arquivados") => {
+    if (nextMode === viewMode) return;
+    setViewMode(nextMode);
+  };
+
   const handleNewOrdersButton = () => {
-    const activeType = typeFilter.toLowerCase() as OrderType;
+    const activeType = getOrderCounterKey();
     if (newOrdersCount[activeType] > 0) {
       void refreshCurrentOrderTab();
       return;
     }
 
-    const nextType = (["entrega", "retirada", ...(salaoEnabled ? ["salao"] : [])] as OrderType[])
+    const nextType = ([
+      "entrega",
+      "retirada",
+      ...(salaoEnabled ? ["salao" as const] : []),
+    ] as OrderCounterKey[])
       .find((type) => newOrdersCount[type] > 0);
     if (!nextType) return;
     setTypeFilter(({ entrega: "Entrega", retirada: "Retirada", salao: "Salao" } as const)[nextType]);
@@ -627,6 +921,7 @@ export function OrdersScreen() {
             order.id === orderId
               ? {
                   ...order,
+                  pagamentos: payments,
                   pagamento: preferredPayment,
                   payment_status: preferredPayment.status || order.payment_status,
                 }
@@ -650,6 +945,7 @@ export function OrdersScreen() {
               order.id === orderId
                 ? {
                     ...order,
+                    pagamentos: payments,
                     pagamento: preferredPayment,
                     payment_status: preferredPayment.status || order.payment_status,
                   }
@@ -691,6 +987,28 @@ export function OrdersScreen() {
     }
   };
 
+  const refreshSelectedOrderAfterAdminAdjustment = async (result: any, message: string) => {
+    const nextOrder = result?.pedido || result?.order || selected;
+    if (nextOrder?.id) {
+      setSelected((previous: any) => previous?.id === nextOrder.id ? { ...previous, ...nextOrder } : nextOrder);
+      setOrders((previous) =>
+        previous.map((order) => order.id === nextOrder.id ? { ...order, ...nextOrder } : order),
+      );
+      await fetchOrderItems(nextOrder.id);
+      const payments = Array.isArray(result?.pagamentos)
+        ? result.pagamentos
+        : await fetchOrderPayments(nextOrder.id);
+      if (Array.isArray(result?.pagamentos)) {
+        setSelectedPayments(result.pagamentos);
+      }
+      await fetchOrderRefunds(payments);
+    }
+    await fetchOrders(1, true, { silent: true });
+    setAdminAddItemsOrder(null);
+    setPendingPaymentMethodOrder(null);
+    showSystemNotice(message);
+  };
+
   const fetchOrderDelivery = async (orderId: string) => {
     try {
       const response = await api.get("/entregas", {
@@ -714,18 +1032,69 @@ export function OrdersScreen() {
   };
 
   const handleSelectOrder = (order: any) => {
+    const embeddedPayments = getOrderEmbeddedPayments(order);
     setSelected(order);
     setSelectedItems([]);
-    setSelectedPayments([]);
+    setSelectedPayments(embeddedPayments);
     setSelectedRefunds([]);
     setCurrentDelivery(null);
     fetchOrderItems(order.id);
-    fetchOrderPayments(order.id).then((payments) =>
-      fetchOrderRefunds(payments),
-    );
+    if (embeddedPayments.length > 0) {
+      fetchOrderRefunds(embeddedPayments);
+    } else {
+      fetchOrderPayments(order.id).then((payments) =>
+        fetchOrderRefunds(payments),
+      );
+    }
     if ((order.tipo_pedido || order.type || "").toLowerCase() === "entrega") {
       fetchOrderDelivery(order.id);
     }
+  };
+
+  const moveOrderToSeparationForPrint = async (order: any) => {
+    if (!order?.id || getOrderType(order) === "salao") return order;
+
+    const currentStatus = getBackendStatus(order.status || "");
+    if (currentStatus === "em_separacao") return order;
+    if (!["pendente", "confirmado"].includes(currentStatus)) return order;
+
+    const statusesToApply =
+      currentStatus === "pendente"
+        ? ["confirmado", "em_separacao"]
+        : ["em_separacao"];
+    let nextOrder = order;
+
+    setUpdatingStatusOrderId(order.id);
+    try {
+      for (const status of statusesToApply) {
+        const response = await api.patch(`/pedidos/${order.id}/status`, {
+          status,
+        });
+        const updatedOrder = response.data?.data || response.data || {};
+        nextOrder = {
+          ...nextOrder,
+          ...updatedOrder,
+          status: updatedOrder.status || status,
+        };
+
+        setOrders((prev) =>
+          prev.map((item) =>
+            item.id === order.id ? { ...item, ...nextOrder } : item,
+          ),
+        );
+        if (selected?.id === order.id) {
+          setSelected((prev: any) =>
+            prev ? { ...prev, ...nextOrder } : prev,
+          );
+        }
+      }
+    } finally {
+      setUpdatingStatusOrderId((currentId) =>
+        currentId === order.id ? "" : currentId,
+      );
+    }
+
+    return nextOrder;
   };
 
   const handlePrintComanda = async (order: any) => {
@@ -737,18 +1106,33 @@ export function OrdersScreen() {
       return;
     }
 
+    let printableOrder = order;
     try {
-      const items = await loadOrderItems(order.id);
+      printableOrder = await moveOrderToSeparationForPrint(order);
+    } catch (error) {
+      printWindow.close();
+      showSystemNotice(
+        getApiErrorMessage(
+          error,
+          "Não foi possível alterar o pedido para Em separação antes da impressão.",
+        ),
+      );
+      return;
+    }
+
+    try {
+      const items = await loadOrderItems(printableOrder.id);
       const orderPayment =
-        selected?.id === order.id
-          ? getPreferredOrderPayment(order, selectedPayments)
-          : getPreferredOrderPayment(order);
+        selected?.id === printableOrder.id
+          ? getPreferredOrderPayment(printableOrder, selectedPayments)
+          : getPreferredOrderPayment(printableOrder);
       printComanda(
-        { ...order, pagamento: orderPayment },
+        { ...printableOrder, pagamento: orderPayment },
         items,
         storePrintData,
         printWindow,
       );
+      void fetchOrders(1, true, { silent: true });
     } catch {
       printWindow.close();
       showSystemNotice(
@@ -1003,11 +1387,12 @@ export function OrdersScreen() {
 
       const orderPayments = selected?.id === id ? selectedPayments : [];
       const orderIsPaid = isOrderPaid(order, orderPayments);
+      const orderIsFiado = isFiadoOrder(order, orderPayments);
       const orderHasPendingCash = isOrderPendingCash(order, orderPayments);
       const orderPayment = getPreferredOrderPayment(order, orderPayments);
       const orderHasCardOnDelivery = isCardOnDeliveryPayment(orderPayment);
 
-      if (!orderIsPaid && !orderHasPendingCash) {
+      if (!orderIsPaid && !orderIsFiado && !orderHasPendingCash) {
         showSystemNotice(
           "O pedido só pode avançar após a aprovação do pagamento.",
         );
@@ -1156,7 +1541,7 @@ export function OrdersScreen() {
       setConfirmingCashPaymentId(selectedPayment.id);
       const response = await api.patch(`/pagamentos/${selectedPayment.id}/status`, {
         status: "aprovado",
-        observacao: "Pagamento em dinheiro recebido na retirada",
+        observacao: "Pagamento recebido pelo caixa",
       });
       const updatedPayment = response.data.data || response.data;
 
@@ -1176,7 +1561,7 @@ export function OrdersScreen() {
         ),
       );
       await fetchOrders(1, true, { silent: true });
-      showSystemNotice("Pagamento em dinheiro confirmado como recebido.");
+      showSystemNotice("Pagamento confirmado como recebido.");
     } catch (error) {
       showSystemNotice(
         getApiErrorMessage(
@@ -1186,6 +1571,49 @@ export function OrdersScreen() {
       );
     } finally {
       setConfirmingCashPaymentId("");
+    }
+  };
+
+  const updateCashChangePaidToCourier = async (checked: boolean) => {
+    if (!selected?.id || !selectedPayment?.id) return;
+
+    try {
+      setUpdatingCashChangePaymentId(selectedPayment.id);
+      const response = await api.patch(
+        `/pagamentos/${selectedPayment.id}/troco-entregador`,
+        { troco_pago_ao_entregador: checked },
+      );
+      const updatedPayment = response.data.data || response.data;
+
+      setSelectedPayments((previous) =>
+        previous.map((payment) =>
+          payment.id === updatedPayment.id ? updatedPayment : payment,
+        ),
+      );
+      setSelected((previous: any) =>
+        previous ? { ...previous, pagamento: updatedPayment } : previous,
+      );
+      setOrders((previous) =>
+        previous.map((order) =>
+          order.id === selected.id
+            ? { ...order, pagamento: updatedPayment }
+            : order,
+        ),
+      );
+      showSystemNotice(
+        checked
+          ? "Troco marcado como pago ao entregador."
+          : "Troco marcado como não pago ao entregador.",
+      );
+    } catch (error) {
+      showSystemNotice(
+        getApiErrorMessage(
+          error,
+          "Não foi possível atualizar o troco pago ao entregador.",
+        ),
+      );
+    } finally {
+      setUpdatingCashChangePaymentId("");
     }
   };
 
@@ -1540,6 +1968,23 @@ export function OrdersScreen() {
         `/pedidos/${order.id}/${shouldRestore ? "restaurar" : "arquivar"}`,
       );
       setOrders((prev) => prev.filter((item) => item.id !== order.id));
+      if (viewMode === "arquivados" && shouldRestore) {
+        const restoredDayKey = getDateKey(getArchivedOrderTimestamp(order));
+        const restoredTotal = Number(order.valor_total || order.total || 0);
+        setArchivedDailySummary((current) =>
+          current
+            .map((item) =>
+              item.date === restoredDayKey
+                ? {
+                    ...item,
+                    count: Math.max(0, item.count - 1),
+                    total: Math.max(0, item.total - restoredTotal),
+                  }
+                : item,
+            )
+            .filter((item) => item.count > 0),
+        );
+      }
       if (selected?.id === order.id) {
         setSelected(null);
       }
@@ -1612,7 +2057,11 @@ export function OrdersScreen() {
     (order) => canSelectOrderForDeliveryAssignment(order, assignedOrderIds),
   );
   const selectableDeliveryOrders =
-    viewMode === "bairros" ? deliveryOrders : listDeliveryOrders;
+    viewMode === "bairros"
+      ? deliveryOrders
+      : viewMode === "lista"
+        ? listDeliveryOrders
+        : [];
   const selectedDeliveryOrders = selectableDeliveryOrders.filter((order) =>
     selectedOrderIds.includes(order.id),
   );
@@ -1622,6 +2071,7 @@ export function OrdersScreen() {
       ? [
           search,
           statusFilter !== "Todos",
+          archivedTypeFilter !== "Todos",
           archivedStartDate,
           archivedEndDate,
         ].filter(Boolean).length
@@ -1631,21 +2081,48 @@ export function OrdersScreen() {
           bairroFilter !== "Todos",
         ].filter(Boolean).length;
   const availableOrderTabs = ORDER_TABS.filter(
-    (tab) => tab.value !== "Salao" || salaoEnabled,
+    (tab) =>
+      tab.value !== "Salao" || salaoEnabled,
   );
-  const canCreateManualOrder = typeFilter !== "Salao" && manualOrderCreationAllowed;
+  const archivedTypeOptions: Array<{
+    value: ArchivedOrderTypeFilter;
+    label: string;
+  }> = [
+    { value: "Todos", label: "Todos" },
+    ...availableOrderTabs.map((tab) => ({
+      value: tab.value as ArchivedOrderTypeFilter,
+      label: tab.label,
+    })),
+  ];
+  const canCreateManualOrder =
+    viewMode !== "arquivados" &&
+    typeFilter !== "Salao" &&
+    manualOrderCreationAllowed;
   const totalNewOrdersCount = availableOrderTabs.reduce(
-    (total, tab) => total + newOrdersCount[tab.value.toLowerCase() as OrderType],
+    (total, tab) => total + newOrdersCount[tab.value.toLowerCase() as OrderCounterKey],
     0,
   );
   const selectedPayment = getPreferredOrderPayment(selected, selectedPayments);
   const selectedIsPaid = isOrderPaid(selected, selectedPayments);
-  const selectedIsPendingCash = isOrderPendingCash(selected, selectedPayments);
+  const selectedIsFiado = isFiadoOrder(selected, selectedPayments);
+  const selectedIsPendingCash =
+    !selectedIsPaid && isOrderPendingCash(selected, selectedPayments);
   const selectedRefundedAmount = selectedRefunds
     .filter((refund) =>
       REFUND_ACTIVE_STATUSES.has(String(refund.status || "").toLowerCase()),
     )
     .reduce((sum, refund) => sum + Number(refund.valor || 0), 0);
+  const selectedHasActiveRefund = selectedRefunds.some((refund) =>
+    REFUND_ACTIVE_STATUSES.has(String(refund.status || "").toLowerCase()),
+  );
+  const selectedHasReversedPayment = selectedPayments.some((payment) =>
+    String(payment.status || "").toLowerCase() === "estornado",
+  );
+  const selectedBlocksAdminAdjustment =
+    !selected ||
+    getBackendStatus(selected.status || "") === "cancelado" ||
+    selectedHasActiveRefund ||
+    selectedHasReversedPayment;
   const selectedRefundableAmount = Math.max(
     0,
     Number(
@@ -1684,8 +2161,28 @@ export function OrdersScreen() {
     selected,
     selectedPayment,
   );
-  const selectedCashChangeInfo = formatCashChangeInfo(selectedPayment);
+  const selectedPaymentStatusLabel =
+    selectedIsFiado && selectedIsPaid && selectedPaymentStatus === "Aprovado"
+      ? "Pagamento efetivado"
+      : selectedPaymentStatus;
+  const selectedCashChangeInfo = formatCashChangeInfo(selectedPayment, selected);
+  const selectedCashChangeStatusLabel = getCashChangeStatusLabel(
+    selectedPayment,
+    selected,
+  );
   const selectedIsCardOnDelivery = isCardOnDeliveryPayment(selectedPayment);
+  const selectedCashChangeValue = parseCurrencyNumber(
+    firstPresent(
+      selectedPayment?.troco_valor,
+      selected?.pagamento?.troco_valor,
+      selected?.troco_valor,
+    ),
+  );
+  const selectedNeedsCashChange =
+    !selectedIsCardOnDelivery && selectedCashChangeValue > 0;
+  const selectedCashChangePaidToCourier =
+    selectedPayment?.troco_pago_ao_entregador === true ||
+    selected?.pagamento?.troco_pago_ao_entregador === true;
   const selectedStatusUpdating = updatingStatusOrderId === selected?.id;
   const selectedForceFinalizing = forceFinalizingOrderId === selected?.id;
   const selectedCancelling = cancellingOrderId === selected?.id;
@@ -1694,6 +2191,7 @@ export function OrdersScreen() {
   const selectedCanRefund =
     Boolean(selected?.id) &&
     selectedIsPaid &&
+    !selectedIsFiado &&
     !selectedCancellationPending &&
     selectedRefundableAmount > 0;
   const selectedCancellationResolving =
@@ -1706,7 +2204,7 @@ export function OrdersScreen() {
     selectedCancellationResolving;
   const selectedPaymentStatusClass = ["Aprovado", "Confirmado"].includes(
     selectedPaymentStatus,
-  )
+  ) || selectedPaymentStatusLabel === "Pagamento efetivado"
     ? "text-green-600"
     : ["Rejeitado", "Cancelado", "Estornado", "Expirado"].includes(
           selectedPaymentStatus,
@@ -1723,9 +2221,27 @@ export function OrdersScreen() {
     selectedIsDelivery && selectedStatusLabel === "Pronto";
   const adminCannotConfirmDelivery =
     selectedIsDelivery && selectedStatusLabel === "Saiu para Entrega";
-  const selectedCanProceed = selectedIsPaid || selectedIsPendingCash || selected?.origem_checkout === "admin_dashboard";
-  const selectedPickupNeedsCashConfirmation =
-    selectedIsPickup && selectedIsPendingCash && !selectedIsCardOnDelivery && selectedStatusLabel === "Pronto";
+  const selectedIsAdminDashboardOrder =
+    normalizePaymentText(
+      selected?.origem_checkout ||
+        selected?.origemCheckout ||
+        selected?.checkout_origin ||
+        selected?.checkoutOrigin,
+    ) === "admin_dashboard";
+  const selectedCanProceed =
+    selectedIsPaid ||
+    selectedIsFiado ||
+    selectedIsAdminDashboardOrder ||
+    (selectedIsPendingCash && !selectedIsFiado);
+  const selectedPaymentKeepsConfirmationPending =
+    !selectedIsPaid && !selectedIsFiado && (selectedIsPendingCash || selectedIsAdminDashboardOrder);
+  const selectedCanAdminAddItems = Boolean(selected?.id) && !selectedBlocksAdminAdjustment;
+  const selectedCanChangePendingPayment =
+    Boolean(selected?.id) &&
+    !selectedBlocksAdminAdjustment &&
+    !selectedIsPaid &&
+    !selectedIsFiado;
+  const selectedPickupNeedsCashConfirmation = false;
   const selectedCanTakeSalaoToTable =
     Boolean(selected) &&
     canTakeSalaoOrderToTable(selected) &&
@@ -1736,6 +2252,7 @@ export function OrdersScreen() {
     forceFinalizeCandidate?.id === selected?.id ? selectedPayments : [];
   const forceFinalizeWillSettlePayment =
     Boolean(forceFinalizeCandidate) &&
+    !isFiadoOrder(forceFinalizeCandidate, forceFinalizeCandidatePayments) &&
     !isOrderPaid(forceFinalizeCandidate, forceFinalizeCandidatePayments);
   const selectedCustomerName =
     selected?.cliente?.nome || selected?.customer || "";
@@ -1759,17 +2276,71 @@ export function OrdersScreen() {
   ]);
   const orderStatusIs = (order: any, status: string) =>
     getOrderStatusKey(order) === status;
+  const archivedOrdersByDay = filtered.reduce<
+    Record<
+      string,
+      {
+        orders: any[];
+        total: number;
+        timestamp: number;
+      }
+    >
+  >((groups, order) => {
+    const createdTimestamp = getArchivedOrderTimestamp(order);
+    const key = getDateKey(createdTimestamp);
+    const date = getValidDate(createdTimestamp);
+
+    if (!groups[key]) {
+      groups[key] = {
+        orders: [],
+        total: 0,
+        timestamp: date.getTime(),
+      };
+    }
+
+    groups[key].orders.push(order);
+    groups[key].total += Number(order.valor_total || order.total || 0);
+    return groups;
+  }, {});
+
+  const fallbackArchivedSummary = Object.entries(archivedOrdersByDay)
+    .map(([date, group]) => ({
+      date,
+      count: group.orders.length,
+      total: group.total,
+    }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const archivedSummary =
+    archivedDailySummary.length > 0
+      ? archivedDailySummary
+      : fallbackArchivedSummary;
+  const archivedGroups = archivedSummary
+    .map((summary) => {
+      const orders = archivedOrdersByDay[summary.date]?.orders || [];
+      const date = getValidDate(`${summary.date}T12:00:00`);
+
+      return {
+        key: summary.date,
+        title: formatArchivedDayLabel(date),
+        description: formatArchivedDayDescription(date),
+        orders: orders.sort(
+          (a, b) =>
+            getValidDate(getArchivedOrderTimestamp(b)).getTime() -
+            getValidDate(getArchivedOrderTimestamp(a)).getTime(),
+        ),
+        count: summary.count,
+        total: summary.total,
+        timestamp: date.getTime(),
+      };
+    })
+    .sort((a, b) => b.timestamp - a.timestamp);
+  const archivedTotalOrders = archivedSummary.reduce(
+    (total, group) => total + group.count,
+    0,
+  );
   const listGroups =
     viewMode === "arquivados"
-      ? [
-          {
-            key: "arquivados",
-            title: "Arquivados",
-            description: "Pedidos arquivados manualmente",
-            orders: filtered,
-            defaultExpanded: true,
-          },
-        ]
+      ? archivedGroups
       : [
           {
             key: "cancelamentos",
@@ -1986,85 +2557,117 @@ export function OrdersScreen() {
     }
   };
 
-  if (loading && orders.length === 0) {
-    return (
-      <div className="p-5 flex-1 h-full flex items-center justify-center">
-        <div
-          className="w-8 h-8 border-4 border-gray-200 border-t-primary rounded-full animate-spin"
-          style={{ borderColor: `${PRIMARY}40`, borderTopColor: PRIMARY }}
-        ></div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex h-full">
       {manualOrderOpen && canCreateManualOrder && user?.loja_id && (
-        <ManualDeliveryOrderModal lojaId={user.loja_id} primaryColor={primaryColor} onClose={() => setManualOrderOpen(false)} onCreated={() => fetchOrders(1, true)} />
+        <ManualDeliveryOrderModal lojaId={user.loja_id} primaryColor={primaryColor} fiadoEnabled={fiadoEnabled} onClose={() => setManualOrderOpen(false)} onCreated={() => fetchOrders(1, true)} />
+      )}
+      {adminAddItemsOrder && (
+        <AddOrderItemsModal
+          order={adminAddItemsOrder}
+          isPaid={isOrderPaid(adminAddItemsOrder, adminAddItemsOrder.id === selected?.id ? selectedPayments : [])}
+          primaryColor={primaryColor}
+          onClose={() => setAdminAddItemsOrder(null)}
+          onAdjusted={(result) => void refreshSelectedOrderAfterAdminAdjustment(result, "Produtos adicionados ao pedido.")}
+        />
+      )}
+      {pendingPaymentMethodOrder && (
+        <PendingPaymentMethodModal
+          order={pendingPaymentMethodOrder}
+          currentMethod={getCurrentPaymentMethodValue(selectedPayment)}
+          primaryColor={primaryColor}
+          onClose={() => setPendingPaymentMethodOrder(null)}
+          onUpdated={(result) => void refreshSelectedOrderAfterAdminAdjustment(result, "Forma de pagamento pendente atualizada.")}
+        />
       )}
       {/* Left panel: list or bairros */}
       <div
         className={`flex flex-col ${selected ? "hidden lg:flex lg:w-1/2 xl:w-3/5" : "flex-1"}`}
       >
         <div className="border-b border-gray-200 bg-white px-4 pt-2">
-          <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Tipos de pedido">
-            {availableOrderTabs.map((tab) => {
-              const active = typeFilter === tab.value;
-              const type = tab.value.toLowerCase() as OrderType;
-              const count = newOrdersCount[type];
-              return (
-                <button
-                  key={tab.value}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => {
-                    if (tab.value !== "Entrega") {
-                      setBairroFilter("Todos");
-                      if (viewMode === "bairros") setViewMode("lista");
-                    }
-                    if (active && count > 0) {
-                      void refreshCurrentOrderTab();
-                    } else {
-                      setTypeFilter(tab.value);
-                    }
-                  }}
-                  className={`relative inline-flex min-w-24 items-center justify-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${active ? "text-gray-900" : "border-transparent text-gray-500 hover:text-gray-800"}`}
-                  style={active ? { borderBottomColor: primaryColor, color: primaryColor } : undefined}
+          {viewMode === "arquivados" ? (
+            <div className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3">
+                <div
+                  className="flex h-10 w-10 items-center justify-center rounded-lg text-white"
+                  style={{ backgroundColor: primaryColor }}
                 >
-                  {tab.label}
-                  {count > 0 && (
-                    <span
-                      className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white"
-                      style={{ backgroundColor: primaryColor }}
-                      title={`${count} pedido${count === 1 ? " novo" : "s novos"}`}
-                    >
-                      {count > 99 ? "99+" : count}
-                    </span>
-                  )}
-                  {active && checkingNewOrders && (
-                    <span className="absolute right-1 top-1 h-1.5 w-1.5 animate-pulse rounded-full bg-gray-300" />
-                  )}
-                </button>
-              );
-            })}
-            <button
-              type="button"
-              disabled={totalNewOrdersCount === 0}
-              onClick={handleNewOrdersButton}
-              className="relative ml-auto my-1.5 inline-flex h-9 w-9 flex-none items-center justify-center rounded-full text-white shadow-sm transition-all hover:opacity-90 disabled:cursor-default disabled:opacity-45"
-              style={{ backgroundColor: primaryColor }}
-              title={totalNewOrdersCount > 0 ? `${totalNewOrdersCount} pedido${totalNewOrdersCount === 1 ? " novo" : "s novos"}` : "Nenhum pedido novo"}
-              aria-label={totalNewOrdersCount > 0 ? `Atualizar ${totalNewOrdersCount} pedidos novos` : "Nenhum pedido novo"}
-            >
-              <RefreshCw className={`h-4 w-4 ${checkingNewOrders ? "animate-spin" : ""}`} />
-              {totalNewOrdersCount > 0 && (
-                <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-500 px-1 text-[10px] font-bold text-white">
-                  {totalNewOrdersCount > 99 ? "99+" : totalNewOrdersCount}
-                </span>
-              )}
-            </button>
-          </div>
+                  <Archive className="h-5 w-5" />
+                </div>
+                <div>
+                  <h1 className="text-lg font-bold text-gray-900">
+                    Arquivados
+                  </h1>
+                  <p className="text-xs text-gray-500">
+                    Pedidos agrupados pelo dia em que foram realizados
+                  </p>
+                </div>
+              </div>
+              <span className="inline-flex w-fit items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600">
+                <CalendarDays className="h-4 w-4" />
+                {archivedGroups.length} dia{archivedGroups.length !== 1 ? "s" : ""} · {archivedTotalOrders} pedido{archivedTotalOrders !== 1 ? "s" : ""}
+              </span>
+            </div>
+          ) : (
+            <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Tipos de pedido">
+              {availableOrderTabs.map((tab) => {
+                const active = typeFilter === tab.value;
+                const type = tab.value.toLowerCase() as OrderCounterKey;
+                const count = newOrdersCount[type];
+                return (
+                  <button
+                    key={tab.value}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => {
+                      if (tab.value !== "Entrega") {
+                        setBairroFilter("Todos");
+                        if (viewMode === "bairros") changeViewMode("lista");
+                      }
+                      if (active && count > 0) {
+                        void refreshCurrentOrderTab();
+                      } else {
+                        setTypeFilter(tab.value);
+                      }
+                    }}
+                    className={`relative inline-flex min-w-24 items-center justify-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${active ? "text-gray-900" : "border-transparent text-gray-500 hover:text-gray-800"}`}
+                    style={active ? { borderBottomColor: primaryColor, color: primaryColor } : undefined}
+                  >
+                    {tab.label}
+                    {count > 0 && (
+                      <span
+                        className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white"
+                        style={{ backgroundColor: primaryColor }}
+                        title={`${count} pedido${count === 1 ? " novo" : "s novos"}`}
+                      >
+                        {count > 99 ? "99+" : count}
+                      </span>
+                    )}
+                    {active && checkingNewOrders && (
+                      <span className="absolute right-1 top-1 h-1.5 w-1.5 animate-pulse rounded-full bg-gray-300" />
+                    )}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                disabled={totalNewOrdersCount === 0}
+                onClick={handleNewOrdersButton}
+                className="relative ml-auto my-1.5 inline-flex h-9 w-9 flex-none items-center justify-center rounded-full text-white shadow-sm transition-all hover:opacity-90 disabled:cursor-default disabled:opacity-45"
+                style={{ backgroundColor: primaryColor }}
+                title={totalNewOrdersCount > 0 ? `${totalNewOrdersCount} pedido${totalNewOrdersCount === 1 ? " novo" : "s novos"}` : "Nenhum pedido novo"}
+                aria-label={totalNewOrdersCount > 0 ? `Atualizar ${totalNewOrdersCount} pedidos novos` : "Nenhum pedido novo"}
+              >
+                <RefreshCw className={`h-4 w-4 ${checkingNewOrders ? "animate-spin" : ""}`} />
+                {totalNewOrdersCount > 0 && (
+                  <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-500 px-1 text-[10px] font-bold text-white">
+                    {totalNewOrdersCount > 99 ? "99+" : totalNewOrdersCount}
+                  </span>
+                )}
+              </button>
+            </div>
+          )}
         </div>
         {/* Filters bar */}
         <div className="bg-white border-b border-gray-200 px-4 py-3">
@@ -2082,7 +2685,7 @@ export function OrdersScreen() {
               )}
 
               <div
-                className={`grid min-w-0 flex-1 grid-cols-1 gap-3 sm:grid-cols-2 ${viewMode === "arquivados" ? "2xl:grid-cols-4" : viewMode === "bairros" ? "xl:grid-cols-3" : ""}`}
+                className={`grid min-w-0 flex-1 grid-cols-1 gap-3 sm:grid-cols-2 ${viewMode === "arquivados" ? "xl:grid-cols-3 2xl:grid-cols-5" : viewMode === "bairros" ? "xl:grid-cols-3" : ""}`}
               >
                 <div className="relative">
                   <label className="block text-[11px] font-semibold uppercase text-gray-400 mb-1">
@@ -2113,6 +2716,27 @@ export function OrdersScreen() {
                     ))}
                   </select>
                 </div>
+
+                {viewMode === "arquivados" && (
+                  <div>
+                    <label className="block text-[11px] font-semibold uppercase text-gray-400 mb-1">
+                      Tipo
+                    </label>
+                    <select
+                      value={archivedTypeFilter}
+                      onChange={(e) =>
+                        setArchivedTypeFilter(e.target.value as ArchivedOrderTypeFilter)
+                      }
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-700 focus:outline-none focus:ring-1"
+                    >
+                      {archivedTypeOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 {viewMode === "arquivados" && (
                   <>
@@ -2171,6 +2795,7 @@ export function OrdersScreen() {
                     setSearch("");
                     setStatusFilter("Todos");
                     if (viewMode === "arquivados") {
+                      setArchivedTypeFilter("Todos");
                       setArchivedStartDate("");
                       setArchivedEndDate("");
                     } else {
@@ -2186,7 +2811,7 @@ export function OrdersScreen() {
 
             <div className="flex shrink-0 self-start rounded-lg bg-gray-100 p-0.5 gap-0.5 xl:self-end">
               <button
-                onClick={() => setViewMode("lista")}
+                onClick={() => changeViewMode("lista")}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
                 style={
                   viewMode === "lista"
@@ -2198,7 +2823,7 @@ export function OrdersScreen() {
               </button>
               {typeFilter === "Entrega" && (
                 <button
-                  onClick={() => setViewMode("bairros")}
+                  onClick={() => changeViewMode("bairros")}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
                   style={
                     viewMode === "bairros"
@@ -2210,7 +2835,7 @@ export function OrdersScreen() {
                 </button>
               )}
               <button
-                onClick={() => setViewMode("arquivados")}
+                onClick={() => changeViewMode("arquivados")}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
                 style={
                   viewMode === "arquivados"
@@ -2250,10 +2875,18 @@ export function OrdersScreen() {
               )}
             </div>
           ) : viewMode === "arquivados" ? (
-            <span className="text-xs text-gray-500">
-              {filtered.length} pedido{filtered.length !== 1 ? "s" : ""}{" "}
-              arquivado{filtered.length !== 1 ? "s" : ""}
-            </span>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs text-gray-500">
+                {archivedTotalOrders} pedido{archivedTotalOrders !== 1 ? "s" : ""}{" "}
+                arquivado{archivedTotalOrders !== 1 ? "s" : ""} em{" "}
+                {archivedGroups.length} dia{archivedGroups.length !== 1 ? "s" : ""}
+              </span>
+              {activeListGroup && (
+                <span className="text-xs font-semibold text-gray-700">
+                  Dia selecionado: {activeListGroup.title}
+                </span>
+              )}
+            </div>
           ) : (
             <div className="flex items-center justify-between gap-3">
               <span className="text-xs text-gray-500">
@@ -2276,7 +2909,76 @@ export function OrdersScreen() {
         {/* ── LISTA VIEW ─────────────────────────────── */}
         {(viewMode === "lista" || viewMode === "arquivados") && (
           <>
-            {listGroups.length > 0 && (
+            {listGroups.length > 0 && viewMode === "arquivados" && (
+              <div className="border-b border-gray-200 bg-white px-4 py-3">
+                <div
+                  className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-6"
+                  role="tablist"
+                  aria-label="Dias arquivados"
+                >
+                  {listGroups.map((group) => {
+                    const active = activeListGroup?.key === group.key;
+                    const loadingDay = loadingArchivedDayKey === group.key;
+                    return (
+                      <button
+                        key={group.key}
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        title={group.description}
+                        onClick={() => void fetchArchivedDayOrders(group.key)}
+                        disabled={loadingDay}
+                        className={`min-h-24 rounded-lg border p-3 text-left transition-all ${
+                          active
+                            ? "bg-white shadow-sm"
+                            : "bg-gray-50 hover:bg-white hover:shadow-sm"
+                        }`}
+                        style={
+                          active
+                            ? {
+                                borderColor: primaryColor,
+                                boxShadow: `0 0 0 1px ${hexToRgba(primaryColor, 0.22)}`,
+                              }
+                            : { borderColor: "#e5e7eb" }
+                        }
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span
+                            className="text-base font-black"
+                            style={{ color: active ? primaryColor : "#111827" }}
+                          >
+                            {group.title}
+                          </span>
+                          <CalendarDays
+                            className="h-4 w-4"
+                            style={{ color: active ? primaryColor : "#94a3b8" }}
+                          />
+                          {loadingDay && (
+                            <Loader2
+                              className="h-4 w-4 animate-spin"
+                              style={{ color: primaryColor }}
+                            />
+                          )}
+                        </div>
+                        <div className="mt-1 text-xs capitalize text-gray-500">
+                          {group.description}
+                        </div>
+                        <div className="mt-3 flex items-center justify-between gap-2">
+                          <span className="rounded-md bg-gray-100 px-2 py-1 text-[11px] font-semibold text-gray-600">
+                            {group.count} pedido{group.count !== 1 ? "s" : ""}
+                          </span>
+                          <span className="text-xs font-bold text-gray-800">
+                            R$ {group.total.toFixed(2).replace(".", ",")}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {listGroups.length > 0 && viewMode !== "arquivados" && (
               <div className="border-b border-gray-200 bg-white px-4">
                 <div
                   className="flex gap-1 overflow-x-auto"
@@ -2330,6 +3032,15 @@ export function OrdersScreen() {
             )}
 
             <div className="flex-1 overflow-y-auto bg-slate-50/50 p-4 space-y-4">
+              {loading && orders.length === 0 && (
+                <div className="flex min-h-[320px] flex-col items-center justify-center text-gray-400">
+                  <div
+                    className="mb-3 h-8 w-8 animate-spin rounded-full border-4 border-gray-200"
+                    style={{ borderColor: `${PRIMARY}40`, borderTopColor: PRIMARY }}
+                  />
+                  <p className="text-sm">Carregando pedidos...</p>
+                </div>
+              )}
               {activeListGroup && (
                 <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
                   <div className="divide-y divide-gray-100">
@@ -2342,10 +3053,21 @@ export function OrdersScreen() {
                       };
                     const isEntrega = isDeliveryOrder(order);
                     const orderPayments =
-                      selected?.id === order.id ? selectedPayments : [];
+                      selected?.id === order.id
+                        ? selectedPayments
+                        : getOrderEmbeddedPayments(order);
+                    const orderPayment = getPreferredOrderPayment(
+                      order,
+                      orderPayments,
+                    );
                     const orderPaymentIsPending =
                       hasPendingPaymentForDisplay(order, orderPayments);
+                    const cashChangeStatusLabel = getCashChangeStatusLabel(
+                      orderPayment,
+                      order,
+                    );
                     const canSelectForDelivery =
+                      viewMode !== "arquivados" &&
                       canSelectOrderForDeliveryAssignment(
                         order,
                         assignedOrderIds,
@@ -2502,17 +3224,30 @@ export function OrdersScreen() {
                               <div className="flex items-center gap-3 mt-1">
                                 <span className="text-xs text-gray-400 flex items-center gap-1">
                                   <Clock className="w-3 h-3" />
-                                  {formatOrderDateTime(
-                                    order.realizado_em ||
-                                      order.criado_em ||
-                                      order.created_at ||
-                                      new Date(),
-                                  )}
+                                  {viewMode === "arquivados"
+                                    ? `Criado em ${formatOrderDateTime(getOrderCreatedTimestamp(order))}`
+                                    : formatOrderDateTime(
+                                        order.realizado_em ||
+                                          order.criado_em ||
+                                          order.created_at ||
+                                          new Date(),
+                                      )}
                                 </span>
                                 <span className="text-xs text-gray-400 flex items-center gap-1">
                                   <CreditCard className="w-3 h-3" />
-                                  {getOrderPaymentMethod(order)}
+                                  {getOrderPaymentMethod(order, orderPayment)}
                                 </span>
+                                {cashChangeStatusLabel && (
+                                  <span
+                                    className={`text-xs font-semibold flex items-center gap-1 ${
+                                      cashChangeStatusLabel === "Troco repassado"
+                                        ? "text-green-600"
+                                        : "text-red-600"
+                                    }`}
+                                  >
+                                    {cashChangeStatusLabel}
+                                  </span>
+                                )}
                                 {isEntrega && (
                                   <span className="text-xs text-gray-400 flex items-center gap-1">
                                     <MapPin className="w-3 h-3" />
@@ -2539,6 +3274,25 @@ export function OrdersScreen() {
                             >
                               <Eye className="w-3 h-3" /> Detalhes
                             </button>
+                            {viewMode !== "arquivados" &&
+                              canQuickArchiveOrder(order) && (
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void toggleArchivedOrder(order);
+                                  }}
+                                  disabled={archivingOrderId === order.id}
+                                  className="mt-1 text-xs flex items-center gap-1 ml-auto font-semibold text-gray-600 hover:text-gray-900 hover:underline disabled:cursor-wait disabled:opacity-70"
+                                >
+                                  {archivingOrderId === order.id ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <Archive className="h-3 w-3" />
+                                  )}
+                                  Arquivar
+                                </button>
+                              )}
                             {canForceFinalizeOrder(order) && (
                               <button
                                 type="button"
@@ -2582,7 +3336,7 @@ export function OrdersScreen() {
                 </section>
               )}
 
-            {hasMore && (
+            {hasMore && viewMode !== "arquivados" && (
               <div className="p-4 flex justify-center">
                 <button
                   onClick={handleLoadMore}
@@ -2619,7 +3373,16 @@ export function OrdersScreen() {
         {/* ── POR BAIRRO VIEW ────────────────────────── */}
         {viewMode === "bairros" && (
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            {sortedBairros.length === 0 && (
+            {loading && orders.length === 0 && (
+              <div className="flex min-h-[320px] flex-col items-center justify-center text-gray-400">
+                <div
+                  className="mb-3 h-8 w-8 animate-spin rounded-full border-4 border-gray-200"
+                  style={{ borderColor: `${PRIMARY}40`, borderTopColor: PRIMARY }}
+                />
+                <p className="text-sm">Carregando pedidos...</p>
+              </div>
+            )}
+            {sortedBairros.length === 0 && !loading && (
               <div className="flex flex-col items-center justify-center py-16 text-gray-400">
                 <TruckIcon className="w-10 h-10 mb-3 opacity-40" />
                 <p className="text-sm">Nenhum pedido de entrega encontrado</p>
@@ -2754,9 +3517,19 @@ export function OrdersScreen() {
                             text: "#666",
                           };
                         const orderPayments =
-                          selected?.id === order.id ? selectedPayments : [];
+                          selected?.id === order.id
+                            ? selectedPayments
+                            : getOrderEmbeddedPayments(order);
+                        const orderPayment = getPreferredOrderPayment(
+                          order,
+                          orderPayments,
+                        );
                         const orderPaymentIsPending =
                           hasPendingPaymentForDisplay(order, orderPayments);
+                        const cashChangeStatusLabel = getCashChangeStatusLabel(
+                          orderPayment,
+                          order,
+                        );
                         const canSelectForDelivery =
                           canSelectOrderForDeliveryAssignment(
                             order,
@@ -2882,8 +3655,19 @@ export function OrdersScreen() {
                                   {order.cliente?.telefone || order.phone}
                                 </span>
                                 <span className="text-[11px] text-gray-400">
-                                  · {getOrderPaymentMethod(order)}
+                                  · {getOrderPaymentMethod(order, orderPayment)}
                                 </span>
+                                {cashChangeStatusLabel && (
+                                  <span
+                                    className={`text-[11px] font-semibold ${
+                                      cashChangeStatusLabel === "Troco repassado"
+                                        ? "text-green-600"
+                                        : "text-red-600"
+                                    }`}
+                                  >
+                                    · {cashChangeStatusLabel}
+                                  </span>
+                                )}
                               </div>
                             </div>
                             <div className="text-right flex-shrink-0">
@@ -2927,6 +3711,24 @@ export function OrdersScreen() {
                                   <Eye className="w-3 h-3" />
                                 </button>
                               </div>
+                              {canQuickArchiveOrder(order) && (
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void toggleArchivedOrder(order);
+                                  }}
+                                  disabled={archivingOrderId === order.id}
+                                  className="mt-1 ml-auto flex items-center gap-1 text-[11px] font-semibold text-gray-600 hover:text-gray-900 hover:underline disabled:cursor-wait disabled:opacity-70"
+                                >
+                                  {archivingOrderId === order.id ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <Archive className="h-3 w-3" />
+                                  )}
+                                  Arquivar
+                                </button>
+                              )}
                               {canForceFinalizeOrder(order) && (
                                 <button
                                   type="button"
@@ -2997,6 +3799,13 @@ export function OrdersScreen() {
               <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                 O pagamento ainda não consta como pago. Ao confirmar, a conta
                 também será finalizada como paga.
+              </div>
+            )}
+
+            {isFiadoOrder(forceFinalizeCandidate) && (
+              <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                Este pedido e fiado. A finalizacao encerra apenas o fluxo
+                operacional; a conta continua aberta no modulo Fiados.
               </div>
             )}
 
@@ -3332,8 +4141,12 @@ export function OrdersScreen() {
                   const currentFlowIndex =
                     visibleStatusFlow.indexOf(currentDisplay);
                   const curIdx = currentFlowIndex >= 0 ? currentFlowIndex : 0;
-                  const done = isFailedStep ? false : i <= curIdx;
-                  const connectorDone = i < curIdx;
+                  const isPaymentPendingConfirmationStep =
+                    s === "Confirmado" && selectedPaymentKeepsConfirmationPending;
+                  const done =
+                    isFailedStep || isPaymentPendingConfirmationStep ? false : i <= curIdx;
+                  const connectorDone =
+                    i < curIdx && !isPaymentPendingConfirmationStep;
                   const connectorFailed =
                     selected.status === "nao_entregue" &&
                     visibleStatusFlow[i + 1] === "Não entregue";
@@ -3348,6 +4161,8 @@ export function OrdersScreen() {
                           style={{
                             backgroundColor: isFailedStep
                               ? "#dc2626"
+                              : isPaymentPendingConfirmationStep
+                                ? "#f59e0b"
                               : done
                                 ? PRIMARY
                                 : "#e5e7eb",
@@ -3357,6 +4172,8 @@ export function OrdersScreen() {
                             <CircleX className="w-3.5 h-3.5 text-white" />
                           ) : done ? (
                             <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                          ) : isPaymentPendingConfirmationStep ? (
+                            <div className="w-2 h-2 rounded-full bg-white" />
                           ) : (
                             <div className="w-2 h-2 rounded-full bg-gray-400" />
                           )}
@@ -3496,27 +4313,40 @@ export function OrdersScreen() {
                   </p>
                 )}
                 {!selectedItemsLoading &&
-                  selectedItems.map((item: any, idx: number) => (
-                    <div
-                      key={item.id || idx}
-                      className="flex items-center justify-between"
-                    >
-                      <div>
-                        <div className="text-sm text-gray-700">
-                          {getOrderItemQuantity(item)}x {getOrderItemName(item)}
-                        </div>
-                        {(item.observacoes || item.obs) && (
-                          <div className="text-xs text-gray-400 italic mt-0.5">
-                            {item.observacoes || item.obs}
+                  selectedItems.map((item: any, idx: number) => {
+                    const configurationLines = getOrderItemConfigurationLines(item);
+
+                    return (
+                      <div
+                        key={item.id || idx}
+                        className="flex items-start justify-between gap-4"
+                      >
+                        <div className="min-w-0">
+                          <div className="text-sm text-gray-700">
+                            {getOrderItemQuantity(item)}x {getOrderItemName(item)}
                           </div>
-                        )}
+                          {configurationLines.length > 0 && (
+                            <div className="mt-1 space-y-0.5 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2">
+                              {configurationLines.map((line, lineIndex) => (
+                                <div key={`${item.id || idx}-configuration-${lineIndex}`} className="break-words text-xs text-slate-600">
+                                  {line}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {(item.observacoes || item.obs) && (
+                            <div className="text-xs text-gray-400 italic mt-0.5">
+                              {item.observacoes || item.obs}
+                            </div>
+                          )}
+                        </div>
+                        <div className="shrink-0 text-sm font-medium text-gray-700">
+                          R${" "}
+                          {getOrderItemTotal(item).toFixed(2).replace(".", ",")}
+                        </div>
                       </div>
-                      <div className="text-sm font-medium text-gray-700">
-                        R${" "}
-                        {getOrderItemTotal(item).toFixed(2).replace(".", ",")}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
               </div>
               {!selectedIsSalao && <div className="border-t border-gray-100 mt-3 pt-3 space-y-1.5">
                 <div className="flex justify-between text-sm text-gray-500">
@@ -3571,7 +4401,23 @@ export function OrdersScreen() {
             </div>
 
             {/* Payment */}
-            {!selectedIsSalao && <div className="bg-white border border-gray-200 rounded-xl p-4">
+            {selectedIsFiado && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                <h4 className="text-sm font-semibold text-amber-900">
+                  Pedido fiado
+                </h4>
+                <p className="mt-1 text-sm text-amber-800">
+                  A conta e os recebimentos deste pedido sao gerenciados no
+                  modulo Fiados.
+                </p>
+                {selectedPaymentStatus !== "NÃ£o informado" && (
+                  <div className={`mt-2 text-xs font-semibold ${selectedPaymentStatusClass}`}>
+                    {selectedPaymentStatusLabel}
+                  </div>
+                )}
+              </div>
+            )}
+            {!selectedIsFiado && <div className="bg-white border border-gray-200 rounded-xl p-4">
               <h4 className="text-gray-700 font-semibold mb-2 flex items-center gap-2">
                 <CreditCard className="w-4 h-4" style={{ color: PRIMARY }} />{" "}
                 Pagamento
@@ -3584,7 +4430,47 @@ export function OrdersScreen() {
                   className={`mt-1 text-xs font-medium ${selectedPaymentStatusClass}`}
                 >
                   {selectedIsPaid ? "✓ " : ""}
-                  {selectedPaymentStatus}
+                  {selectedPaymentStatusLabel}
+                </div>
+              )}
+              {selectedPayments.length > 1 && (
+                <div className="mt-3 space-y-2 border-t border-gray-100 pt-3">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                    Pagamentos registrados
+                  </div>
+                  {selectedPayments.map((payment) => {
+                    const isComplement = payment?.metadata?.tipo === "pagamento_complementar";
+                    const isSelectedCurrent = payment?.id === selectedPayment?.id;
+                    const isCurrent = isSelectedCurrent || isCurrentPaymentRecord(payment);
+                    return (
+                      <div
+                        key={payment.id}
+                        className={`rounded-lg border px-3 py-2 text-xs transition-opacity ${
+                          isCurrent
+                            ? "border-blue-100 bg-blue-50 opacity-100"
+                            : "border-gray-100 bg-gray-50 opacity-50"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <span className="font-semibold text-gray-700">
+                              {isComplement ? "Complemento" : "Original"} - {getOrderPaymentMethod({ pagamento: payment }, payment)}
+                            </span>
+                            {isSelectedCurrent && (
+                              <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                                Atual
+                              </span>
+                            )}
+                          </div>
+                          <span className="font-semibold text-gray-800">{formatCurrency(payment.valor)}</span>
+                        </div>
+                        <div className="mt-1 flex items-center justify-between gap-2 text-gray-500">
+                          <span className="capitalize">{String(payment.status || "").replace(/_/g, " ")}</span>
+                          {payment.pago_em && <span>{formatBrasiliaDate(payment.pago_em)}</span>}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
               {!selectedIsPaid && (
@@ -3592,11 +4478,11 @@ export function OrdersScreen() {
                   {selectedIsPendingCash
                     ? selectedIsCardOnDelivery
                       ? "Pagamento em cartão pendente de recebimento."
-                      : "Pagamento em dinheiro pendente de recebimento."
+                      : "Pagamento pendente de recebimento pelo caixa."
                     : "Pagamento pendente"}
                 </div>
               )}
-              {selectedIsPickup && selectedIsPendingCash && !selectedIsCardOnDelivery && (
+              {selectedIsPendingCash && (
                 <button
                   type="button"
                   onClick={confirmCashPayment}
@@ -3606,7 +4492,17 @@ export function OrdersScreen() {
                   {confirmingCashPaymentId === selectedPayment?.id && (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   )}
-                  Marcar dinheiro como recebido
+                  Marcar pagamento como recebido
+                </button>
+              )}
+              {selectedCanChangePendingPayment && (
+                <button
+                  type="button"
+                  onClick={() => setPendingPaymentMethodOrder(selected)}
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-blue-200 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50"
+                >
+                  <CreditCard className="h-3.5 w-3.5" />
+                  Alterar forma de pagamento
                 </button>
               )}
               {selectedCashChangeInfo && (
@@ -3617,7 +4513,42 @@ export function OrdersScreen() {
                   <div className="mt-0.5 text-sm font-semibold text-gray-700">
                     {selectedCashChangeInfo}
                   </div>
+                  {selectedCashChangeStatusLabel && (
+                    <div
+                      className={`mt-1 text-xs font-semibold ${
+                        selectedCashChangeStatusLabel === "Troco repassado"
+                          ? "text-green-600"
+                          : "text-red-600"
+                      }`}
+                    >
+                      {selectedCashChangeStatusLabel}
+                    </div>
+                  )}
                 </div>
+              )}
+              {selectedNeedsCashChange && (
+                <label className="mt-3 flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs font-semibold text-green-800">
+                  <input
+                    type="checkbox"
+                    checked={selectedCashChangePaidToCourier}
+                    disabled={
+                      !selectedPayment?.id ||
+                      updatingCashChangePaymentId === selectedPayment.id
+                    }
+                    onChange={(event) =>
+                      void updateCashChangePaidToCourier(event.target.checked)
+                    }
+                    className="mt-0.5 h-4 w-4 rounded border-green-300"
+                  />
+                  <span>
+                    Troco pago ao entregador
+                    {updatingCashChangePaymentId === selectedPayment?.id && (
+                      <span className="ml-2 font-medium text-green-700">
+                        Atualizando...
+                      </span>
+                    )}
+                  </span>
+                </label>
               )}
               {selectedRefunds.length > 0 && (
                 <div className="mt-3 border-t border-gray-100 pt-3">
@@ -3815,7 +4746,7 @@ export function OrdersScreen() {
                 )}
               {selectedPickupNeedsCashConfirmation && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                  Confirme o recebimento do dinheiro antes de finalizar a
+                  Confirme o recebimento do pagamento antes de finalizar a
                   retirada.
                 </div>
               )}
@@ -3882,13 +4813,20 @@ export function OrdersScreen() {
               >
                 <Printer className="w-4 h-4" /> Imprimir Comanda
               </button>
+              <button
+                onClick={() => setAdminAddItemsOrder(selected)}
+                disabled={!selectedCanAdminAddItems || selectedOrderUpdating}
+                className="w-full py-2.5 rounded-lg text-blue-700 text-sm font-medium border border-blue-200 hover:bg-blue-50 transition-colors disabled:cursor-not-allowed disabled:opacity-60 flex items-center justify-center gap-2"
+              >
+                <Plus className="w-4 h-4" /> Adicionar produtos
+              </button>
               {!selectedIsSalao && <button
                 onClick={() => openItemsChecklist(selected)}
                 className="w-full py-2.5 rounded-lg text-gray-700 text-sm font-medium border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
               >
                 <Package className="w-4 h-4" /> Ver produtos
               </button>}
-              {!selectedIsSalao && <button
+              {!selectedIsSalao && !selectedIsFiado && <button
                 onClick={openRefundModal}
                 disabled={!selectedCanRefund || selectedOrderUpdating}
                 className="w-full py-2.5 rounded-lg text-blue-700 text-sm font-medium border border-blue-200 hover:bg-blue-50 transition-colors disabled:cursor-not-allowed disabled:opacity-60 flex items-center justify-center gap-2"

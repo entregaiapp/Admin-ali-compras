@@ -53,6 +53,18 @@ const getApiErrorMessage = (error: any, fallback: string) => {
   return message || fallback;
 };
 
+const formatCurrency = (value: unknown) => {
+  const number = Number(value);
+  const safeNumber = Number.isFinite(number) ? number : 0;
+  return `R$ ${safeNumber.toFixed(2).replace('.', ',')}`;
+};
+
+const stopRequiresReceiptKey = (stop: DriverStop, route: DriverRoute) => {
+  if (route.requiresReceiptKey === false) return false;
+  if (stop.requiresReceiptKey !== undefined) return stop.requiresReceiptKey !== false;
+  return route.requiresReceiptKey !== false;
+};
+
 const getCurrentPosition = () => new Promise<GeolocationPosition>((resolve, reject) => {
   if (!navigator.geolocation) {
     reject(new Error('Seu navegador não permite obter a localização atual.'));
@@ -117,6 +129,17 @@ export function RouteDetailScreen() {
       void saveAssignedDelivery(route).catch(() => undefined);
     }
   }, [route]);
+
+  useEffect(() => {
+    if (!route || !receiptKeyFor) return;
+
+    const currentStop = route.stops.find(stop => stop.id === receiptKeyFor.id) || receiptKeyFor;
+    if (stopRequiresReceiptKey(currentStop, route)) return;
+
+    setReceiptKeyFor(null);
+    setReceiptKey('');
+    setReceiptKeyError(null);
+  }, [route, receiptKeyFor]);
 
   useEffect(() => {
     void getPendingStopSync()
@@ -222,9 +245,10 @@ export function RouteDetailScreen() {
     chaveRecebimento?: string,
   ) => {
     if (!route) return;
+    const requiresReceiptKey = stopRequiresReceiptKey(stop, route);
 
     const queueConfirmation = async () => {
-      if (status === 'delivered' && route.requiresReceiptKey !== false && !chaveRecebimento) {
+      if (status === 'delivered' && requiresReceiptKey && !chaveRecebimento) {
         setReceiptKeyError('Informe a chave de recebimento com 4 dígitos.');
         return false;
       }
@@ -424,7 +448,7 @@ export function RouteDetailScreen() {
               disabled={!!updating || allFinished}
               updating={updating === stop.id}
               onDelivered={() => {
-                if (route.requiresReceiptKey !== false) {
+                if (stopRequiresReceiptKey(stop, route)) {
                   setReceiptKeyFor(stop);
                   setReceiptKey('');
                   setReceiptKeyError(null);
@@ -595,6 +619,11 @@ function StopCard({
             <div className="min-w-0">
               <div className="font-semibold text-gray-900 truncate">{stop.customerName}</div>
               <div className="text-xs text-gray-500">Pedido {stop.orderNumber || String(stop.orderId).slice(0, 8)}</div>
+              {stop.dailyTicketNumber && (
+                <div className="text-xs font-semibold text-gray-700">
+                  Comanda {stop.dailyTicketNumber}
+                </div>
+              )}
             </div>
             <span
               className="text-[11px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap"
@@ -617,6 +646,18 @@ function StopCard({
           {stop.note && (
             <div className="mt-2 text-xs text-gray-600 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
               <span className="font-medium text-amber-800">Obs.: </span>{stop.note}
+            </div>
+          )}
+          {stop.needsCashChange && (
+            <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
+              <div className="font-semibold">
+                Troco: {formatCurrency(stop.cashChangeValue)}
+              </div>
+              <div className="mt-0.5">
+                {stop.cashChangePaidToCourier
+                  ? "Troco pago ao entregador"
+                  : "Troco não pago ao entregador"}
+              </div>
             </div>
           )}
           {problem && stop.failedReason && (

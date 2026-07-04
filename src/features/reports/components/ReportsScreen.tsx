@@ -64,6 +64,16 @@ const formatDateTime = (value?: string | null) => {
 
 const csvCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
 
+const reportOriginLabel = (value?: string | null) => {
+  const labels: Record<string, string> = {
+    cliente: 'Cliente',
+    manual: 'Manual',
+    fiado: 'Fiado',
+    salao: 'Salao',
+  };
+  return labels[String(value || '').toLowerCase()] || String(value || 'Indefinido');
+};
+
 const buildDeliveryPaymentReportCsv = (report: DeliveryPaymentBillingReport) => {
   const rows = [
     ['Relatório', report.loja?.nome || 'Estabelecimento'],
@@ -72,14 +82,19 @@ const buildDeliveryPaymentReportCsv = (report: DeliveryPaymentBillingReport) => 
     ['Valor final da cobrança', report.resumo.valor_final_cobranca],
     ['Pedidos de clientes', report.resumo.quantidade_pedidos_clientes],
     ['Pedidos manuais', report.resumo.quantidade_pedidos_manuais],
+    ['Pedidos fiado', report.resumo.quantidade_pedidos_fiados || 0],
+    ['Pedidos salao', report.resumo.quantidade_pedidos_salao || 0],
     [],
-    ['Número', 'Data', 'Origem', 'Status', 'Forma de pagamento', 'Total do pedido', 'Valor de cobrança'],
+    ['Número', 'Data', 'Origem', 'Categoria', 'Status', 'Forma de pagamento', 'Fiado', 'Taxa registrada', 'Total do pedido', 'Valor de cobrança'],
     ...report.pedidos.map((pedido) => [
       pedido.numero_pedido || pedido.id,
       formatDate(pedido.data),
-      pedido.origem_relatorio === 'manual' ? 'Manual' : 'Cliente',
+      reportOriginLabel(pedido.origem_relatorio),
+      pedido.categoria_cobranca_label || pedido.categoria_cobranca || '',
       pedido.status,
       pedido.forma_pagamento,
+      pedido.pedido_fiado ? 'sim' : 'nao',
+      pedido.aplicado_taxa ? 'sim' : 'nao',
       pedido.total,
       pedido.valor_cobranca
     ]),
@@ -272,6 +287,11 @@ export function ReportsScreen() {
   const categoryRevenueData = metrics?.categoryRevenueData || [];
   const topProducts = metrics?.topProdutos || [];
   const hourlyData = metrics?.hourlyData || [];
+  const fiados = metrics?.financeiro?.fiados;
+  const fiadoResumo = fiados?.resumo || {};
+  const fiadoPorForma = Array.isArray(fiados?.recebimentos_por_forma_pagamento)
+    ? fiados.recebimentos_por_forma_pagamento
+    : [];
 
   return (
     <div className="p-5 space-y-5 overflow-y-auto flex-1 h-full">
@@ -364,6 +384,7 @@ export function ReportsScreen() {
                         <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-gray-500">
                           <span className="rounded-md bg-gray-100 px-2 py-1">{report.resumo.quantidade_pedidos_clientes} clientes</span>
                           <span className="rounded-md bg-gray-100 px-2 py-1">{report.resumo.quantidade_pedidos_manuais} manuais</span>
+                          <span className="rounded-md bg-gray-100 px-2 py-1">{report.resumo.quantidade_pedidos_fiados || 0} fiado</span>
                         </div>
                       </button>
                     );
@@ -404,11 +425,12 @@ export function ReportsScreen() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
                     {[
                       { label: 'Valor da cobrança', value: formatCurrency(selectedGeneratedReport.resumo.valor_final_cobranca), icon: DollarSign, color: PRIMARY },
                       { label: 'Pedidos de clientes', value: String(selectedGeneratedReport.resumo.quantidade_pedidos_clientes || 0), icon: ShoppingCart, color: '#2563eb' },
                       { label: 'Pedidos manuais', value: String(selectedGeneratedReport.resumo.quantidade_pedidos_manuais || 0), icon: FileText, color: '#7c3aed' },
+                      { label: 'Pedidos fiado', value: String(selectedGeneratedReport.resumo.quantidade_pedidos_fiados || 0), icon: FileText, color: '#0f766e' },
                       { label: 'Valor bruto total', value: formatCurrency(selectedGeneratedReport.resumo.valor_bruto_total), icon: BarChart3, color: '#16a34a' },
                     ].map((item) => (
                       <div key={item.label} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
@@ -430,6 +452,8 @@ export function ReportsScreen() {
                             <th className="px-4 py-3 text-left">Data</th>
                             <th className="px-4 py-3 text-right">Clientes</th>
                             <th className="px-4 py-3 text-right">Manuais</th>
+                            <th className="px-4 py-3 text-right">Fiados</th>
+                            <th className="px-4 py-3 text-right">Salao</th>
                             <th className="px-4 py-3 text-right">Valor bruto</th>
                             <th className="px-4 py-3 text-right">A receber</th>
                           </tr>
@@ -440,6 +464,8 @@ export function ReportsScreen() {
                               <td className="px-4 py-3 font-medium text-gray-800">{formatDate(day.data)}</td>
                               <td className="px-4 py-3 text-right text-gray-600">{day.quantidade_pedidos_clientes}</td>
                               <td className="px-4 py-3 text-right text-gray-600">{day.quantidade_pedidos_manuais}</td>
+                              <td className="px-4 py-3 text-right text-gray-600">{day.quantidade_pedidos_fiados || 0}</td>
+                              <td className="px-4 py-3 text-right text-gray-600">{day.quantidade_pedidos_salao || 0}</td>
                               <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(day.valor_bruto_total)}</td>
                               <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatCurrency(day.valor_a_receber)}</td>
                             </tr>
@@ -461,6 +487,8 @@ export function ReportsScreen() {
                             <th className="px-4 py-3 text-left">Pedido</th>
                             <th className="px-4 py-3 text-left">Data</th>
                             <th className="px-4 py-3 text-left">Origem</th>
+                            <th className="px-4 py-3 text-left">Categoria</th>
+                            <th className="px-4 py-3 text-left">Fiado</th>
                             <th className="px-4 py-3 text-left">Status</th>
                             <th className="px-4 py-3 text-right">Total</th>
                             <th className="px-4 py-3 text-right">Cobrança</th>
@@ -473,9 +501,11 @@ export function ReportsScreen() {
                               <td className="px-4 py-3 text-gray-600">{formatDate(pedido.data)}</td>
                               <td className="px-4 py-3">
                                 <span className={`rounded-full px-2 py-1 text-xs font-medium ${pedido.origem_relatorio === 'manual' ? 'bg-purple-50 text-purple-700' : 'bg-green-50 text-green-700'}`}>
-                                  {pedido.origem_relatorio === 'manual' ? 'Manual' : 'Cliente'}
+                                  {reportOriginLabel(pedido.origem_relatorio)}
                                 </span>
                               </td>
+                              <td className="px-4 py-3 text-gray-600">{pedido.categoria_cobranca_label || pedido.categoria_cobranca || '-'}</td>
+                              <td className="px-4 py-3 text-gray-600">{pedido.pedido_fiado ? 'Sim' : 'Nao'}</td>
                               <td className="px-4 py-3 text-gray-600">{pedido.status}</td>
                               <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(pedido.total)}</td>
                               <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatCurrency(pedido.valor_cobranca)}</td>
@@ -513,6 +543,60 @@ export function ReportsScreen() {
           </div>
         ))}
       </div>
+
+      {fiados && (
+        <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="font-semibold text-gray-800">Recebimentos fiado</h3>
+              <p className="text-xs text-gray-400 mt-0.5">Valores recebidos no periodo, separados da venda original.</p>
+            </div>
+            <div className="text-sm font-semibold text-gray-900">
+              Recebido: {formatCurrency(fiadoResumo.recebido_periodo)}
+            </div>
+          </div>
+          <div className="grid gap-3 md:grid-cols-4">
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Saldo aberto total</div>
+              <div className="mt-1 text-lg font-semibold text-gray-900">{formatCurrency(fiadoResumo.saldo_aberto_total)}</div>
+            </div>
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Fiado criado</div>
+              <div className="mt-1 text-lg font-semibold text-gray-900">{formatCurrency(fiadoResumo.valor_fiado_periodo)}</div>
+            </div>
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Pessoas com saldo</div>
+              <div className="mt-1 text-lg font-semibold text-gray-900">{Number(fiadoResumo.pessoas_com_saldo || 0)}</div>
+            </div>
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Pedidos abertos</div>
+              <div className="mt-1 text-lg font-semibold text-gray-900">{Number(fiadoResumo.pedidos_abertos || 0)}</div>
+            </div>
+          </div>
+          {fiadoPorForma.length > 0 && (
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Forma de pagamento</th>
+                    <th className="px-3 py-2 text-right">Quantidade</th>
+                    <th className="px-3 py-2 text-right">Valor recebido</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fiadoPorForma.map((item: any) => (
+                    <tr key={item.forma_pagamento} className="border-t border-gray-100">
+                      <td className="px-3 py-2">{item.forma_pagamento}</td>
+                      <td className="px-3 py-2 text-right">{item.quantidade}</td>
+                      <td className="px-3 py-2 text-right font-semibold">{formatCurrency(item.valor_recebido)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Charts row 1 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

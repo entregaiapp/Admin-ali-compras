@@ -18,8 +18,35 @@ const hourFormatter = new Intl.DateTimeFormat('en-US', {
   hourCycle: 'h23',
 });
 
+const dateTimeInputFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: BRASILIA_TIME_ZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+const getFormatterPart = (parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes) =>
+  parts.find((part) => part.type === type)?.value || '';
+
 export function dateInputInBrasilia(value: Date | string = new Date()) {
   return dateInputFormatter.format(typeof value === 'string' ? new Date(value) : value);
+}
+
+export function dateTimeInputInBrasilia(value: Date | string | null | undefined) {
+  if (!value) return '';
+
+  const date = typeof value === 'string' ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) return '';
+
+  const parts = dateTimeInputFormatter.formatToParts(date);
+  return [
+    getFormatterPart(parts, 'year'),
+    getFormatterPart(parts, 'month'),
+    getFormatterPart(parts, 'day'),
+  ].join('-') + `T${getFormatterPart(parts, 'hour')}:${getFormatterPart(parts, 'minute')}`;
 }
 
 export function monthInBrasilia(value: Date = new Date()) {

@@ -1055,7 +1055,7 @@ export function SettingsScreen() {
                   <span>
                     <span className="block text-sm font-medium text-gray-800">Exigir PIN para confirmar a entrega</span>
                     <span className="mt-1 block text-xs text-gray-500">
-                      Quando desativado, o entregador conclui a entrega sem informar o PIN. O código continua visível para o cliente.
+                      Quando ativado, o PIN é exigido apenas em pedidos feitos pelo app do cliente. Pedidos criados pelo admin não exigem PIN.
                     </span>
                   </span>
                   <input

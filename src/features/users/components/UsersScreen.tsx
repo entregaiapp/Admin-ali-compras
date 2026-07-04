@@ -33,11 +33,11 @@ const getLoggedUser = () => {
 };
 
 const rolePermissions: Record<string, string[]> = {
-  'Administrador': ['dashboard', 'pedidos', 'produtos', 'categorias', 'banners', 'clientes', 'cupons', 'entregadores', 'usuarios', 'configuracoes', 'financeiro', 'estoque'],
-  'Operador': ['dashboard', 'pedidos', 'produtos', 'categorias', 'clientes', 'estoque'],
+  'Administrador': ['dashboard', 'pedidos', 'produtos', 'categorias', 'banners', 'clientes', 'cupons', 'entregadores', 'usuarios', 'configuracoes', 'financeiro', 'estoque', 'caixa'],
+  'Operador': ['dashboard', 'pedidos', 'produtos', 'categorias', 'clientes', 'estoque', 'caixa'],
   'Separador': ['pedidos', 'estoque'],
   'Entregador': ['pedidos', 'entregadores'],
-  'Financeiro': ['dashboard', 'financeiro', 'relatorios']
+  'Financeiro': ['dashboard', 'financeiro', 'relatorios', 'caixa']
 };
 
 function UserForm({ user, onClose, onSuccess }: { user?: any; onClose: () => void; onSuccess: () => void }) {
