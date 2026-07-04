@@ -19,14 +19,19 @@ import {
   Trash2,
   UserCheck,
 } from "lucide-react";
-import QRCode from "qrcode";
 import { salaoService } from "@/features/salao/services/salaoService";
+import {
+  generateMesaQrImage,
+  mesaQrArtworkFileName,
+  writeMesaQrPrintDocument,
+} from "@/features/salao/services/mesaQrArtwork";
 import {
   createSalaoAdminRealtime,
   salaoTenantTopic,
 } from "@/features/salao/services/salaoRealtime";
 import { productsService } from "@/features/products";
 import { showSystemNotice } from "@/shared/components/SystemNoticeModal";
+import api from "@/shared/lib/api";
 import { SalaoProductConfiguratorModal } from "./SalaoProductConfiguratorModal";
 
 const PRIMARY = "#122a4c";
@@ -245,6 +250,7 @@ export function SalaoPage() {
   const [comandas, setComandas] = useState<any[]>([]);
   const [kds, setKds] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
+  const [currentStore, setCurrentStore] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [creatingTable, setCreatingTable] = useState(false);
@@ -286,9 +292,23 @@ export function SalaoPage() {
   const lastRealtimeAlertAtRef = useRef(0);
   const comandaDetailRef = useRef<HTMLDivElement | null>(null);
 
+  const loadCurrentStore = useCallback(async () => {
+    if (!user?.loja_id) return null;
+    if (currentStore?.id === user.loja_id) return currentStore;
+
+    const response = await api.get(`/lojas/${user.loja_id}`);
+    const store = response.data?.data || response.data;
+    setCurrentStore(store);
+    return store;
+  }, [currentStore, user?.loja_id]);
+
   useEffect(() => {
     selectedComandaIdRef.current = selectedComanda?.id || "";
   }, [selectedComanda?.id]);
+
+  useEffect(() => {
+    void loadCurrentStore().catch(() => undefined);
+  }, [loadCurrentStore]);
 
   const playRealtimeAlert = useCallback(() => {
     if (!soundEnabledRef.current) return;
@@ -618,22 +638,22 @@ export function SalaoPage() {
         ? await salaoService.rotateMesaQr(mesa.id)
         : await salaoService.getMesaQr(mesa.id);
       const url = `${CLIENT_BASE_URL}/mercado/${mesa.loja_id}/mesa/${result.qr_token}`;
-      const dataUrl = await QRCode.toDataURL(url, {
-        width: 720,
-        margin: 2,
-        errorCorrectionLevel: "M",
-        color: { dark: PRIMARY, light: "#ffffff" },
+      const loja = await loadCurrentStore();
+      const dataUrl = await generateMesaQrImage({
+        mesa,
+        loja,
+        qrValue: url,
       });
       const link = document.createElement("a");
       link.href = dataUrl;
-      link.download = `qr-mesa-${mesa.numero}.png`;
+      link.download = mesaQrArtworkFileName(mesa, loja);
       document.body.appendChild(link);
       link.click();
       link.remove();
       showSystemNotice(
         generateNew
-          ? "Novo QR Code criado e baixado. O QR anterior foi substituído."
-          : "QR Code atual baixado.",
+          ? "Nova arte de mesa criada e baixada. O QR anterior foi substituído."
+          : "Arte de mesa do QR Code atual baixada.",
       );
     } catch (error: any) {
       showSystemNotice(
@@ -659,16 +679,13 @@ export function SalaoPage() {
     try {
       const result = await salaoService.getMesaQr(mesa.id);
       const url = `${CLIENT_BASE_URL}/mercado/${mesa.loja_id}/mesa/${result.qr_token}`;
-      const dataUrl = await QRCode.toDataURL(url, {
-        width: 900,
-        margin: 2,
-        errorCorrectionLevel: "M",
-        color: { dark: PRIMARY, light: "#ffffff" },
+      const loja = await loadCurrentStore();
+      const dataUrl = await generateMesaQrImage({
+        mesa,
+        loja,
+        qrValue: url,
       });
-      printWindow.document.write(
-        `<!doctype html><html><head><title>QR Code - Mesa ${mesa.numero}</title><style>body{font-family:Arial,sans-serif;text-align:center;padding:32px;color:#122a4c}img{width:360px;max-width:100%;margin:24px auto;display:block}h1{margin:0;font-size:28px}p{color:#475569;font-size:16px}@media print{body{padding:0}}</style></head><body><h1>Mesa ${mesa.numero}</h1><p>Aponte a câmera para abrir o cardápio e pedir.</p><img src="${dataUrl}" alt="QR Code da Mesa ${mesa.numero}"><p>${mesa.loja_nome || ""}</p><script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}</script></body></html>`,
-      );
-      printWindow.document.close();
+      writeMesaQrPrintDocument(printWindow, dataUrl, mesa);
     } catch (error: any) {
       printWindow.close();
       showSystemNotice(
@@ -1948,11 +1965,12 @@ export function SalaoPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
             <h2 className="text-base font-extrabold text-slate-950">
-              Baixar QR Code
+              Baixar arte do QR Code
             </h2>
             <p className="mt-2 text-sm text-slate-600">
-              Você quer baixar o QR atual da mesa ou criar um novo? Ao criar
-              outro, os QR Codes impressos anteriormente deixam de funcionar.
+              Você quer baixar a arte com o QR atual da mesa ou criar um novo?
+              Ao criar outro, os QR Codes impressos anteriormente deixam de
+              funcionar.
             </p>
             <div className="mt-5 grid gap-2 sm:grid-cols-2">
               <button
@@ -1960,7 +1978,7 @@ export function SalaoPage() {
                 disabled={Boolean(actionBusy)}
                 className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700 disabled:opacity-60"
               >
-                Baixar QR atual
+                Baixar arte atual
               </button>
               <button
                 onClick={() => void downloadQrCode(qrDownloadMesa, true)}
