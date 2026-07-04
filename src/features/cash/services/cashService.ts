@@ -2,6 +2,7 @@ import api from '@/shared/lib/api';
 
 export type CashStatus = 'aberto' | 'fechado';
 export type CashMovementType = 'sangria' | 'suprimento' | 'despesa_rapida';
+export type CashPaymentMethod = 'dinheiro' | 'pix' | 'cartao_debito' | 'cartao_credito';
 
 export type CashSummary = {
   valor_inicial: number;
@@ -12,8 +13,23 @@ export type CashSummary = {
   suprimentos_total: number;
   sangrias_total: number;
   despesas_total: number;
+  suprimentos_dinheiro: number;
+  suprimentos_pix: number;
+  suprimentos_cartao_debito: number;
+  suprimentos_cartao_credito: number;
+  sangrias_dinheiro: number;
+  sangrias_pix: number;
+  sangrias_cartao_debito: number;
+  sangrias_cartao_credito: number;
+  despesas_dinheiro: number;
+  despesas_pix: number;
+  despesas_cartao_debito: number;
+  despesas_cartao_credito: number;
   total_esperado: number;
   saldo_dinheiro_esperado: number;
+  saldo_pix_esperado: number;
+  saldo_cartao_debito_esperado: number;
+  saldo_cartao_credito_esperado: number;
   pedidos_rastreados: number;
   pedidos_cancelados: number;
   pedidos_total_bruto: number;
@@ -74,6 +90,7 @@ export type CashMovement = {
   valor: number;
   forma_pagamento: string;
   origem_inclusao: string;
+  tipo_movimentacao?: 'venda' | CashMovementType;
   motivo?: string | null;
 };
 
@@ -111,6 +128,7 @@ export const cashService = {
 
   async createMovement(cashId: string, payload: {
     tipo: CashMovementType;
+    forma_pagamento: CashPaymentMethod;
     valor: number;
     motivo: string;
     responsavel_nome?: string | null;

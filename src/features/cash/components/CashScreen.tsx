@@ -17,6 +17,7 @@ import {
   type AvailableCashOrder,
   type CashMovement,
   type CashMovementType,
+  type CashPaymentMethod,
   type CashRegister,
   type CurrentCashResponse,
   cashService,
@@ -55,6 +56,52 @@ const paymentLabel: Record<string, string> = {
   suprimento: 'entrada',
   despesa_rapida: 'saída',
 };
+
+const paymentOptions: Array<{ value: CashPaymentMethod; label: string }> = [
+  { value: 'dinheiro', label: 'Dinheiro' },
+  { value: 'pix', label: 'PIX' },
+  { value: 'cartao_debito', label: 'Cartão débito' },
+  { value: 'cartao_credito', label: 'Cartão crédito' },
+];
+
+const paymentDetailRows = (summary: CashRegister['resumo']) => [
+  {
+    key: 'dinheiro' as CashPaymentMethod,
+    label: 'Dinheiro',
+    vendas: summary?.vendas_dinheiro || 0,
+    suprimentos: summary?.suprimentos_dinheiro || 0,
+    sangrias: summary?.sangrias_dinheiro || 0,
+    despesas: summary?.despesas_dinheiro || 0,
+    esperado: summary?.saldo_dinheiro_esperado || 0,
+  },
+  {
+    key: 'pix' as CashPaymentMethod,
+    label: 'PIX',
+    vendas: summary?.vendas_pix || 0,
+    suprimentos: summary?.suprimentos_pix || 0,
+    sangrias: summary?.sangrias_pix || 0,
+    despesas: summary?.despesas_pix || 0,
+    esperado: summary?.saldo_pix_esperado || 0,
+  },
+  {
+    key: 'cartao_debito' as CashPaymentMethod,
+    label: 'Cartão débito',
+    vendas: summary?.vendas_cartao_debito || 0,
+    suprimentos: summary?.suprimentos_cartao_debito || 0,
+    sangrias: summary?.sangrias_cartao_debito || 0,
+    despesas: summary?.despesas_cartao_debito || 0,
+    esperado: summary?.saldo_cartao_debito_esperado || 0,
+  },
+  {
+    key: 'cartao_credito' as CashPaymentMethod,
+    label: 'Cartão crédito',
+    vendas: summary?.vendas_cartao_credito || 0,
+    suprimentos: summary?.suprimentos_cartao_credito || 0,
+    sangrias: summary?.sangrias_cartao_credito || 0,
+    despesas: summary?.despesas_cartao_credito || 0,
+    esperado: summary?.saldo_cartao_credito_esperado || 0,
+  },
+];
 
 function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
   return (
@@ -223,6 +270,7 @@ function MovementModal({
     try { return JSON.parse(localStorage.getItem('user') || '{}'); } catch { return {}; }
   }, []);
   const [value, setValue] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<CashPaymentMethod>('dinheiro');
   const [reason, setReason] = useState('');
   const [responsible, setResponsible] = useState(user?.nome || user?.name || '');
   const [saving, setSaving] = useState(false);
@@ -233,6 +281,7 @@ function MovementModal({
       setSaving(true);
       await cashService.createMovement(cashId, {
         tipo: type,
+        forma_pagamento: paymentMethod,
         valor: parseMoney(value),
         motivo: reason,
         responsavel_nome: responsible || null,
@@ -250,6 +299,18 @@ function MovementModal({
     <Modal title={title} onClose={onClose}>
       <div className="space-y-4">
         <TextField label="Valor" value={value} onChange={setValue} placeholder="R$ 0,00" />
+        <label className="block">
+          <span className="mb-1.5 block text-sm font-medium text-gray-700">Forma afetada</span>
+          <select
+            value={paymentMethod}
+            onChange={(event) => setPaymentMethod(event.target.value as CashPaymentMethod)}
+            className="h-12 w-full rounded-xl border border-gray-200 bg-white px-4 text-sm outline-none focus:border-emerald-500"
+          >
+            {paymentOptions.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
         <TextField label="Motivo" value={reason} onChange={setReason} placeholder={type === 'sangria' ? 'Ex: Depósito bancário' : 'Ex: Adição de troco'} />
         {type === 'sangria' && (
           <TextField label="Responsável pela retirada" value={responsible} onChange={setResponsible} />
@@ -269,20 +330,74 @@ function MovementModal({
   );
 }
 
+function CashDetailsModal({ cash, onClose }: { cash: CashRegister; onClose: () => void }) {
+  const rows = paymentDetailRows(cash.resumo);
+
+  return (
+    <Modal title="Dashboard rápido do caixa" onClose={onClose}>
+      <div className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-xl border border-gray-200 p-4">
+            <div className="text-xs text-gray-500">Pedidos rastreados</div>
+            <div className="mt-1 text-xl font-bold text-gray-950">{cash.resumo?.pedidos_rastreados || 0}</div>
+          </div>
+          <div className="rounded-xl border border-gray-200 p-4">
+            <div className="text-xs text-gray-500">Total esperado</div>
+            <div className="mt-1 text-xl font-bold text-gray-950">{currency(cash.resumo?.total_esperado)}</div>
+          </div>
+          <div className="rounded-xl border border-gray-200 p-4">
+            <div className="text-xs text-gray-500">Movimentações</div>
+            <div className="mt-1 text-xl font-bold text-gray-950">
+              {currency((cash.resumo?.suprimentos_total || 0) - (cash.resumo?.sangrias_total || 0) - (cash.resumo?.despesas_total || 0))}
+            </div>
+          </div>
+        </div>
+        <div className="overflow-x-auto rounded-xl border border-gray-200">
+          <table className="w-full min-w-[620px] text-left text-sm">
+            <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+              <tr>
+                <th className="px-3 py-3">Forma</th>
+                <th className="px-3 py-3">Vendas</th>
+                <th className="px-3 py-3">Suprimentos</th>
+                <th className="px-3 py-3">Sangrias</th>
+                <th className="px-3 py-3">Despesas</th>
+                <th className="px-3 py-3">Esperado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.key} className="border-t border-gray-100">
+                  <td className="px-3 py-3 font-semibold text-gray-900">{row.label}</td>
+                  <td className="px-3 py-3 text-emerald-700">{currency(row.vendas)}</td>
+                  <td className="px-3 py-3 text-emerald-700">{currency(row.suprimentos)}</td>
+                  <td className="px-3 py-3 text-pink-700">-{currency(row.sangrias)}</td>
+                  <td className="px-3 py-3 text-pink-700">-{currency(row.despesas)}</td>
+                  <td className="px-3 py-3 font-bold text-gray-950">{currency(row.esperado)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function CloseCashModal({ cash, onClose, onDone }: { cash: CashRegister; onClose: () => void; onDone: () => void }) {
   const summary = cash.resumo;
   const [dinheiro, setDinheiro] = useState(String(summary?.saldo_dinheiro_esperado || 0));
-  const [pix, setPix] = useState(String(summary?.vendas_pix || 0));
-  const [debit, setDebit] = useState(String(summary?.vendas_cartao_debito || 0));
-  const [credit, setCredit] = useState(String(summary?.vendas_cartao_credito || 0));
+  const [pix, setPix] = useState(String(summary?.saldo_pix_esperado || 0));
+  const [debit, setDebit] = useState(String(summary?.saldo_cartao_debito_esperado || 0));
+  const [credit, setCredit] = useState(String(summary?.saldo_cartao_credito_esperado || 0));
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   const expected = {
     dinheiro: summary?.saldo_dinheiro_esperado || 0,
-    pix: summary?.vendas_pix || 0,
-    cartao_debito: summary?.vendas_cartao_debito || 0,
-    cartao_credito: summary?.vendas_cartao_credito || 0,
+    pix: summary?.saldo_pix_esperado || 0,
+    cartao_debito: summary?.saldo_cartao_debito_esperado || 0,
+    cartao_credito: summary?.saldo_cartao_credito_esperado || 0,
   };
   const counted = {
     dinheiro: parseMoney(dinheiro),
@@ -315,7 +430,12 @@ function CloseCashModal({ cash, onClose, onDone }: { cash: CashRegister; onClose
   return (
     <Modal title="Fechar caixa" onClose={onClose}>
       <div className="space-y-4">
-        <p className="text-sm text-gray-500">Informe os valores contados por forma de pagamento:</p>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm text-gray-500">Informe os valores contados por forma de pagamento:</p>
+          <button onClick={() => setDetailsOpen(true)} className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700">
+            Ver dashboard
+          </button>
+        </div>
         <TextField label="Dinheiro em caixa" value={dinheiro} onChange={setDinheiro} />
         <TextField label="PIX recebido" value={pix} onChange={setPix} />
         <TextField label="Cartão débito" value={debit} onChange={setDebit} />
@@ -334,6 +454,7 @@ function CloseCashModal({ cash, onClose, onDone }: { cash: CashRegister; onClose
           </button>
         </div>
       </div>
+      {detailsOpen && <CashDetailsModal cash={cash} onClose={() => setDetailsOpen(false)} />}
     </Modal>
   );
 }
@@ -383,6 +504,7 @@ export function CashScreen() {
   const [openModal, setOpenModal] = useState(false);
   const [movementType, setMovementType] = useState<CashMovementType | null>(null);
   const [closeModal, setCloseModal] = useState(false);
+  const [openingClose, setOpeningClose] = useState(false);
   const [justifyCash, setJustifyCash] = useState<CashRegister | null>(null);
 
   const cash = current?.caixa || null;
@@ -420,6 +542,18 @@ export function CashScreen() {
   }, []);
 
   const summary = cash?.resumo;
+
+  const openCloseCashModal = async () => {
+    try {
+      setOpeningClose(true);
+      await loadCurrent();
+      setCloseModal(true);
+    } catch (error) {
+      showSystemNotice('Não foi possível atualizar o resumo do caixa.');
+    } finally {
+      setOpeningClose(false);
+    }
+  };
 
   const renderCurrent = () => {
     if (!cash || current?.status === 'fechado') {
@@ -474,6 +608,20 @@ export function CashScreen() {
             <span className="text-sm font-semibold text-pink-700">Saldo em dinheiro esperado</span>
             <span className="font-bold text-pink-700">{currency(summary?.saldo_dinheiro_esperado)}</span>
           </div>
+          <div className="mt-3 grid gap-2 text-sm md:grid-cols-3">
+            <div className="rounded-lg bg-gray-50 px-3 py-2">
+              <span className="text-gray-500">PIX esperado</span>
+              <div className="font-bold text-gray-900">{currency(summary?.saldo_pix_esperado)}</div>
+            </div>
+            <div className="rounded-lg bg-gray-50 px-3 py-2">
+              <span className="text-gray-500">Débito esperado</span>
+              <div className="font-bold text-gray-900">{currency(summary?.saldo_cartao_debito_esperado)}</div>
+            </div>
+            <div className="rounded-lg bg-gray-50 px-3 py-2">
+              <span className="text-gray-500">Crédito esperado</span>
+              <div className="font-bold text-gray-900">{currency(summary?.saldo_cartao_credito_esperado)}</div>
+            </div>
+          </div>
           <div className="mt-3 text-xs text-gray-500">{summary?.pedidos_rastreados || 0} pedido(s) rastreado(s)</div>
         </div>
       </div>
@@ -486,7 +634,7 @@ export function CashScreen() {
         <div className="p-10 text-center text-sm text-gray-500">Nenhuma movimentação encontrada.</div>
       ) : (
         movements.map((item) => {
-          const isOut = ['sangria', 'despesa_rapida'].includes(item.forma_pagamento);
+          const isOut = ['sangria', 'despesa_rapida'].includes(item.tipo_movimentacao || item.origem_inclusao);
           const isManual = item.tipo_registro === 'manual';
           return (
             <div key={`${item.tipo_registro}-${item.id}`} className="flex items-center gap-4 border-b border-gray-100 px-5 py-4 last:border-b-0">
@@ -495,11 +643,16 @@ export function CashScreen() {
               </span>
               <div className="min-w-0 flex-1">
                 <div className="font-semibold text-gray-900">{isManual ? item.motivo : `Venda PDV #${item.numero_pedido}`}</div>
-                <div className="truncate text-sm text-gray-500">{isManual ? item.cliente_nome : item.cliente_nome || 'Cliente'} · {formatBrasiliaDate(item.criado_em)}</div>
+                <div className="truncate text-sm text-gray-500">
+                  {isManual ? item.cliente_nome : item.cliente_nome || 'Cliente'} · {formatBrasiliaDate(item.criado_em)}
+                </div>
               </div>
               <div className="text-right">
                 <div className={`font-bold ${isOut ? 'text-pink-600' : 'text-emerald-600'}`}>{isOut ? '-' : '+'}{currency(item.valor)}</div>
-                <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-600">{paymentLabel[item.forma_pagamento] || item.forma_pagamento}</span>
+                <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-600">
+                  {isManual ? `${paymentLabel[item.tipo_movimentacao || item.origem_inclusao] || item.origem_inclusao} · ` : ''}
+                  {paymentLabel[item.forma_pagamento] || item.forma_pagamento}
+                </span>
               </div>
             </div>
           );
@@ -580,7 +733,9 @@ export function CashScreen() {
               <button onClick={() => setMovementType('sangria')} className="inline-flex items-center gap-2 rounded-xl border border-pink-100 bg-white px-4 py-2 text-sm font-semibold text-pink-700"><Minus className="h-4 w-4" /> Sangria</button>
               <button onClick={() => setMovementType('suprimento')} className="inline-flex items-center gap-2 rounded-xl border border-emerald-100 bg-white px-4 py-2 text-sm font-semibold text-emerald-700"><Plus className="h-4 w-4" /> Suprimento</button>
               <button onClick={() => setMovementType('despesa_rapida')} className="inline-flex items-center gap-2 rounded-xl border border-pink-100 bg-white px-4 py-2 text-sm font-semibold text-pink-700"><Banknote className="h-4 w-4" /> Despesa</button>
-              <button onClick={() => setCloseModal(true)} className="rounded-xl bg-pink-600 px-5 py-2 text-sm font-semibold text-white">Fechar caixa</button>
+              <button onClick={openCloseCashModal} disabled={openingClose} className="rounded-xl bg-pink-600 px-5 py-2 text-sm font-semibold text-white disabled:opacity-60">
+                {openingClose ? 'Atualizando...' : 'Fechar caixa'}
+              </button>
             </>
           ) : (
             <button onClick={() => setOpenModal(true)} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2 text-sm font-semibold text-white"><Wallet className="h-4 w-4" /> Abrir caixa</button>
