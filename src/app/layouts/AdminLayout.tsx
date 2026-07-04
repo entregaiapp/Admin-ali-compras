@@ -25,6 +25,7 @@ const navItems = [
   { label: 'Entregadores', icon: User, path: '/entregadores', slug: 'entregadores' },
   { label: 'Cupons', icon: Ticket, path: '/coupons', slug: 'cupons' },
   { label: 'Pagamentos', icon: CreditCard, path: '/payments', slug: 'financeiro' },
+  { label: 'Caixa', icon: Wallet, path: '/cash', slug: 'caixa' },
   { label: 'Fiados', icon: Wallet, path: '/fiados', slug: 'fiados' },
   { label: 'Relatórios', icon: BarChart3, path: '/reports', slug: 'financeiro' },
   { label: 'Usuários', icon: UserCog, path: '/users', slug: 'usuarios' },
@@ -37,7 +38,7 @@ const navGroups = [
   { title: 'Cardápio', paths: ['/products', '/categories'] },
   { title: 'Marketing e vendas', paths: ['/promotions', '/coupons', '/banners', '/notifications'] },
   { title: 'Clientes', paths: ['/customers'] },
-  { title: 'Financeiro', paths: ['/payments', '/fiados', '/reports'] },
+  { title: 'Financeiro', paths: ['/payments', '/cash', '/fiados', '/reports'] },
   { title: 'Administração', paths: ['/users', '/settings'] },
 ];
 

@@ -1,0 +1,631 @@
+import { useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
+import {
+  AlertTriangle,
+  Banknote,
+  Check,
+  CreditCard,
+  Minus,
+  Plus,
+  RefreshCw,
+  Wallet,
+  X,
+} from 'lucide-react';
+import { formatBrasiliaDate } from '@/shared/lib/dateTime';
+import { showSystemNotice } from '@/shared/components/SystemNoticeModal';
+import {
+  type AvailableCashOrder,
+  type CashMovement,
+  type CashMovementType,
+  type CashRegister,
+  type CurrentCashResponse,
+  cashService,
+} from '../services/cashService';
+
+const PRIMARY = '#122a4c';
+const GREEN = '#059669';
+const PINK = '#e91e63';
+
+const tabs = [
+  { key: 'atual', label: 'Caixa atual' },
+  { key: 'movimentacoes', label: 'Movimentações' },
+  { key: 'fechamentos', label: 'Fechamentos' },
+  { key: 'divergencias', label: 'Divergências' },
+] as const;
+
+type TabKey = (typeof tabs)[number]['key'];
+
+const currency = (value: number | null | undefined) =>
+  Number(value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+const parseMoney = (value: string) => {
+  const normalized = String(value || '').replace(/\./g, '').replace(',', '.');
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const paymentLabel: Record<string, string> = {
+  dinheiro: 'dinheiro',
+  pix: 'pix',
+  cartao_debito: 'débito',
+  cartao_credito: 'crédito',
+  fiado: 'fiado',
+  pendente: 'pendente',
+  sangria: 'saída',
+  suprimento: 'entrada',
+  despesa_rapida: 'saída',
+};
+
+function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
+      <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl">
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+          <button onClick={onClose} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function TextField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  multiline,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  multiline?: boolean;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-sm font-medium text-gray-700">{label}</span>
+      {multiline ? (
+        <textarea
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          className="min-h-20 w-full resize-none rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-emerald-500"
+        />
+      ) : (
+        <input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          className="h-12 w-full rounded-xl border border-gray-200 px-4 text-sm outline-none focus:border-emerald-500"
+        />
+      )}
+    </label>
+  );
+}
+
+function OpenCashModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [orders, setOrders] = useState<AvailableCashOrder[]>([]);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [selectAll, setSelectAll] = useState(false);
+  const [initialValue, setInitialValue] = useState('');
+  const [note, setNote] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    cashService.availableOrders()
+      .then(setOrders)
+      .catch(() => showSystemNotice('Não foi possível carregar os pedidos disponíveis.'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const toggle = (id: string) => {
+    setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  };
+
+  const submit = async () => {
+    try {
+      setSaving(true);
+      await cashService.open({
+        valor_inicial: parseMoney(initialValue),
+        observacao: note || null,
+        pedido_ids: selectAll ? [] : selected,
+        incluir_todos_disponiveis: selectAll,
+      });
+      onDone();
+      onClose();
+    } catch (error: any) {
+      showSystemNotice(error?.response?.data?.message || 'Não foi possível abrir o caixa.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title="Abrir caixa" onClose={onClose}>
+      <div className="space-y-4">
+        <TextField label="Valor inicial em caixa" value={initialValue} onChange={setInitialValue} placeholder="R$ 0,00" />
+        <TextField label="Observação" value={note} onChange={setNote} placeholder="Opcional" />
+
+        <div className="rounded-xl border border-gray-200">
+          <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+            <div>
+              <div className="text-sm font-semibold text-gray-900">Pedidos antes do caixa</div>
+              <div className="text-xs text-gray-500">{orders.length} pedido(s) ainda sem caixa</div>
+            </div>
+            <button
+              onClick={() => {
+                setSelectAll((value) => !value);
+                setSelected([]);
+              }}
+              className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700"
+            >
+              {selectAll ? 'Desmarcar todos' : 'Marcar todos'}
+            </button>
+          </div>
+          <div className="max-h-64 overflow-y-auto p-2">
+            {loading ? (
+              <div className="p-6 text-center text-sm text-gray-500">Carregando pedidos...</div>
+            ) : orders.length === 0 ? (
+              <div className="p-6 text-center text-sm text-gray-500">Nenhum pedido disponível.</div>
+            ) : (
+              orders.map((order) => {
+                const checked = selectAll || selected.includes(order.id);
+                return (
+                  <button
+                    key={order.id}
+                    onClick={() => !selectAll && toggle(order.id)}
+                    disabled={selectAll}
+                    className={`mb-2 flex w-full items-center gap-3 rounded-xl border p-3 text-left ${checked ? 'border-emerald-200 bg-emerald-50' : 'border-gray-100 bg-white'}`}
+                  >
+                    <span className={`flex h-5 w-5 items-center justify-center rounded border ${checked ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-gray-300'}`}>
+                      {checked && <Check className="h-3.5 w-3.5" />}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold text-gray-900">#{order.numero_pedido} · {order.cliente_nome}</span>
+                      <span className="block text-xs text-gray-500">{formatBrasiliaDate(order.realizado_em)} · {order.status}</span>
+                    </span>
+                    <span className="text-sm font-bold text-gray-900">{currency(order.total)}</span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 pt-2">
+          <button onClick={onClose} className="h-12 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700">Cancelar</button>
+          <button onClick={submit} disabled={saving} className="h-12 rounded-xl bg-emerald-600 text-sm font-semibold text-white disabled:opacity-60">
+            {saving ? 'Abrindo...' : 'Abrir caixa'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function MovementModal({
+  cashId,
+  type,
+  onClose,
+  onDone,
+}: {
+  cashId: string;
+  type: CashMovementType;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const user = useMemo(() => {
+    try { return JSON.parse(localStorage.getItem('user') || '{}'); } catch { return {}; }
+  }, []);
+  const [value, setValue] = useState('');
+  const [reason, setReason] = useState('');
+  const [responsible, setResponsible] = useState(user?.nome || user?.name || '');
+  const [saving, setSaving] = useState(false);
+  const title = type === 'sangria' ? 'Sangria' : type === 'suprimento' ? 'Suprimento de caixa' : 'Despesa rápida';
+
+  const submit = async () => {
+    try {
+      setSaving(true);
+      await cashService.createMovement(cashId, {
+        tipo: type,
+        valor: parseMoney(value),
+        motivo: reason,
+        responsavel_nome: responsible || null,
+      });
+      onDone();
+      onClose();
+    } catch (error: any) {
+      showSystemNotice(error?.response?.data?.message || 'Não foi possível registrar a movimentação.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title={title} onClose={onClose}>
+      <div className="space-y-4">
+        <TextField label="Valor" value={value} onChange={setValue} placeholder="R$ 0,00" />
+        <TextField label="Motivo" value={reason} onChange={setReason} placeholder={type === 'sangria' ? 'Ex: Depósito bancário' : 'Ex: Adição de troco'} />
+        {type === 'sangria' && (
+          <TextField label="Responsável pela retirada" value={responsible} onChange={setResponsible} />
+        )}
+        <div className="grid grid-cols-2 gap-3 pt-2">
+          <button onClick={onClose} className="h-12 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700">Cancelar</button>
+          <button
+            onClick={submit}
+            disabled={saving}
+            className={`h-12 rounded-xl text-sm font-semibold text-white disabled:opacity-60 ${type === 'sangria' || type === 'despesa_rapida' ? 'bg-pink-600' : 'bg-emerald-600'}`}
+          >
+            {saving ? 'Salvando...' : 'Confirmar'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function CloseCashModal({ cash, onClose, onDone }: { cash: CashRegister; onClose: () => void; onDone: () => void }) {
+  const summary = cash.resumo;
+  const [dinheiro, setDinheiro] = useState(String(summary?.saldo_dinheiro_esperado || 0));
+  const [pix, setPix] = useState(String(summary?.vendas_pix || 0));
+  const [debit, setDebit] = useState(String(summary?.vendas_cartao_debito || 0));
+  const [credit, setCredit] = useState(String(summary?.vendas_cartao_credito || 0));
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const expected = {
+    dinheiro: summary?.saldo_dinheiro_esperado || 0,
+    pix: summary?.vendas_pix || 0,
+    cartao_debito: summary?.vendas_cartao_debito || 0,
+    cartao_credito: summary?.vendas_cartao_credito || 0,
+  };
+  const counted = {
+    dinheiro: parseMoney(dinheiro),
+    pix: parseMoney(pix),
+    cartao_debito: parseMoney(debit),
+    cartao_credito: parseMoney(credit),
+  };
+  const difference = Object.values(counted).reduce((sum, value) => sum + value, 0)
+    - Object.values(expected).reduce((sum, value) => sum + value, 0);
+
+  const submit = async () => {
+    try {
+      setSaving(true);
+      await cashService.close(cash.id, {
+        dinheiro: counted.dinheiro,
+        pix: counted.pix,
+        cartao_debito: counted.cartao_debito,
+        cartao_credito: counted.cartao_credito,
+        observacao: note || null,
+      });
+      onDone();
+      onClose();
+    } catch (error: any) {
+      showSystemNotice(error?.response?.data?.message || 'Não foi possível fechar o caixa.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title="Fechar caixa" onClose={onClose}>
+      <div className="space-y-4">
+        <p className="text-sm text-gray-500">Informe os valores contados por forma de pagamento:</p>
+        <TextField label="Dinheiro em caixa" value={dinheiro} onChange={setDinheiro} />
+        <TextField label="PIX recebido" value={pix} onChange={setPix} />
+        <TextField label="Cartão débito" value={debit} onChange={setDebit} />
+        <TextField label="Cartão crédito" value={credit} onChange={setCredit} />
+        {Math.abs(difference) >= 0.01 && (
+          <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+            <AlertTriangle className="h-4 w-4" />
+            Divergência de {currency(difference)}
+          </div>
+        )}
+        <TextField label="Observação" value={note} onChange={setNote} placeholder="Obrigatória para divergências" multiline />
+        <div className="grid grid-cols-2 gap-3 pt-2">
+          <button onClick={onClose} className="h-12 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700">Cancelar</button>
+          <button onClick={submit} disabled={saving} className="h-12 rounded-xl bg-pink-600 text-sm font-semibold text-white disabled:opacity-60">
+            {saving ? 'Fechando...' : 'Confirmar fechamento'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function JustifyModal({ cash, onClose, onDone }: { cash: CashRegister; onClose: () => void; onDone: () => void }) {
+  const [text, setText] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    try {
+      setSaving(true);
+      await cashService.justify(cash.id, text);
+      onDone();
+      onClose();
+    } catch (error: any) {
+      showSystemNotice(error?.response?.data?.message || 'Não foi possível justificar a divergência.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title="Justificar divergência" onClose={onClose}>
+      <div className="space-y-4">
+        <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+          Diferença: {currency(cash.diferenca_total)}
+        </div>
+        <TextField label="Justificativa" value={text} onChange={setText} multiline />
+        <div className="grid grid-cols-2 gap-3 pt-2">
+          <button onClick={onClose} className="h-12 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700">Cancelar</button>
+          <button onClick={submit} disabled={saving} className="h-12 rounded-xl bg-indigo-600 text-sm font-semibold text-white disabled:opacity-60">
+            {saving ? 'Salvando...' : 'Justificar'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+export function CashScreen() {
+  const [activeTab, setActiveTab] = useState<TabKey>('atual');
+  const [current, setCurrent] = useState<CurrentCashResponse | null>(null);
+  const [movements, setMovements] = useState<CashMovement[]>([]);
+  const [closures, setClosures] = useState<CashRegister[]>([]);
+  const [divergences, setDivergences] = useState<CashRegister[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [openModal, setOpenModal] = useState(false);
+  const [movementType, setMovementType] = useState<CashMovementType | null>(null);
+  const [closeModal, setCloseModal] = useState(false);
+  const [justifyCash, setJustifyCash] = useState<CashRegister | null>(null);
+
+  const cash = current?.caixa || null;
+
+  const loadCurrent = async () => {
+    const data = await cashService.current();
+    setCurrent(data);
+    return data;
+  };
+
+  const loadAll = async ({ silent = false } = {}) => {
+    try {
+      if (!silent) setLoading(true);
+      const currentData = await loadCurrent();
+      const [closuresData, divergencesData] = await Promise.all([
+        cashService.closures(),
+        cashService.divergences(),
+      ]);
+      setClosures(closuresData.data || []);
+      setDivergences(divergencesData.data || []);
+      if (currentData.caixa?.id) {
+        setMovements(await cashService.movements(currentData.caixa.id));
+      } else {
+        setMovements([]);
+      }
+    } catch (error) {
+      showSystemNotice('Não foi possível carregar o caixa.');
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAll();
+  }, []);
+
+  const summary = cash?.resumo;
+
+  const renderCurrent = () => {
+    if (!cash || current?.status === 'fechado') {
+      return (
+        <div className="rounded-2xl border border-gray-200 bg-white p-10 text-center shadow-sm">
+          <Wallet className="mx-auto mb-4 h-10 w-10 text-gray-300" />
+          <div className="font-semibold text-gray-800">Caixa está fechado</div>
+          <p className="mt-1 text-sm text-gray-500">{current?.pedidos_disponiveis || 0} pedido(s) disponível(is) para abertura</p>
+          <button onClick={() => setOpenModal(true)} className="mt-5 rounded-xl bg-emerald-600 px-8 py-3 text-sm font-semibold text-white">
+            Abrir caixa agora
+          </button>
+        </div>
+      );
+    }
+
+    const cards = [
+      ['Saldo inicial', summary?.valor_inicial, PRIMARY],
+      ['Vendas dinheiro', summary?.vendas_dinheiro, GREEN],
+      ['Vendas PIX', summary?.vendas_pix, '#4f46e5'],
+      ['Cartão débito', summary?.vendas_cartao_debito, GREEN],
+      ['Cartão crédito', summary?.vendas_cartao_credito, GREEN],
+      ['Sangrias', -(summary?.sangrias_total || 0), PINK],
+      ['Suprimentos', summary?.suprimentos_total, GREEN],
+      ['Despesas rápidas', -(summary?.despesas_total || 0), PINK],
+    ];
+
+    return (
+      <div className="space-y-5">
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+          <div className="flex items-center gap-3">
+            <span className="h-3 w-3 rounded-full bg-emerald-500" />
+            <div>
+              <div className="font-semibold text-emerald-900">Caixa aberto desde {formatBrasiliaDate(cash.aberto_em, { hour: '2-digit', minute: '2-digit' })}</div>
+              <div className="text-sm text-emerald-700">{cash.operador_nome || 'Operador'} · Matriz</div>
+            </div>
+          </div>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {cards.map(([label, value, color]) => (
+            <div key={label as string} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="text-xs text-gray-500">{label}</div>
+              <div className="mt-2 text-xl font-bold" style={{ color: color as string }}>{currency(value as number)}</div>
+            </div>
+          ))}
+        </div>
+        <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+            <span className="text-sm text-gray-600">Total esperado em caixa</span>
+            <span className="font-bold text-gray-900">{currency(summary?.total_esperado)}</span>
+          </div>
+          <div className="flex items-center justify-between pt-3">
+            <span className="text-sm font-semibold text-pink-700">Saldo em dinheiro esperado</span>
+            <span className="font-bold text-pink-700">{currency(summary?.saldo_dinheiro_esperado)}</span>
+          </div>
+          <div className="mt-3 text-xs text-gray-500">{summary?.pedidos_rastreados || 0} pedido(s) rastreado(s)</div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderMovements = () => (
+    <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
+      {movements.length === 0 ? (
+        <div className="p-10 text-center text-sm text-gray-500">Nenhuma movimentação encontrada.</div>
+      ) : (
+        movements.map((item) => {
+          const isOut = ['sangria', 'despesa_rapida'].includes(item.forma_pagamento);
+          const isManual = item.tipo_registro === 'manual';
+          return (
+            <div key={`${item.tipo_registro}-${item.id}`} className="flex items-center gap-4 border-b border-gray-100 px-5 py-4 last:border-b-0">
+              <span className={`flex h-9 w-9 items-center justify-center rounded-full ${isOut ? 'bg-pink-100 text-pink-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                {isOut ? <Minus className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold text-gray-900">{isManual ? item.motivo : `Venda PDV #${item.numero_pedido}`}</div>
+                <div className="truncate text-sm text-gray-500">{isManual ? item.cliente_nome : item.cliente_nome || 'Cliente'} · {formatBrasiliaDate(item.criado_em)}</div>
+              </div>
+              <div className="text-right">
+                <div className={`font-bold ${isOut ? 'text-pink-600' : 'text-emerald-600'}`}>{isOut ? '-' : '+'}{currency(item.valor)}</div>
+                <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-600">{paymentLabel[item.forma_pagamento] || item.forma_pagamento}</span>
+              </div>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+
+  const renderClosures = () => (
+    <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+      <table className="w-full min-w-[760px] text-left text-sm">
+        <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+          <tr>
+            <th className="px-4 py-3">Data</th>
+            <th className="px-4 py-3">Operador</th>
+            <th className="px-4 py-3">Filial</th>
+            <th className="px-4 py-3">Esperado</th>
+            <th className="px-4 py-3">Informado</th>
+            <th className="px-4 py-3">Diferença</th>
+            <th className="px-4 py-3">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {closures.map((item) => (
+            <tr key={item.id} className="border-t border-gray-100">
+              <td className="px-4 py-4">{item.fechado_em ? formatBrasiliaDate(item.fechado_em, { day: '2-digit', month: '2-digit' }) : '-'}</td>
+              <td className="px-4 py-4">{item.operador_nome || '-'}</td>
+              <td className="px-4 py-4"><span className="rounded-full bg-gray-100 px-2 py-1 text-xs">Matriz</span></td>
+              <td className="px-4 py-4 font-semibold">{currency(item.total_esperado)}</td>
+              <td className="px-4 py-4">{currency(item.total_informado)}</td>
+              <td className={`px-4 py-4 font-bold ${item.diferenca_total < 0 ? 'text-pink-600' : item.diferenca_total > 0 ? 'text-emerald-600' : 'text-gray-500'}`}>{currency(item.diferenca_total)}</td>
+              <td className="px-4 py-4">
+                <span className={`rounded-full px-2 py-1 text-xs font-semibold ${item.divergencia_status === 'sem_divergencia' ? 'bg-emerald-50 text-emerald-700' : item.divergencia_status === 'justificada' ? 'bg-indigo-50 text-indigo-700' : 'bg-amber-50 text-amber-700'}`}>
+                  {item.divergencia_status === 'sem_divergencia' ? 'Sem divergência' : item.divergencia_status === 'justificada' ? 'Justificada' : 'Pendente'}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+
+  const renderDivergences = () => (
+    <div className="space-y-3">
+      {divergences.length === 0 ? (
+        <div className="rounded-2xl border border-gray-200 bg-white p-10 text-center text-sm text-gray-500">Nenhuma divergência.</div>
+      ) : divergences.map((item) => (
+        <div key={item.id} className="flex items-center gap-4 rounded-2xl border border-red-100 bg-red-50 p-5">
+          <AlertTriangle className="h-5 w-5 text-pink-600" />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-gray-900">
+              {item.fechado_em ? formatBrasiliaDate(item.fechado_em, { day: '2-digit', month: '2-digit' }) : '-'} · {item.operador_nome || '-'}
+              <span className="rounded-full bg-white px-2 py-1 text-xs text-gray-600">Matriz</span>
+              <span className="rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-700">{item.divergencia_status === 'justificada' ? 'Justificada' : 'Pendente'}</span>
+            </div>
+            <div className="mt-1 text-base font-bold text-pink-700">Diferença: {currency(item.diferenca_total)}</div>
+            <div className="mt-1 text-sm text-gray-600">{item.divergencia_justificativa || item.fechamento_observacao || 'Sem justificativa registrada'}</div>
+          </div>
+          {item.divergencia_status !== 'justificada' && (
+            <button onClick={() => setJustifyCash(item)} className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Justificar</button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+
+  return (
+    <div className="h-full flex-1 overflow-y-auto bg-gray-50 p-5">
+      <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-950">Caixa</h1>
+          <p className="text-sm text-gray-500">Controle de abertura, movimentações e fechamento</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {cash?.status === 'aberto' ? (
+            <>
+              <button onClick={() => setMovementType('sangria')} className="inline-flex items-center gap-2 rounded-xl border border-pink-100 bg-white px-4 py-2 text-sm font-semibold text-pink-700"><Minus className="h-4 w-4" /> Sangria</button>
+              <button onClick={() => setMovementType('suprimento')} className="inline-flex items-center gap-2 rounded-xl border border-emerald-100 bg-white px-4 py-2 text-sm font-semibold text-emerald-700"><Plus className="h-4 w-4" /> Suprimento</button>
+              <button onClick={() => setMovementType('despesa_rapida')} className="inline-flex items-center gap-2 rounded-xl border border-pink-100 bg-white px-4 py-2 text-sm font-semibold text-pink-700"><Banknote className="h-4 w-4" /> Despesa</button>
+              <button onClick={() => setCloseModal(true)} className="rounded-xl bg-pink-600 px-5 py-2 text-sm font-semibold text-white">Fechar caixa</button>
+            </>
+          ) : (
+            <button onClick={() => setOpenModal(true)} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2 text-sm font-semibold text-white"><Wallet className="h-4 w-4" /> Abrir caixa</button>
+          )}
+          <button onClick={() => loadAll({ silent: true })} className="rounded-xl border border-gray-200 bg-white p-2 text-gray-600"><RefreshCw className="h-4 w-4" /></button>
+        </div>
+      </div>
+
+      <div className="mb-5 inline-flex rounded-2xl bg-gray-100 p-1">
+        {tabs.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`rounded-xl px-4 py-2 text-sm font-semibold ${activeTab === tab.key ? 'bg-white text-gray-950 shadow-sm' : 'text-gray-500'}`}
+          >
+            {tab.label}{tab.key === 'divergencias' && divergences.length > 0 ? ` (${divergences.length})` : ''}
+          </button>
+        ))}
+      </div>
+
+      <div className="mb-5 rounded-2xl border border-gray-200 bg-white p-4">
+        <div className="flex items-center gap-3">
+          <span className={`h-3 w-3 rounded-full ${cash?.status === 'aberto' ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+          <div>
+            <div className="font-semibold text-gray-900">{cash?.status === 'aberto' ? 'Caixa aberto' : 'Caixa fechado'}</div>
+            <div className="text-sm text-gray-500">{cash?.operador_nome || 'Matriz'}</div>
+          </div>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex h-64 items-center justify-center"><div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-emerald-600" /></div>
+      ) : (
+        <>
+          {activeTab === 'atual' && renderCurrent()}
+          {activeTab === 'movimentacoes' && renderMovements()}
+          {activeTab === 'fechamentos' && <div className="overflow-x-auto">{renderClosures()}</div>}
+          {activeTab === 'divergencias' && renderDivergences()}
+        </>
+      )}
+
+      {openModal && <OpenCashModal onClose={() => setOpenModal(false)} onDone={() => loadAll()} />}
+      {movementType && cash && <MovementModal cashId={cash.id} type={movementType} onClose={() => setMovementType(null)} onDone={() => loadAll()} />}
+      {closeModal && cash && <CloseCashModal cash={cash} onClose={() => setCloseModal(false)} onDone={() => loadAll()} />}
+      {justifyCash && <JustifyModal cash={justifyCash} onClose={() => setJustifyCash(null)} onDone={() => loadAll()} />}
+    </div>
+  );
+}
