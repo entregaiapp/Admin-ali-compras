@@ -50,12 +50,12 @@ export const getDriverOfflineScope = () => {
 
 const getDatabase = () => new Promise<IDBDatabase>((resolve, reject) => {
   if (!isBrowser() || !('indexedDB' in window)) {
-    reject(new Error('O armazenamento offline nao e suportado neste navegador.'));
+    reject(new Error('Este navegador não permite usar entregas sem internet.'));
     return;
   }
 
   const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
-  request.onerror = () => reject(request.error || new Error('Nao foi possivel abrir o armazenamento offline.'));
+  request.onerror = () => reject(request.error || new Error('Não foi possível preparar as entregas sem internet.'));
   request.onupgradeneeded = () => {
     const database = request.result;
     if (!database.objectStoreNames.contains(ASSIGNED_DELIVERIES_STORE)) {
@@ -135,7 +135,7 @@ const createId = () => globalThis.crypto?.randomUUID?.()
 
 export async function hashReceiptKey(receiptKey: string) {
   if (!globalThis.crypto?.subtle) {
-    throw new Error('Seu navegador nao oferece suporte seguro para confirmar entregas offline.');
+    throw new Error('Seu navegador não permite confirmar entregas sem internet.');
   }
 
   const bytes = new TextEncoder().encode(receiptKey);
@@ -184,7 +184,7 @@ const getErrorMessage = (error: any) => (
   error?.response?.data?.message
   || error?.response?.data?.error
   || error?.message
-  || 'Falha ao sincronizar a confirmacao.'
+  || 'Não foi possível enviar a confirmação. Tente novamente.'
 );
 
 export async function synchronizePendingStops(api: ApiClient, scope = getDriverOfflineScope()) {

@@ -69,7 +69,7 @@ const reportOriginLabel = (value?: string | null) => {
     cliente: 'Cliente',
     manual: 'Manual',
     fiado: 'Fiado',
-    salao: 'Salao',
+    salao: 'Salão',
   };
   return labels[String(value || '').toLowerCase()] || String(value || 'Indefinido');
 };
@@ -83,7 +83,7 @@ const buildDeliveryPaymentReportCsv = (report: DeliveryPaymentBillingReport) => 
     ['Pedidos de clientes', report.resumo.quantidade_pedidos_clientes],
     ['Pedidos manuais', report.resumo.quantidade_pedidos_manuais],
     ['Pedidos fiado', report.resumo.quantidade_pedidos_fiados || 0],
-    ['Pedidos salao', report.resumo.quantidade_pedidos_salao || 0],
+    ['Pedidos salão', report.resumo.quantidade_pedidos_salao || 0],
     [],
     ['Número', 'Data', 'Origem', 'Categoria', 'Status', 'Forma de pagamento', 'Fiado', 'Taxa registrada', 'Total do pedido', 'Valor de cobrança'],
     ...report.pedidos.map((pedido) => [
@@ -93,8 +93,8 @@ const buildDeliveryPaymentReportCsv = (report: DeliveryPaymentBillingReport) => 
       pedido.categoria_cobranca_label || pedido.categoria_cobranca || '',
       pedido.status,
       pedido.forma_pagamento,
-      pedido.pedido_fiado ? 'sim' : 'nao',
-      pedido.aplicado_taxa ? 'sim' : 'nao',
+      pedido.pedido_fiado ? 'sim' : 'não',
+      pedido.aplicado_taxa ? 'sim' : 'não',
       pedido.total,
       pedido.valor_cobranca
     ]),
@@ -505,7 +505,7 @@ export function ReportsScreen() {
                                 </span>
                               </td>
                               <td className="px-4 py-3 text-gray-600">{pedido.categoria_cobranca_label || pedido.categoria_cobranca || '-'}</td>
-                              <td className="px-4 py-3 text-gray-600">{pedido.pedido_fiado ? 'Sim' : 'Nao'}</td>
+                              <td className="px-4 py-3 text-gray-600">{pedido.pedido_fiado ? 'Sim' : 'Não'}</td>
                               <td className="px-4 py-3 text-gray-600">{pedido.status}</td>
                               <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(pedido.total)}</td>
                               <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatCurrency(pedido.valor_cobranca)}</td>
@@ -549,7 +549,7 @@ export function ReportsScreen() {
           <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="font-semibold text-gray-800">Recebimentos fiado</h3>
-              <p className="text-xs text-gray-400 mt-0.5">Valores recebidos no periodo, separados da venda original.</p>
+              <p className="text-xs text-gray-400 mt-0.5">Valores recebidos no período, separados da venda original.</p>
             </div>
             <div className="text-sm font-semibold text-gray-900">
               Recebido: {formatCurrency(fiadoResumo.recebido_periodo)}

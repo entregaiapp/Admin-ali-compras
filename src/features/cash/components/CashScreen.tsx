@@ -87,8 +87,8 @@ const paymentLabel: Record<string, string> = {
 const paymentOptions: Array<{ value: CashPaymentMethod; label: string }> = [
   { value: 'dinheiro', label: 'Dinheiro' },
   { value: 'pix', label: 'PIX' },
-  { value: 'cartao_debito', label: 'Cartão débito' },
-  { value: 'cartao_credito', label: 'Cartão crédito' },
+  { value: 'cartao_debito', label: 'Cartão de débito' },
+  { value: 'cartao_credito', label: 'Cartão de crédito' },
 ];
 
 const paymentDetailRows = (summary: CashRegister['resumo']) => [
@@ -804,8 +804,8 @@ export function CashScreen() {
       ['Saldo inicial', summary?.valor_inicial, PRIMARY],
       ['Vendas dinheiro', summary?.vendas_dinheiro, GREEN],
       ['Vendas PIX', summary?.vendas_pix, '#4f46e5'],
-      ['Cartão débito', summary?.vendas_cartao_debito, GREEN],
-      ['Cartão crédito', summary?.vendas_cartao_credito, GREEN],
+      ['Cartão de débito', summary?.vendas_cartao_debito, GREEN],
+      ['Cartão de crédito', summary?.vendas_cartao_credito, GREEN],
       ['Sangrias', -(summary?.sangrias_total || 0), PINK],
       ['Suprimentos', summary?.suprimentos_total, GREEN],
       ['Despesas rápidas', -(summary?.despesas_total || 0), PINK],

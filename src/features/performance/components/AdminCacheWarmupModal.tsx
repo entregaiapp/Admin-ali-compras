@@ -38,7 +38,7 @@ export function AdminCacheWarmupModal({ open, status, result, error, onClose }: 
             </h2>
             <p className="mt-1 text-sm text-gray-500">
               {completed
-                ? `${result.cachedResources} conjuntos de dados e ${result.cachedImages} imagens foram preparados neste dispositivo.`
+                ? `${result.cachedResources} informações e ${result.cachedImages} imagens foram preparadas neste dispositivo.`
                 : error || status.message}
             </p>
           </div>

@@ -367,7 +367,7 @@ export function SalaoPage() {
           showSystemNotice(
             error?.response?.data?.message ||
               error?.message ||
-              "Nao foi possivel carregar o salao.",
+              "Não foi possível carregar o salão.",
           );
         }
       } finally {
@@ -420,7 +420,7 @@ export function SalaoPage() {
           showSystemNotice(
             error?.response?.data?.message ||
               error?.message ||
-              "Nao foi possivel buscar produtos.",
+              "Não foi possível buscar produtos.",
           );
         })
         .finally(() => {
@@ -521,7 +521,7 @@ export function SalaoPage() {
       showSystemNotice(
         error?.response?.data?.message ||
           error?.message ||
-          "Nao foi possivel criar a mesa.",
+          "Não foi possível criar a mesa.",
       );
     } finally {
       setCreatingTable(false);
@@ -548,7 +548,7 @@ export function SalaoPage() {
       showSystemNotice(
         error?.response?.data?.message ||
           error?.message ||
-          "Nao foi possivel abrir a comanda.",
+          "Não foi possível abrir a comanda.",
       );
     } finally {
       setActionBusy("");
@@ -574,7 +574,7 @@ export function SalaoPage() {
       showSystemNotice(
         error?.response?.data?.message ||
           error?.message ||
-          "Nao foi possivel carregar a comanda.",
+          "Não foi possível carregar a comanda.",
       );
     }
   };
@@ -639,7 +639,7 @@ export function SalaoPage() {
       showSystemNotice(
         error?.response?.data?.message ||
           error?.message ||
-          "Nao foi possivel baixar o QR Code.",
+          "Não foi possível baixar o QR Code.",
       );
     } finally {
       setActionBusy("");
@@ -674,7 +674,7 @@ export function SalaoPage() {
       showSystemNotice(
         error?.response?.data?.message ||
           error?.message ||
-          "Nao foi possivel imprimir o QR Code.",
+          "Não foi possível imprimir o QR Code.",
       );
     } finally {
       setActionBusy("");
@@ -700,7 +700,7 @@ export function SalaoPage() {
       showSystemNotice(
         error?.response?.data?.message ||
           error?.message ||
-          "Nao foi possivel excluir a mesa.",
+          "Não foi possível excluir a mesa.",
       );
     } finally {
       setActionBusy("");
@@ -715,7 +715,7 @@ export function SalaoPage() {
     }
     const quantity = Number(itemQuantity.replace(",", "."));
     if (!Number.isFinite(quantity) || quantity <= 0) {
-      showSystemNotice("Informe uma quantidade valida.");
+      showSystemNotice("Informe uma quantidade válida.");
       return;
     }
     setAddingItem(true);
@@ -735,7 +735,7 @@ export function SalaoPage() {
       showSystemNotice(
         error?.response?.data?.message ||
           error?.message ||
-          "Nao foi possivel adicionar o produto.",
+          "Não foi possível adicionar o produto.",
       );
     } finally {
       setAddingItem(false);
@@ -810,7 +810,7 @@ export function SalaoPage() {
       showSystemNotice(
         error?.response?.data?.message ||
           error?.message ||
-          "Nao foi possivel adicionar o produto.",
+          "Não foi possível adicionar o produto.",
       );
     } finally {
       setAddingItem(false);
@@ -831,7 +831,7 @@ export function SalaoPage() {
       showSystemNotice(
         error?.response?.data?.message ||
           error?.message ||
-          "Nao foi possivel fechar a conta.",
+          "Não foi possível fechar a conta.",
       );
     } finally {
       setActionBusy("");
@@ -854,7 +854,7 @@ export function SalaoPage() {
       showSystemNotice(
         error?.response?.data?.message ||
           error?.message ||
-          "Nao foi possivel remover o produto da mesa.",
+          "Não foi possível remover o produto da mesa.",
       );
     } finally {
       setActionBusy("");
@@ -871,7 +871,7 @@ export function SalaoPage() {
       showSystemNotice(
         error?.response?.data?.message ||
           error?.message ||
-          "Nao foi possivel gerar novo PIN.",
+          "Não foi possível gerar novo PIN.",
       );
     } finally {
       setActionBusy("");
@@ -891,7 +891,7 @@ export function SalaoPage() {
       showSystemNotice(
         error?.response?.data?.message ||
           error?.message ||
-          "Nao foi possivel confirmar o pagamento.",
+          "Não foi possível confirmar o pagamento.",
       );
     } finally {
       setActionBusy("");
@@ -908,7 +908,7 @@ export function SalaoPage() {
       showSystemNotice(
         error?.response?.data?.message ||
           error?.message ||
-          "Nao foi possivel desbloquear o participante.",
+          "Não foi possível desbloquear o participante.",
       );
     } finally {
       setActionBusy("");
@@ -924,7 +924,7 @@ export function SalaoPage() {
       showSystemNotice(
         error?.response?.data?.message ||
           error?.message ||
-          "Nao foi possivel atualizar o item.",
+          "Não foi possível atualizar o item.",
       );
     } finally {
       setActionBusy("");
@@ -1123,7 +1123,7 @@ export function SalaoPage() {
         {loading ? (
           <div className="flex h-64 items-center justify-center text-gray-500">
             <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-            Carregando salao...
+            Carregando salão...
           </div>
         ) : tab === "mesas" ? (
           <div className="space-y-4">
@@ -1131,7 +1131,7 @@ export function SalaoPage() {
               <input
                 value={newTableNumber}
                 onChange={(event) => setNewTableNumber(event.target.value)}
-                placeholder="Numero da mesa"
+                placeholder="Número da mesa"
                 className="h-12 flex-1 rounded-xl border border-gray-300 px-3 text-base"
               />
               <button
@@ -1755,7 +1755,7 @@ export function SalaoPage() {
                           value={itemNotes}
                           onChange={(event) => setItemNotes(event.target.value)}
                           className="h-12 rounded-xl border border-gray-300 px-3 text-base"
-                          placeholder="Observacao"
+                          placeholder="Observação"
                         />
                       </div>
                       <button

@@ -400,7 +400,7 @@ function ProductForm({ product, isNew, categories, canManageImages, onClose, onS
       onClose();
     } catch (error: any) {
       console.error('Error saving product association', error);
-      showSystemNotice(error.response?.data?.message || 'Erro ao salvar produto na loja');
+      showSystemNotice(error.response?.data?.message || 'Não foi possível salvar o produto na loja.');
     } finally {
       setLoading(false);
     }

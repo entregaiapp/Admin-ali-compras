@@ -179,7 +179,7 @@ export function EntregadoresScreen() {
       fetchVehicles();
     } catch (error) {
       console.error('Error saving courier:', error);
-      showSystemNotice('Erro ao salvar entregador. Verifique os dados e tente novamente.');
+      showSystemNotice('Não foi possível salvar o entregador. Verifique os dados e tente novamente.');
     } finally {
       setSubmitting(false);
     }
@@ -232,7 +232,7 @@ export function EntregadoresScreen() {
       fetchVehicles();
     } catch (error) {
       console.error('Error saving vehicle:', error);
-      showSystemNotice('Erro ao salvar automóvel. Verifique os dados e tente novamente.');
+      showSystemNotice('Não foi possível salvar o automóvel. Verifique os dados e tente novamente.');
     } finally {
       setSubmitting(false);
     }
@@ -245,7 +245,7 @@ export function EntregadoresScreen() {
       fetchCouriers();
     } catch (error) {
       console.error('Error deleting courier:', error);
-      showSystemNotice('Erro ao excluir entregador.');
+      showSystemNotice('Não foi possível excluir o entregador.');
     }
   };
 

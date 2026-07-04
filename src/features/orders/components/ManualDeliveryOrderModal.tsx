@@ -263,7 +263,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
         setCatalogTotalPages(payload.totalPages);
       })
       .catch(() => {
-        if (!cancelled) setError("Nao foi possivel carregar o catalogo.");
+        if (!cancelled) setError("Não foi possível carregar os produtos.");
       })
       .finally(() => {
         if (!cancelled) setCatalogLoading(false);
@@ -354,7 +354,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
       setCatalogTotal(payload.total);
       setCatalogTotalPages(payload.totalPages);
     } catch {
-      setError("Nao foi possivel carregar mais produtos.");
+      setError("Não foi possível carregar mais produtos.");
     } finally {
       setCatalogLoadingMore(false);
     }
@@ -379,7 +379,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
 
   const useMyProfile = () => {
     if (!profileContact.nome || profileContact.telefone.replace(/\D/g, "").length < 8) {
-      setError("Seu perfil nao possui telefone valido. Preencha o contato rapido para continuar.");
+      setError("Seu perfil não possui telefone válido. Preencha o contato rápido para continuar.");
       return;
     }
     chooseContact({ id: `profile-${loggedUser?.id || "store"}`, ...profileContact, perfil_loja: true });

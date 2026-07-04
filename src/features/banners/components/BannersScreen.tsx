@@ -211,7 +211,7 @@ function ProductPickerModal({
         rememberProducts(result.products);
       } catch (error: any) {
         if (!ignore) {
-          setProductError(error?.response?.data?.message || error?.message || 'Erro ao buscar produtos.');
+          setProductError(error?.response?.data?.message || error?.message || 'Não foi possível buscar os produtos.');
         }
       } finally {
         if (!ignore) setLoadingProducts(false);
@@ -562,7 +562,7 @@ function BannerForm({
         imagem_path: uploaded.path,
       }));
     } catch (error: any) {
-      setError(error?.response?.data?.message || error?.message || 'Erro ao enviar imagem.');
+      setError(error?.response?.data?.message || error?.message || 'Não foi possível enviar a imagem.');
     } finally {
       setUploading(false);
     }
@@ -596,7 +596,7 @@ function BannerForm({
       onSaved();
       onClose();
     } catch (error: any) {
-      setError(error?.response?.data?.message || error?.message || 'Erro ao salvar banner.');
+      setError(error?.response?.data?.message || error?.message || 'Não foi possível salvar o banner.');
     } finally {
       setSaving(false);
     }
@@ -877,7 +877,7 @@ export function BannersScreen() {
       const bannerList = await bannersService.getBanners();
       setBanners(bannerList);
     } catch (error: any) {
-      setError(error?.response?.data?.message || error?.message || 'Erro ao carregar banners.');
+      setError(error?.response?.data?.message || error?.message || 'Não foi possível carregar os banners.');
     } finally {
       setLoading(false);
     }
@@ -891,7 +891,7 @@ export function BannersScreen() {
       const categoryList = await productsService.getActiveCategories();
       setCategories(categoryList);
     } catch (error: any) {
-      setError(error?.response?.data?.message || error?.message || 'Erro ao carregar categorias.');
+      setError(error?.response?.data?.message || error?.message || 'Não foi possível carregar as categorias.');
     } finally {
       setCategoriesLoading(false);
     }

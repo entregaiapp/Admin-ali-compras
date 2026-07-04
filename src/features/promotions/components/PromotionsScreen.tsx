@@ -72,7 +72,7 @@ export function PromotionsScreen() {
       setAllStoreProducts(Array.isArray(data) ? data : data?.data || []);
     } catch (error) {
       console.error('Error fetching available products:', error);
-      showSystemNotice('Erro ao buscar produtos da loja');
+      showSystemNotice('Não foi possível buscar os produtos da loja.');
     } finally {
       setSearchingAvailableProducts(false);
     }
@@ -127,7 +127,7 @@ export function PromotionsScreen() {
       setShowAddPromo(false);
     } catch (error) {
       console.error('Error updating promotion price:', error);
-      showSystemNotice('Erro ao atualizar preço promocional');
+      showSystemNotice('Não foi possível atualizar o preço promocional.');
     } finally {
       setSaving(false);
     }
@@ -147,7 +147,7 @@ export function PromotionsScreen() {
       fetchProducts(search);
     } catch (error) {
       console.error('Error removing promotion:', error);
-      showSystemNotice('Erro ao remover promoção');
+      showSystemNotice('Não foi possível remover a promoção.');
     }
   };
 

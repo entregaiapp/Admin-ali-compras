@@ -65,7 +65,7 @@ export function ProductCsvImportScreen() {
       showSystemNotice("Importação concluída.");
     } catch (error: any) {
       console.error("Error importing store products CSV", error);
-      showSystemNotice(error.response?.data?.message || "Erro ao importar CSV.");
+      showSystemNotice(error.response?.data?.message || "Não foi possível importar o arquivo.");
     } finally {
       setLoading(false);
     }
@@ -78,7 +78,7 @@ export function ProductCsvImportScreen() {
           <div>
             <h1 className="text-xl font-semibold text-gray-900">Importar produtos por CSV</h1>
             <p className="mt-1 text-sm text-gray-500">
-              Vincule produtos globais à loja usando slug e preço. Produtos por peso aceitam colunas opcionais de mínimo e incremento.
+              Vincule produtos à loja usando a identificação e o preço. Produtos por peso aceitam colunas opcionais de mínimo e incremento.
             </p>
           </div>
           <button
@@ -222,7 +222,7 @@ export function ProductCsvImportScreen() {
                     <thead className="sticky top-0 bg-gray-50">
                       <tr>
                         <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Linha</th>
-                        <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Slug</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Identificação</th>
                         <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-gray-500">Motivo</th>
                       </tr>
                     </thead>

@@ -135,7 +135,7 @@ function UserForm({ user, onClose, onSuccess }: { user?: any; onClose: () => voi
       onClose();
     } catch (err) {
       console.error(err);
-      showSystemNotice('Erro ao salvar usuário. Verifique os campos.');
+      showSystemNotice('Não foi possível salvar o usuário. Verifique os campos.');
     } finally {
       setLoading(false);
     }

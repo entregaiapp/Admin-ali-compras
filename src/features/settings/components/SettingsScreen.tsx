@@ -370,7 +370,7 @@ export function SettingsScreen() {
       setTimeout(() => setSaved(false), 2500);
     } catch (err: any) {
       console.error("Erro ao salvar:", err);
-      setError("Erro ao salvar as configurações");
+      setError("Não foi possível salvar as configurações.");
       setIsSaving(false);
     }
   };
@@ -431,7 +431,7 @@ export function SettingsScreen() {
       await api.patch(`/payment-gateways/${lojaId}/selected`, { gateway });
       await checkGatewayConnections();
     } catch (err: any) {
-      setError(err.response?.data?.error?.message || "Conecte o gateway antes de ativá-lo.");
+      setError(err.response?.data?.error?.message || "Conecte o meio de pagamento antes de ativá-lo.");
     } finally {
       setLoadingMp(false);
     }
@@ -450,7 +450,7 @@ export function SettingsScreen() {
       city: pagarmeRecipientForm.address_city,
       state: pagarmeRecipientForm.address_state,
       zip_code: String(pagarmeRecipientForm.address_zip_code || "").replace(/\D/g, ""),
-      reference_point: pagarmeRecipientForm.address_reference || "Nao informado",
+      reference_point: pagarmeRecipientForm.address_reference || "Não informado",
     };
     const phone = {
       ddd: String(pagarmeRecipientForm.phone_ddd || "").replace(/\D/g, ""),
@@ -615,7 +615,7 @@ export function SettingsScreen() {
       setTimeout(() => setShowSuccess(false), 1500);
     } catch (err) {
       console.error("Erro ao salvar área de entrega:", err);
-      showSystemNotice("Erro ao salvar área de entrega");
+      showSystemNotice("Não foi possível salvar a área de entrega.");
     } finally {
       setIsSaving(false);
     }
@@ -631,7 +631,7 @@ export function SettingsScreen() {
       loadAreasEntrega();
     } catch (err) {
       console.error("Erro ao excluir área de entrega:", err);
-      showSystemNotice("Erro ao excluir área de entrega");
+      showSystemNotice("Não foi possível excluir a área de entrega.");
     } finally {
       setLoadingAreas(false);
     }
@@ -1248,7 +1248,7 @@ export function SettingsScreen() {
                     );
                   })}
                 </div>
-                <p className="mt-2 text-xs text-gray-500">A alteração afeta apenas novos pagamentos. O histórico continua vinculado ao gateway original.</p>
+                <p className="mt-2 text-xs text-gray-500">A alteração afeta apenas novos pagamentos. O histórico continua vinculado ao meio de pagamento original.</p>
               </div>
 
               <div className="mt-8 border-t border-gray-100 pt-6">

@@ -58,7 +58,7 @@ function CouponForm({ coupon, onClose, onSuccess }: { coupon?: any; onClose: () 
       onClose();
     } catch (error: any) {
       console.error('Error saving coupon', error);
-      showSystemNotice(error?.response?.data?.error?.message || 'Erro ao salvar cupom. Verifique os campos.');
+      showSystemNotice(error?.response?.data?.error?.message || 'Não foi possível salvar o cupom. Verifique os campos.');
     } finally {
       setLoading(false);
     }

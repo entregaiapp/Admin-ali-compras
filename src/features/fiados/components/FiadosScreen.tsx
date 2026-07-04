@@ -25,8 +25,8 @@ const firstDayOfMonth = () => {
 const paymentLabels: Record<string, string> = {
   dinheiro: "Dinheiro",
   pix: "PIX",
-  cartao_credito: "Cartao de credito",
-  cartao_debito: "Cartao de debito",
+  cartao_credito: "Cartão de crédito",
+  cartao_debito: "Cartão de débito",
   vale_refeicao: "Vale refeicao",
   vale_alimentacao: "Vale alimentacao",
   outro: "Outro",
@@ -83,7 +83,7 @@ export function FiadosScreen() {
       setDashboard(dashboardPayload);
       setAccounts(accountsPayload);
     } catch (caught: any) {
-      setError(apiError(caught, "Nao foi possivel carregar fiados."));
+      setError(apiError(caught, "Não foi possível carregar os fiados."));
     } finally {
       setLoading(false);
     }
@@ -102,7 +102,7 @@ export function FiadosScreen() {
       setDetails(payload);
       setReceipt((current) => ({ ...current, valor: String(payload?.resumo?.saldo_aberto || "") }));
     } catch (caught: any) {
-      setError(apiError(caught, "Nao foi possivel carregar detalhes."));
+      setError(apiError(caught, "Não foi possível carregar os detalhes."));
     } finally {
       setDetailsLoading(false);
     }
@@ -205,7 +205,7 @@ export function FiadosScreen() {
       await loadDetails(selectedAccount);
       setReceipt({ valor: "", forma_pagamento: "dinheiro", observacao: "" });
     } catch (caught: any) {
-      setError(apiError(caught, "Nao foi possivel registrar o recebimento."));
+      setError(apiError(caught, "Não foi possível registrar o recebimento."));
     } finally {
       setReceiving(false);
     }
@@ -384,7 +384,7 @@ export function FiadosScreen() {
                   </label>
                 </div>
                 <label className="mt-2 block text-sm font-semibold text-slate-700">
-                  Observacao
+                  Observação
                   <input value={receipt.observacao} onChange={(event) => setReceipt((current) => ({ ...current, observacao: event.target.value }))} className="mt-1 h-10 w-full rounded-lg border px-3" />
                 </label>
                 <div className="mt-3 flex items-center justify-between gap-3">

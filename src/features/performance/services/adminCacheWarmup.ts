@@ -34,12 +34,12 @@ const isBrowser = () => typeof window !== 'undefined';
 
 const getDatabase = () => new Promise<IDBDatabase>((resolve, reject) => {
   if (!isBrowser() || !('indexedDB' in window)) {
-    reject(new Error('O IndexedDB não é suportado neste navegador.'));
+    reject(new Error('Este navegador não permite preparar os dados para uso rápido.'));
     return;
   }
 
   const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
-  request.onerror = () => reject(request.error || new Error('Não foi possível abrir o cache local.'));
+  request.onerror = () => reject(request.error || new Error('Não foi possível preparar os dados neste dispositivo.'));
   request.onupgradeneeded = () => {
     const database = request.result;
     if (!database.objectStoreNames.contains(DATA_STORE)) {
@@ -52,13 +52,13 @@ const getDatabase = () => new Promise<IDBDatabase>((resolve, reject) => {
 
 const requestResult = <T,>(request: IDBRequest<T>) => new Promise<T>((resolve, reject) => {
   request.onsuccess = () => resolve(request.result);
-  request.onerror = () => reject(request.error || new Error('Falha ao acessar o cache local.'));
+  request.onerror = () => reject(request.error || new Error('Não foi possível acessar os dados preparados.'));
 });
 
 const completeTransaction = (transaction: IDBTransaction) => new Promise<void>((resolve, reject) => {
   transaction.oncomplete = () => resolve();
-  transaction.onerror = () => reject(transaction.error || new Error('Falha ao salvar no cache local.'));
-  transaction.onabort = () => reject(transaction.error || new Error('Operação de cache cancelada.'));
+  transaction.onerror = () => reject(transaction.error || new Error('Não foi possível salvar os dados neste dispositivo.'));
+  transaction.onabort = () => reject(transaction.error || new Error('Preparação cancelada.'));
 });
 
 const withDataStore = async <T,>(
@@ -224,7 +224,7 @@ export async function warmAdminCache({
   user?: AdminCacheUser | null;
   onProgress: (progress: AdminCacheProgress) => void;
 }): Promise<AdminCacheWarmupResult> {
-  if (!isBrowser()) throw new Error('O cache local só está disponível no navegador.');
+  if (!isBrowser()) throw new Error('Este recurso só está disponível no navegador.');
 
   const scope = getAdminCacheScope(user);
   const lojaId = user?.loja_id;
@@ -354,7 +354,7 @@ export async function warmAdminCache({
     .map(toAbsoluteImageUrl)
     .filter((url): url is string => Boolean(url));
 
-  onProgress({ progress: 75, message: imageUrls.length ? 'Salvando imagens do catálogo' : 'Finalizando cache local' });
+  onProgress({ progress: 75, message: imageUrls.length ? 'Salvando imagens do catálogo' : 'Finalizando preparação' });
   const cachedImages = await cacheImages(scope, imageUrls, (completed, total) => {
     const progress = 75 + Math.round((completed / total) * 25);
     onProgress({

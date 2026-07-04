@@ -24,7 +24,7 @@ const mergeUniqueProducts = (current: any[], next: any[]) => {
   return [...current, ...next.filter((product) => !known.has(product.id))];
 };
 const apiError = (error: any) =>
-  error?.response?.data?.error?.message || error?.response?.data?.message || "Nao foi possivel concluir a operacao.";
+  error?.response?.data?.error?.message || error?.response?.data?.message || "Não foi possível concluir. Tente novamente.";
 const money = (value: any) => Number(value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const effectivePrice = (item: any) => {
   if (item?.preco_app_taxa_ativa) {
@@ -35,7 +35,7 @@ const effectivePrice = (item: any) => {
 const productPriceLabel = (product: any) => {
   const price = effectivePrice(product);
   if (!Number.isFinite(price) || price <= 0) {
-    return product?.modo_compra === "configuravel" ? "Preco na configuracao" : "Sem preco";
+    return product?.modo_compra === "configuravel" ? "Preço na configuração" : "Sem preço";
   }
   return product?.modo_compra === "configuravel" ? `A partir de ${money(price)}` : money(price);
 };
@@ -55,8 +55,8 @@ const hexToRgba = (hex: string, alpha: number) => {
 };
 const PAYMENT_METHODS = [
   { value: "pix", label: "Pix" },
-  { value: "cartao_credito", label: "Cartao de credito" },
-  { value: "cartao_debito", label: "Cartao de debito" },
+  { value: "cartao_credito", label: "Cartão de crédito" },
+  { value: "cartao_debito", label: "Cartão de débito" },
   { value: "dinheiro", label: "Dinheiro" },
 ];
 const makeLineId = () =>
@@ -122,7 +122,7 @@ export function AddOrderItemsModal({
         setCatalogTotalPages(payload.totalPages);
       })
       .catch(() => {
-        if (!cancelled) setError("Nao foi possivel carregar o catalogo.");
+        if (!cancelled) setError("Não foi possível carregar os produtos.");
       })
       .finally(() => {
         if (!cancelled) setCatalogLoading(false);
@@ -159,7 +159,7 @@ export function AddOrderItemsModal({
       setCatalogTotal(payload.total);
       setCatalogTotalPages(payload.totalPages);
     } catch {
-      setError("Nao foi possivel carregar mais produtos.");
+      setError("Não foi possível carregar mais produtos.");
     } finally {
       setCatalogLoadingMore(false);
     }
@@ -280,7 +280,7 @@ export function AddOrderItemsModal({
       selecoes: selectedOptions,
       observacoes: configurationNotes.trim() || undefined,
       nome: product.nome,
-      detalhe: [variation?.nome, selectedOptions.length ? `${selectedOptions.length} opcoes` : ""].filter(Boolean).join(" - "),
+      detalhe: [variation?.nome, selectedOptions.length ? `${selectedOptions.length} opções` : ""].filter(Boolean).join(" - "),
     }]);
     setConfiguring(null);
     setSelectedOptions([]);
@@ -418,7 +418,7 @@ export function AddOrderItemsModal({
               </section>
               {isPaid && (
                 <section className="rounded-xl border bg-white p-4">
-                  <h3 className="flex items-center gap-2 font-bold text-slate-900"><CreditCard className="h-4 w-4" /> Pagamento da diferenca</h3>
+                  <h3 className="flex items-center gap-2 font-bold text-slate-900"><CreditCard className="h-4 w-4" /> Pagamento da diferença</h3>
                   <div className="mt-3 grid gap-2">
                     {PAYMENT_METHODS.map((method) => {
                       const selected = paymentMethod === method.value;
@@ -430,7 +430,7 @@ export function AddOrderItemsModal({
                       );
                     })}
                   </div>
-                  <input value={paymentObservation} onChange={(event) => setPaymentObservation(event.target.value)} className="mt-3 w-full rounded-lg border p-2 text-sm" placeholder="Observacao do pagamento" />
+                  <input value={paymentObservation} onChange={(event) => setPaymentObservation(event.target.value)} className="mt-3 w-full rounded-lg border p-2 text-sm" placeholder="Observação do pagamento" />
                 </section>
               )}
             </aside>
@@ -450,13 +450,13 @@ export function AddOrderItemsModal({
             <div className="flex justify-between border-b pb-4">
               <div>
                 <h3 className="text-lg font-bold">Configurar {configuring.produto?.nome}</h3>
-                <p className="text-sm text-slate-500">Selecione variacao e opcoes obrigatorias.</p>
+                <p className="text-sm text-slate-500">Selecione a variação e as opções obrigatórias.</p>
               </div>
               <button onClick={() => setConfiguring(null)}><X /></button>
             </div>
             {(configuring.variacoes || []).length > 0 && (
               <div className="mt-5">
-                <p className="mb-2 text-sm font-bold">Variacao</p>
+                <p className="mb-2 text-sm font-bold">Variação</p>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {(configuring.variacoes || []).map((variation: any) => {
                     const selected = selectedVariation === variation.id;
@@ -483,7 +483,7 @@ export function AddOrderItemsModal({
                     <p className="font-bold">{group.nome}</p>
                     <span className={`rounded-full px-2 py-0.5 text-xs ${count >= limits.minimum ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{count}/{limits.maximum}</span>
                   </div>
-                  <p className="mb-2 text-xs text-slate-500">Escolha de {limits.minimum} ate {limits.maximum}</p>
+                  <p className="mb-2 text-xs text-slate-500">Escolha de {limits.minimum} até {limits.maximum}</p>
                   {searchable && (
                     <div className="relative mb-3">
                       <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
@@ -531,7 +531,7 @@ export function AddOrderItemsModal({
               );
             })}
             <label className="mt-5 block text-sm font-semibold text-slate-700">
-              Observacao do item
+              Observação do item
               <textarea value={configurationNotes} onChange={(event) => setConfigurationNotes(event.target.value)} maxLength={500} className="mt-1 min-h-20 w-full resize-y rounded-xl border p-3 font-normal outline-none" />
             </label>
             <div className="mt-6 flex justify-end gap-2 border-t pt-4">

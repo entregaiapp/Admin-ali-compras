@@ -145,7 +145,7 @@ export function PaymentsScreen() {
     }
 
     if (/refund failed/i.test(message)) {
-      return 'Não foi possível realizar o reembolso no gateway. Verifique o saldo disponível.';
+      return 'Não foi possível fazer o reembolso pelo meio de pagamento. Verifique o saldo disponível.';
     }
 
     return message;

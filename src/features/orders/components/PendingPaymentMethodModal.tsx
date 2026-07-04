@@ -4,11 +4,11 @@ import api from "@/shared/lib/api";
 
 const unwrap = (response: any) => response?.data?.data ?? response?.data;
 const apiError = (error: any) =>
-  error?.response?.data?.error?.message || error?.response?.data?.message || "Nao foi possivel concluir a operacao.";
+  error?.response?.data?.error?.message || error?.response?.data?.message || "Não foi possível concluir. Tente novamente.";
 const PAYMENT_METHODS = [
   { value: "pix", label: "Pix" },
-  { value: "cartao_credito", label: "Cartao de credito" },
-  { value: "cartao_debito", label: "Cartao de debito" },
+  { value: "cartao_credito", label: "Cartão de crédito" },
+  { value: "cartao_debito", label: "Cartão de débito" },
   { value: "dinheiro", label: "Dinheiro" },
 ];
 
@@ -85,14 +85,14 @@ export function PendingPaymentMethodModal({
             <div className="rounded-xl border bg-slate-50 p-3">
               <label className="flex cursor-pointer items-center gap-2 text-sm">
                 <input type="checkbox" checked={semTroco} onChange={(event) => setSemTroco(event.target.checked)} />
-                Nao precisa de troco
+                Não precisa de troco
               </label>
               {!semTroco && (
                 <input value={trocoPara} onChange={(event) => setTrocoPara(event.target.value)} inputMode="decimal" placeholder="Troco para" className="mt-3 w-full rounded-lg border p-2 text-sm" />
               )}
             </div>
           )}
-          <textarea value={observacao} onChange={(event) => setObservacao(event.target.value)} maxLength={500} placeholder="Observacao" className="min-h-20 w-full resize-y rounded-xl border p-3 text-sm" />
+          <textarea value={observacao} onChange={(event) => setObservacao(event.target.value)} maxLength={500} placeholder="Observação" className="min-h-20 w-full resize-y rounded-xl border p-3 text-sm" />
         </main>
         <footer className="flex justify-end gap-2 border-t px-5 py-4">
           <button onClick={onClose} className="rounded-lg border px-4 py-2 text-sm font-semibold text-slate-700">Cancelar</button>

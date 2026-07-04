@@ -33,7 +33,7 @@ function PermissionForm({ permission, onClose, onSuccess }: { permission?: Permi
       onClose();
     } catch (err) {
       console.error(err);
-      showSystemNotice('Erro ao salvar permissão. Verifique se o slug é único.');
+      showSystemNotice('Não foi possível salvar a permissão. Verifique se a identificação não está repetida.');
     } finally {
       setLoading(false);
     }
@@ -57,7 +57,7 @@ function PermissionForm({ permission, onClose, onSuccess }: { permission?: Permi
             />
           </div>
           <div>
-            <label className="block text-sm text-gray-600 mb-1.5">Slug (Identificador Único) *</label>
+            <label className="block text-sm text-gray-600 mb-1.5">Identificação *</label>
             <input 
               value={slug} 
               onChange={e => setSlug(e.target.value)} 
@@ -65,7 +65,7 @@ function PermissionForm({ permission, onClose, onSuccess }: { permission?: Permi
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 disabled:opacity-70 focus:outline-none focus:ring-1" 
               placeholder="Ex: pedidos" 
             />
-            {!permission && <p className="text-[10px] text-gray-400 mt-1">Este slug deve ser usado no backend para checar a permissão.</p>}
+            {!permission && <p className="text-[10px] text-gray-400 mt-1">Use uma identificação curta e sem repetir.</p>}
           </div>
           <div>
             <label className="block text-sm text-gray-600 mb-1.5">Descrição</label>
@@ -117,7 +117,7 @@ export function SystemPermissionsScreen() {
       fetchPermissions();
     } catch (err) {
       console.error(err);
-      showSystemNotice('Erro ao excluir permissão.');
+      showSystemNotice('Não foi possível excluir a permissão.');
     }
   };
 
@@ -163,7 +163,7 @@ export function SystemPermissionsScreen() {
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Permissão</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Slug</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Identificação</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider hidden md:table-cell">Descrição</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Ações</th>
               </tr>

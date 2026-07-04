@@ -78,7 +78,7 @@ const getCashChangeLines = (order: any, payment: any, total: unknown) => {
   if (!isCashPayment || paymentOnDeliveryMethod === "cartao") return "";
 
   if (activePayment?.sem_troco === true || order?.pagamento?.sem_troco === true) {
-    return '<p class="cash-change"><span class="bold">Troco:</span> Nao precisa de troco</p>';
+    return '<p class="cash-change"><span class="bold">Troco:</span> Não precisa de troco</p>';
   }
 
   const changeFor = firstPresent(

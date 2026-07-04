@@ -1264,7 +1264,7 @@ export function OrdersScreen() {
       showSystemNotice(
         getApiErrorMessage(
           error,
-          "Erro ao atribuir entregador. Verifique os dados e tente novamente.",
+          "Não foi possível atribuir o entregador. Verifique os dados e tente novamente.",
         ),
       );
     } finally {
@@ -1309,7 +1309,7 @@ export function OrdersScreen() {
       showSystemNotice(
         getApiErrorMessage(
           error,
-          "Erro ao desvincular entregador. Verifique se a entrega ainda pode ser alterada.",
+          "Não foi possível remover o entregador. Verifique se a entrega ainda pode ser alterada.",
         ),
       );
     } finally {
@@ -1470,7 +1470,7 @@ export function OrdersScreen() {
         showSystemNotice(
           getApiErrorMessage(
             error,
-            "Erro ao atualizar status. Verifique se as condições para este status foram atendidas (ex: entregador atribuído).",
+            "Não foi possível atualizar o pedido. Verifique se o entregador foi atribuído quando necessário.",
           ),
         );
       } finally {
@@ -1683,7 +1683,7 @@ export function OrdersScreen() {
     } catch (error) {
       console.error("Error canceling order", error);
       showSystemNotice(
-        getApiErrorMessage(error, "Erro ao cancelar pedido. Tente novamente."),
+        getApiErrorMessage(error, "Não foi possível cancelar o pedido. Tente novamente."),
       );
     } finally {
       setCancellingOrderId((currentId) => (currentId === id ? "" : currentId));
@@ -1998,8 +1998,8 @@ export function OrdersScreen() {
         getApiErrorMessage(
           error,
           shouldRestore
-            ? "Erro ao restaurar pedido. Tente novamente."
-            : "Erro ao arquivar pedido. Tente novamente.",
+            ? "Não foi possível restaurar o pedido. Tente novamente."
+            : "Não foi possível arquivar o pedido. Tente novamente.",
         ),
       );
     } finally {
@@ -2549,7 +2549,7 @@ export function OrdersScreen() {
       showSystemNotice(
         getApiErrorMessage(
           err,
-          "Erro ao atualizar a entrega. Verifique os dados e tente novamente.",
+          "Não foi possível atualizar a entrega. Verifique os dados e tente novamente.",
         ),
       );
     } finally {
