@@ -7,6 +7,7 @@ import {
   Save,
   Bell,
   Link as LinkIcon,
+  Copy,
   CheckCircle,
   XCircle,
   MapPin,
@@ -24,16 +25,6 @@ import { SecurityMfaPanel } from './SecurityMfaPanel';
 
 const PRIMARY = "#122a4c";
 const TENANT_ROOT_DOMAIN = import.meta.env.VITE_TENANT_ROOT_DOMAIN || "entregaiapp.com.br";
-const RESERVED_SUBDOMAINS = new Set(["admin", "app", "api", "www", "dashboard", "login"]);
-const SUBDOMAIN_REGEX = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
-
-function validateSubdomain(value: string) {
-  if (!value.trim()) return "Informe o subdomínio da loja.";
-  if (value !== value.trim() || /\s/.test(value)) return "O subdomínio não pode ter espaços.";
-  if (!SUBDOMAIN_REGEX.test(value)) return "Use apenas letras minúsculas, números e hífen no subdomínio.";
-  if (RESERVED_SUBDOMAINS.has(value)) return "Este subdomínio é reservado.";
-  return "";
-}
 
 const emptyPagarmeRecipientForm = {
   type: "individual",
@@ -328,15 +319,8 @@ export function SettingsScreen() {
       setIsSaving(true);
       setShowSuccess(false);
       setError("");
-      const subdomainError = validateSubdomain(formData.subdomain || "");
-      if (subdomainError) {
-        setError(subdomainError);
-        setIsSaving(false);
-        return;
-      }
       const storeData = {
         nome: formData.nome,
-        subdomain: formData.subdomain,
         razao_social: formData.razao_social,
         cnpj: formData.cnpj,
         telefone: formData.telefone,
@@ -598,6 +582,23 @@ export function SettingsScreen() {
     formData.imagem_url ||
     formData.logo_url ||
     "";
+  const publicStoreUrl = formData.subdomain
+    ? `https://${formData.subdomain}.${TENANT_ROOT_DOMAIN}`
+    : "";
+
+  const copyPublicStoreUrl = async () => {
+    if (!publicStoreUrl) {
+      showSystemNotice("A loja ainda não possui subdomínio público configurado.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(publicStoreUrl);
+      showSystemNotice("Link público copiado.");
+    } catch {
+      showSystemNotice("Não foi possível copiar o link público.");
+    }
+  };
 
   const handleSaveArea = async () => {
     if (!newArea.nome || !newArea.cidade || !newArea.estado) {
@@ -774,19 +775,26 @@ export function SettingsScreen() {
                   <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
                     Subdomínio público
                   </label>
-                  <div className="flex flex-col gap-1">
-                    <div className="relative">
-                      <LinkIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-                      <input
-                        name="subdomain"
-                        value={formData.subdomain || ""}
-                        onChange={handleInputChange}
-                        placeholder="mercadodoleo"
-                        className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-[#122a4c] focus:ring-2 focus:ring-[#122a4c]/10"
-                      />
+                  <div className="flex flex-col gap-2">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                        <LinkIcon className="h-4 w-4 flex-shrink-0 text-gray-400" />
+                        <span className="truncate text-sm font-medium text-gray-800">
+                          {publicStoreUrl || "Não configurado"}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={copyPublicStoreUrl}
+                        disabled={!publicStoreUrl}
+                        className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-[#122a4c] transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Copy className="h-4 w-4" />
+                        Copiar link
+                      </button>
                     </div>
                     <p className="text-xs text-gray-500">
-                      {formData.subdomain ? `https://${formData.subdomain}.${TENANT_ROOT_DOMAIN}` : `https://subdominio.${TENANT_ROOT_DOMAIN}`}
+                      A edição do subdomínio é feita pelo superadmin.
                     </p>
                   </div>
                 </div>

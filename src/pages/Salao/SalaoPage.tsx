@@ -66,6 +66,11 @@ const SALAO_STATUS_STYLES: Record<
     badge: "border-emerald-300 bg-emerald-100 text-emerald-900",
     card: "border-emerald-200 bg-emerald-50",
   },
+  cancelada: {
+    label: "Cancelada",
+    badge: "border-rose-300 bg-rose-100 text-rose-900",
+    card: "border-rose-300 bg-rose-50",
+  },
   rascunho: {
     label: "Rascunho",
     badge: "border-slate-300 bg-slate-100 text-slate-700",
@@ -288,6 +293,7 @@ export function SalaoPage() {
   const [realtimeMesaId, setRealtimeMesaId] = useState("");
   const [qrDownloadMesa, setQrDownloadMesa] = useState<any | null>(null);
   const [deleteMesaTarget, setDeleteMesaTarget] = useState<any | null>(null);
+  const [closeMesaTarget, setCloseMesaTarget] = useState<any | null>(null);
   const [paymentTarget, setPaymentTarget] = useState<any | null>(null);
   const [paymentMethod, setPaymentMethod] = useState("dinheiro");
   const loadingRef = useRef(false);
@@ -846,22 +852,42 @@ export function SalaoPage() {
   const closeAccount = async (comanda: any) => {
     setActionBusy(`close-${comanda.id}`);
     try {
-      await salaoService.closeAccount(comanda.id, {
+      const result = await salaoService.closeAccount(comanda.id, {
         tipo: "compartilhada",
         percentual_taxa_servico: 0,
       });
-      const detail = await salaoService.getComanda(comanda.id);
-      setSelectedComanda(detail);
-      await load();
+      showSystemNotice(
+        result?.contas?.length
+          ? "Mesa fechada. Novos pedidos foram bloqueados e o PIN anterior foi invalidado."
+          : "Mesa fechada e liberada. O PIN anterior foi invalidado.",
+      );
+      if (result?.mesa_liberada) {
+        setSelectedComanda(null);
+      } else {
+        const detail = await salaoService.getComanda(comanda.id);
+        setSelectedComanda(detail);
+      }
+      setCloseMesaTarget(null);
+      await load({ manual: true });
     } catch (error: any) {
       showSystemNotice(
         error?.response?.data?.message ||
           error?.message ||
-          "Não foi possível fechar a conta.",
+          "Não foi possível fechar a mesa.",
       );
     } finally {
       setActionBusy("");
     }
+  };
+
+  const closeMesa = async (mesa: any) => {
+    const comanda = mesa?.comanda_aberta || mesa;
+    if (!comanda?.id) {
+      setCloseMesaTarget(null);
+      showSystemNotice("Esta mesa não possui comanda aberta para fechar.");
+      return;
+    }
+    await closeAccount(comanda);
   };
 
   const removeItemFromComanda = async (item: any) => {
@@ -1105,7 +1131,7 @@ export function SalaoPage() {
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-lg font-semibold text-gray-900 sm:text-xl">
-              Salao
+              Salão
             </h1>
             <p className="text-xs text-gray-500 sm:text-sm">
               Mesas, comandas, atendimento e cozinha.
@@ -1162,7 +1188,7 @@ export function SalaoPage() {
               />
               <button
                 onClick={() => void createMesa()}
-                disabled={creatingTable}
+                disabled={creatingTable || !newTableNumber.trim()}
                 className="inline-flex min-h-12 items-center gap-2 rounded-xl px-4 text-sm font-semibold text-white disabled:opacity-60"
                 style={{ backgroundColor: PRIMARY }}
               >
@@ -1223,9 +1249,25 @@ export function SalaoPage() {
                     )}
                     {mesa.comanda_aberta && (
                       <div
-                        className={`mt-3 rounded-md px-3 py-2 text-xs text-gray-700 ${pendingAction ? "bg-white/60" : "bg-gray-50"}`}
+                        className={`mt-3 space-y-2 rounded-md px-3 py-2 text-xs text-gray-700 ${pendingAction ? "bg-white/60" : "bg-gray-50"}`}
                       >
                         <div>R$ {formatMoney(mesa.comanda_aberta.total)}</div>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setCloseMesaTarget(mesa);
+                          }}
+                          disabled={actionBusy === `close-${mesa.comanda_aberta.id}`}
+                          className="inline-flex min-h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-[#122a4c] px-2 py-1 text-xs font-bold text-white disabled:opacity-60"
+                        >
+                          {actionBusy === `close-${mesa.comanda_aberta.id}` ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Receipt className="h-3.5 w-3.5" />
+                          )}
+                          Fechar mesa
+                        </button>
                       </div>
                     )}
                     {!mesa.comanda_aberta && (
@@ -1654,8 +1696,7 @@ export function SalaoPage() {
                         <button
                           onClick={() => void closeAccount(selectedComanda)}
                           disabled={
-                            (selectedComanda.itens || []).length === 0 ||
-                            selectedComanda.status === "fechada" ||
+                            ["fechada", "paga", "cancelada"].includes(selectedComanda.status) ||
                             actionBusy === `close-${selectedComanda.id}`
                           }
                           className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-white disabled:opacity-50 sm:min-h-12 sm:px-4 sm:text-sm"
@@ -1667,8 +1708,8 @@ export function SalaoPage() {
                             <Receipt className="h-4 w-4" />
                           )}
                           {actionBusy === `close-${selectedComanda.id}`
-                            ? "Finalizando conta..."
-                            : "Fechar conta compartilhada"}
+                            ? "Fechando mesa..."
+                            : "Fechar mesa"}
                         </button>
                         {["fechada", "aguardando_conta"].includes(
                           selectedComanda.status,
@@ -1804,7 +1845,7 @@ export function SalaoPage() {
                           ? "Adicionando..."
                           : selectedComanda.status === "aguardando_conta"
                             ? "Adicionar pelo admin"
-                            : "Adicionar a mesa"}
+                            : "Adicionar à mesa"}
                       </button>
                     </div>
                   </div>
@@ -1965,6 +2006,49 @@ export function SalaoPage() {
                   <Loader2 className="h-4 w-4 animate-spin" />
                 )}
                 Confirmar pagamento
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {closeMesaTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
+                <Receipt className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-extrabold text-slate-950">
+                  Fechar mesa {closeMesaTarget.numero || closeMesaTarget.mesa?.numero}
+                </h2>
+                <p className="mt-2 text-sm text-slate-600">
+                  Ao fechar a mesa, os clientes não poderão fazer novos pedidos nela. O PIN atual será invalidado imediatamente.
+                </p>
+                <p className="mt-2 text-sm font-semibold text-slate-900">
+                  {closeMesaTarget.comanda_aberta?.total || closeMesaTarget.total
+                    ? `Total atual: R$ ${formatMoney(closeMesaTarget.comanda_aberta?.total || closeMesaTarget.total)}`
+                    : "Se não houver itens, a mesa será liberada."}
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 grid gap-2 sm:grid-cols-2">
+              <button
+                onClick={() => setCloseMesaTarget(null)}
+                disabled={Boolean(actionBusy)}
+                className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700 disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => void closeMesa(closeMesaTarget)}
+                disabled={Boolean(actionBusy)}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#122a4c] px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+              >
+                {actionBusy === `close-${closeMesaTarget.comanda_aberta?.id || closeMesaTarget.id}` && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                Fechar mesa
               </button>
             </div>
           </div>
