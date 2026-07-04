@@ -300,6 +300,8 @@ const isPendingCardPaymentForDelivery = (order: any, payments: any[] = []) => {
   );
 };
 const hasPendingPaymentForDisplay = (order: any, payments: any[] = []) => {
+  if (isOrderPaid(order, payments)) return false;
+
   const payment = getPreferredOrderPayment(order, payments);
   return (
     normalizePaymentText(getOrderPaymentStatus(order, payment)) === "pendente" ||
@@ -2103,7 +2105,8 @@ export function OrdersScreen() {
   const selectedPayment = getPreferredOrderPayment(selected, selectedPayments);
   const selectedIsPaid = isOrderPaid(selected, selectedPayments);
   const selectedIsFiado = isFiadoOrder(selected, selectedPayments);
-  const selectedIsPendingCash = isOrderPendingCash(selected, selectedPayments);
+  const selectedIsPendingCash =
+    !selectedIsPaid && isOrderPendingCash(selected, selectedPayments);
   const selectedRefundedAmount = selectedRefunds
     .filter((refund) =>
       REFUND_ACTIVE_STATUSES.has(String(refund.status || "").toLowerCase()),
