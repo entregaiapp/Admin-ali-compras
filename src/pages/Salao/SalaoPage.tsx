@@ -168,6 +168,15 @@ const resolveClientBaseUrl = () => {
 };
 
 const CLIENT_BASE_URL = resolveClientBaseUrl();
+const TENANT_ROOT_DOMAIN = (import.meta.env.VITE_TENANT_ROOT_DOMAIN || "entregaiapp.com.br").replace(/^\*\./, "").replace(/\/$/, "");
+
+const buildMesaQrPublicUrl = (loja: any, lojaId: string, qrToken: string) => {
+  if (loja?.subdomain) {
+    return `https://${loja.subdomain}.${TENANT_ROOT_DOMAIN}/mesa/${qrToken}`;
+  }
+
+  return `${CLIENT_BASE_URL}/mercado/${lojaId}/mesa/${qrToken}`;
+};
 
 const getUser = () => {
   try {
@@ -637,8 +646,8 @@ export function SalaoPage() {
       const result = generateNew
         ? await salaoService.rotateMesaQr(mesa.id)
         : await salaoService.getMesaQr(mesa.id);
-      const url = `${CLIENT_BASE_URL}/mercado/${mesa.loja_id}/mesa/${result.qr_token}`;
       const loja = await loadCurrentStore();
+      const url = buildMesaQrPublicUrl(loja, mesa.loja_id, result.qr_token);
       const dataUrl = await generateMesaQrImage({
         mesa,
         loja,
@@ -678,8 +687,8 @@ export function SalaoPage() {
     setActionBusy(`print-qr-${mesa.id}`);
     try {
       const result = await salaoService.getMesaQr(mesa.id);
-      const url = `${CLIENT_BASE_URL}/mercado/${mesa.loja_id}/mesa/${result.qr_token}`;
       const loja = await loadCurrentStore();
+      const url = buildMesaQrPublicUrl(loja, mesa.loja_id, result.qr_token);
       const dataUrl = await generateMesaQrImage({
         mesa,
         loja,

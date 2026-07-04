@@ -23,6 +23,18 @@ import { getApiList } from '@/shared/utils/apiData';
 import { SecurityMfaPanel } from './SecurityMfaPanel';
 
 const PRIMARY = "#122a4c";
+const TENANT_ROOT_DOMAIN = import.meta.env.VITE_TENANT_ROOT_DOMAIN || "entregaiapp.com.br";
+const RESERVED_SUBDOMAINS = new Set(["admin", "app", "api", "www", "dashboard", "login"]);
+const SUBDOMAIN_REGEX = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
+
+function validateSubdomain(value: string) {
+  if (!value.trim()) return "Informe o subdomínio da loja.";
+  if (value !== value.trim() || /\s/.test(value)) return "O subdomínio não pode ter espaços.";
+  if (!SUBDOMAIN_REGEX.test(value)) return "Use apenas letras minúsculas, números e hífen no subdomínio.";
+  if (RESERVED_SUBDOMAINS.has(value)) return "Este subdomínio é reservado.";
+  return "";
+}
+
 const emptyPagarmeRecipientForm = {
   type: "individual",
   name: "",
@@ -118,6 +130,7 @@ export function SettingsScreen() {
     nome: "",
     cnpj: "",
     razao_social: "",
+    subdomain: "",
     telefone: "",
     email: "",
     descricao: "",
@@ -240,6 +253,7 @@ export function SettingsScreen() {
         ...config,
         configId: config.id || null,
         razao_social: store.razao_social || "",
+        subdomain: store.subdomain || "",
         telefone: store.telefone || "",
         email: store.email || "",
         descricao: store.descricao || "",
@@ -314,8 +328,15 @@ export function SettingsScreen() {
       setIsSaving(true);
       setShowSuccess(false);
       setError("");
+      const subdomainError = validateSubdomain(formData.subdomain || "");
+      if (subdomainError) {
+        setError(subdomainError);
+        setIsSaving(false);
+        return;
+      }
       const storeData = {
         nome: formData.nome,
+        subdomain: formData.subdomain,
         razao_social: formData.razao_social,
         cnpj: formData.cnpj,
         telefone: formData.telefone,
@@ -370,7 +391,8 @@ export function SettingsScreen() {
       setTimeout(() => setSaved(false), 2500);
     } catch (err: any) {
       console.error("Erro ao salvar:", err);
-      setError("Não foi possível salvar as configurações.");
+      const apiMessage = err?.response?.data?.message || err?.response?.data?.error?.message || err?.response?.data?.error;
+      setError(typeof apiMessage === "string" ? apiMessage : "Não foi possível salvar as configurações.");
       setIsSaving(false);
     }
   };
@@ -746,6 +768,26 @@ export function SettingsScreen() {
                   </label>
                   <div className="text-sm font-medium text-gray-800">
                     {formData.cnpj || "Não informado"}
+                  </div>
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">
+                    Subdomínio público
+                  </label>
+                  <div className="flex flex-col gap-1">
+                    <div className="relative">
+                      <LinkIcon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                      <input
+                        name="subdomain"
+                        value={formData.subdomain || ""}
+                        onChange={handleInputChange}
+                        placeholder="mercadodoleo"
+                        className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm outline-none focus:border-[#122a4c] focus:ring-2 focus:ring-[#122a4c]/10"
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      {formData.subdomain ? `https://${formData.subdomain}.${TENANT_ROOT_DOMAIN}` : `https://subdominio.${TENANT_ROOT_DOMAIN}`}
+                    </p>
                   </div>
                 </div>
                 <div>
