@@ -30,6 +30,12 @@ import { showSystemNotice } from "@/shared/components/SystemNoticeModal";
 import { SalaoProductConfiguratorModal } from "./SalaoProductConfiguratorModal";
 
 const PRIMARY = "#122a4c";
+const SALAO_PAYMENT_METHODS = [
+  { value: "dinheiro", label: "Dinheiro" },
+  { value: "pix", label: "PIX" },
+  { value: "cartao_debito", label: "Cartão de débito" },
+  { value: "cartao_credito", label: "Cartão de crédito" },
+];
 
 const SALAO_STATUS_STYLES: Record<
   string,
@@ -267,6 +273,8 @@ export function SalaoPage() {
   const [realtimeMesaId, setRealtimeMesaId] = useState("");
   const [qrDownloadMesa, setQrDownloadMesa] = useState<any | null>(null);
   const [deleteMesaTarget, setDeleteMesaTarget] = useState<any | null>(null);
+  const [paymentTarget, setPaymentTarget] = useState<any | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState("dinheiro");
   const loadingRef = useRef(false);
   const queuedManualRefreshRef = useRef(false);
   const selectedComandaIdRef = useRef("");
@@ -830,6 +838,29 @@ export function SalaoPage() {
     }
   };
 
+  const removeItemFromComanda = async (item: any) => {
+    if (!selectedComanda?.id || item.status === "cancelado") return;
+    if (!["aberta", "aguardando_conta"].includes(selectedComanda.status)) {
+      showSystemNotice("Apenas comandas abertas ou aguardando conta permitem remover produtos.");
+      return;
+    }
+    setActionBusy(`remove-item-${item.id}`);
+    try {
+      await salaoService.removeItem(selectedComanda.id, item.id);
+      const detail = await salaoService.getComanda(selectedComanda.id);
+      setSelectedComanda(detail);
+      await load();
+    } catch (error: any) {
+      showSystemNotice(
+        error?.response?.data?.message ||
+          error?.message ||
+          "Nao foi possivel remover o produto da mesa.",
+      );
+    } finally {
+      setActionBusy("");
+    }
+  };
+
   const regeneratePin = async (comanda: any) => {
     setActionBusy(`pin-${comanda.id}`);
     try {
@@ -850,7 +881,10 @@ export function SalaoPage() {
   const confirmPayment = async (comanda: any) => {
     setActionBusy(`payment-${comanda.id}`);
     try {
-      await salaoService.confirmPayment(comanda.id);
+      await salaoService.confirmPayment(comanda.id, {
+        forma_pagamento: paymentMethod,
+      });
+      setPaymentTarget(null);
       setSelectedComanda(null);
       await load();
     } catch (error: any) {
@@ -1519,9 +1553,9 @@ export function SalaoPage() {
                           selectedComanda.itens.map((item: any) => (
                             <div
                               key={item.id}
-                              className="flex items-start justify-between gap-2 rounded-lg border border-gray-100 p-2.5 sm:gap-3 sm:p-3"
+                              className={`flex items-start justify-between gap-2 rounded-lg border border-gray-100 p-2.5 sm:gap-3 sm:p-3 ${item.status === "cancelado" ? "bg-slate-50 opacity-75" : ""}`}
                             >
-                              <div>
+                              <div className="min-w-0">
                                 <div className="font-medium text-gray-900">
                                   {item.nome_produto}
                                 </div>
@@ -1547,8 +1581,30 @@ export function SalaoPage() {
                                   </div>
                                 )}
                               </div>
-                              <div className="text-sm font-semibold text-gray-900">
-                                R$ {formatMoney(item.preco_total)}
+                              <div className="flex shrink-0 flex-col items-end gap-2">
+                                <div className="text-sm font-semibold text-gray-900">
+                                  R$ {formatMoney(item.preco_total)}
+                                </div>
+                                <button
+                                  type="button"
+                                  title="Remover produto da mesa"
+                                  aria-label={`Remover ${item.nome_produto}`}
+                                  onClick={() => void removeItemFromComanda(item)}
+                                  disabled={
+                                    item.status === "cancelado" ||
+                                    !["aberta", "aguardando_conta"].includes(
+                                      selectedComanda.status,
+                                    ) ||
+                                    actionBusy === `remove-item-${item.id}`
+                                  }
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-200 bg-white text-red-700 hover:bg-red-50 disabled:opacity-40"
+                                >
+                                  {actionBusy === `remove-item-${item.id}` ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="h-4 w-4" />
+                                  )}
+                                </button>
                               </div>
                             </div>
                           ))
@@ -1592,7 +1648,10 @@ export function SalaoPage() {
                           selectedComanda.status,
                         ) && (
                           <button
-                            onClick={() => void confirmPayment(selectedComanda)}
+                            onClick={() => {
+                              setPaymentMethod("dinheiro");
+                              setPaymentTarget(selectedComanda);
+                            }}
                             className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white sm:min-h-12 sm:px-4 sm:text-sm"
                           >
                             <CreditCard className="h-4 w-4" />
@@ -1821,6 +1880,70 @@ export function SalaoPage() {
           </div>
         )}
       </div>
+      {paymentTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+                <CreditCard className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-extrabold text-slate-950">
+                  Meio de pagamento
+                </h2>
+                <p className="mt-2 text-sm text-slate-600">
+                  Selecione como a conta da mesa foi paga para registrar o fluxo correto no caixa.
+                </p>
+                <p className="mt-2 text-sm font-semibold text-slate-900">
+                  Total: R$ {formatMoney(paymentTarget.total)}
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 grid gap-2">
+              {SALAO_PAYMENT_METHODS.map((method) => {
+                const active = paymentMethod === method.value;
+                return (
+                  <button
+                    key={method.value}
+                    type="button"
+                    onClick={() => setPaymentMethod(method.value)}
+                    disabled={actionBusy === `payment-${paymentTarget.id}`}
+                    className={`flex min-h-11 items-center justify-between rounded-xl border px-4 py-3 text-left text-sm font-bold disabled:opacity-60 ${
+                      active
+                        ? "border-emerald-500 bg-emerald-50 text-emerald-900"
+                        : "border-slate-200 bg-white text-slate-700"
+                    }`}
+                  >
+                    {method.label}
+                    {active && (
+                      <span className="h-2.5 w-2.5 rounded-full bg-emerald-600" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-5 grid gap-2 sm:grid-cols-2">
+              <button
+                onClick={() => setPaymentTarget(null)}
+                disabled={actionBusy === `payment-${paymentTarget.id}`}
+                className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700 disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => void confirmPayment(paymentTarget)}
+                disabled={actionBusy === `payment-${paymentTarget.id}`}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+              >
+                {actionBusy === `payment-${paymentTarget.id}` && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                Confirmar pagamento
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {qrDownloadMesa && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
