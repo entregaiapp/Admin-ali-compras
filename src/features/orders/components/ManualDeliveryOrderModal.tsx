@@ -249,6 +249,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
     api.get("/produtos_loja", {
       params: {
         ativo: true,
+        produto_ativo: true,
         busca: debouncedProductSearch || undefined,
         page: 1,
         per_page: PRODUCT_CATALOG_PAGE_SIZE,
@@ -343,6 +344,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
       const response = await api.get("/produtos_loja", {
         params: {
           ativo: true,
+          produto_ativo: true,
           busca: debouncedProductSearch || undefined,
           page: catalogPage + 1,
           per_page: PRODUCT_CATALOG_PAGE_SIZE,

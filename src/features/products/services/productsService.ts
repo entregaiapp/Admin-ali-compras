@@ -49,6 +49,7 @@ export const productsService = {
         busca: params.search || undefined,
         categoria_id: params.categoryId || undefined,
         ativo: active,
+        produto_ativo: active === true ? true : undefined,
         modo_compra: params.purchaseMode || undefined,
         incluir_opcoes_produto: params.includeOptionProducts || undefined,
         promocao_ativa: params.promoOnly || undefined,

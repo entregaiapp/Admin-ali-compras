@@ -62,6 +62,7 @@ import {
   hexToRgba,
   isDeliveryOrder,
   isCurrentPaymentRecord,
+  isFiadoPayment,
   isFiadoOrder,
   isOrderPaid,
   isOrderPendingCash,
@@ -321,6 +322,12 @@ const DELIVERY_ASSIGNMENT_BLOCKED_STATUSES = new Set([
   "nao_entregue",
   "cancelado",
 ]);
+const ACTIVE_WORK_STATUS_KEYS = [
+  "pendente",
+  "confirmado",
+  "em_separacao",
+  "pronto",
+];
 const REFUND_ACTIVE_STATUSES = new Set(["pendente", "processando", "aprovado"]);
 const ORDER_TABS = [
   { value: "Entrega", label: "Delivery" },
@@ -657,7 +664,7 @@ export function OrdersScreen() {
   const getActiveOrderTypeFilter = () =>
     viewMode === "arquivados" ? archivedTypeFilter : typeFilter;
 
-  const getOrderQueryParams = (pageNum = 1) => ({
+  const getOrderQueryParams = (pageNum = 1, overrides: Record<string, any> = {}) => ({
     page: pageNum,
     per_page: PER_PAGE,
     arquivado: viewMode === "arquivados" ? "true" : "false",
@@ -671,6 +678,7 @@ export function OrdersScreen() {
       viewMode === "arquivados" ? archivedStartDate || undefined : undefined,
     realizado_em_final:
       viewMode === "arquivados" ? archivedEndDate || undefined : undefined,
+    ...overrides,
   });
 
   const normalizeDailySummary = (summary: any[] = []): ArchivedDailySummary[] =>
@@ -716,8 +724,41 @@ export function OrdersScreen() {
       const more = Array.isArray(rawData)
         ? data.length > PER_PAGE
         : pageNum < Number(rawData?.total_pages || pageNum);
-      const displayData =
+      let displayData =
         Array.isArray(rawData) && more ? data.slice(0, PER_PAGE) : data;
+      const shouldLoadActiveWorkFirst =
+        reset &&
+        pageNum === 1 &&
+        viewMode === "lista" &&
+        statusFilter === "Todos" &&
+        ["Entrega", "Retirada"].includes(typeFilter);
+
+      if (shouldLoadActiveWorkFirst) {
+        const activeResponses = await Promise.allSettled(
+          ACTIVE_WORK_STATUS_KEYS.map((status) =>
+            api.get("/pedidos", {
+              params: getOrderQueryParams(1, {
+                status,
+                page: 1,
+                per_page: PER_PAGE,
+              }),
+            }),
+          ),
+        );
+        const activeOrders = activeResponses.flatMap((activeResponse) => {
+          if (activeResponse.status !== "fulfilled") return [];
+          const activePayload = activeResponse.value.data.data;
+          return Array.isArray(activePayload)
+            ? activePayload
+            : activePayload?.data || [];
+        });
+        const seenOrderIds = new Set<string>();
+        displayData = [...activeOrders, ...displayData].filter((order: any) => {
+          if (!order?.id || seenOrderIds.has(order.id)) return false;
+          seenOrderIds.add(order.id);
+          return true;
+        });
+      }
 
       setHasMore(more);
       if (reset && viewMode === "arquivados") {
@@ -2133,6 +2174,14 @@ export function OrdersScreen() {
     : [];
   const selectedIsPaid = isOrderPaid(selected, selectedPayments);
   const selectedIsFiado = isFiadoOrder(selected, selectedPayments);
+  const selectedFiadoPayments = selectedPayments.filter(
+    (payment) => isFiadoPayment(payment) && isCurrentPaymentRecord(payment),
+  );
+  const selectedFiadoTotal = selectedFiadoPayments.length > 0
+    ? selectedFiadoPayments.reduce((sum, payment) => sum + parseCurrencyNumber(payment.valor), 0)
+    : selectedIsFiado
+      ? parseCurrencyNumber(selectedPayment?.valor || selected?.valor_total || selected?.total)
+      : 0;
   const selectedIsPendingCash =
     !selectedIsPaid && isOrderPendingCash(selected, selectedPayments);
   const selectedRefundedAmount = selectedRefunds
@@ -2300,12 +2349,7 @@ export function OrdersScreen() {
       )
     : null;
   const getOrderStatusKey = (order: any) => getBackendStatus(order?.status || "");
-  const activeWorkStatuses = new Set([
-    "pendente",
-    "confirmado",
-    "em_separacao",
-    "pronto",
-  ]);
+  const activeWorkStatuses = new Set(ACTIVE_WORK_STATUS_KEYS);
   const orderStatusIs = (order: any, status: string) =>
     getOrderStatusKey(order) === status;
   const archivedOrdersByDay = filtered.reduce<
@@ -2375,13 +2419,6 @@ export function OrdersScreen() {
       ? archivedGroups
       : [
           {
-            key: "cancelamentos",
-            title: "Cancelamentos para análise",
-            description: "Pedidos bloqueados até a decisão da loja",
-            orders: filtered.filter(hasPendingCancellationRequest),
-            defaultExpanded: true,
-          },
-          {
             key: "andamento",
             title: "Em andamento",
             description: "Recebidos, confirmados, em separação e prontos",
@@ -2390,6 +2427,13 @@ export function OrdersScreen() {
                 !hasPendingCancellationRequest(order) &&
                 activeWorkStatuses.has(getOrderStatusKey(order)),
             ),
+            defaultExpanded: true,
+          },
+          {
+            key: "cancelamentos",
+            title: "Cancelamentos para análise",
+            description: "Pedidos bloqueados até a decisão da loja",
+            orders: filtered.filter(hasPendingCancellationRequest),
             defaultExpanded: true,
           },
           {
@@ -2440,6 +2484,27 @@ export function OrdersScreen() {
             defaultExpanded: false,
           },
         ].filter((group) => group.orders.length > 0);
+  const hasAndamentoGroup = listGroups.some((group) => group.key === "andamento");
+  const firstListGroupKey = listGroups[0]?.key || "andamento";
+
+  useEffect(() => {
+    if (viewMode !== "lista") return;
+    if (["Entrega", "Retirada"].includes(typeFilter) && hasAndamentoGroup) {
+      if (activeListGroupKey !== "andamento") setActiveListGroupKey("andamento");
+      return;
+    }
+    if (!listGroups.some((group) => group.key === activeListGroupKey)) {
+      setActiveListGroupKey(firstListGroupKey);
+    }
+  }, [
+    activeListGroupKey,
+    firstListGroupKey,
+    hasAndamentoGroup,
+    listGroups,
+    typeFilter,
+    viewMode,
+  ]);
+
   const activeListGroup =
     listGroups.find((group) => group.key === activeListGroupKey) ||
     listGroups[0] ||
@@ -4442,6 +4507,10 @@ export function OrdersScreen() {
                   A conta e os recebimentos deste pedido sao gerenciados no
                   modulo Fiados.
                 </p>
+                <div className="mt-3 flex items-center justify-between rounded-lg border border-amber-200 bg-white/70 px-3 py-2 text-sm">
+                  <span className="font-semibold text-amber-900">Valor em fiado</span>
+                  <span className="font-bold text-amber-950">{formatCurrency(selectedFiadoTotal)}</span>
+                </div>
                 {selectedPaymentStatus !== "NÃ£o informado" && (
                   <div className={`mt-2 text-xs font-semibold ${selectedPaymentStatusClass}`}>
                     {selectedPaymentStatusLabel}
