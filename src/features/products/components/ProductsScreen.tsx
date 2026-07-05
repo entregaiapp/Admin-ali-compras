@@ -813,9 +813,9 @@ export function ProductsScreen() {
 
   const removeProductFromStore = async (product: any) => {
     const isLocalProduct = product.escopo_catalogo === 'loja';
-    const action = isLocalProduct ? 'excluir este produto criado pela loja' : 'desvincular este produto global da loja';
+    const action = isLocalProduct ? 'desativar este produto criado pela loja' : 'desvincular este produto global da loja';
     const historyNote = isLocalProduct
-      ? 'O produto deixará de aparecer no catálogo, mas o histórico dos pedidos será preservado.'
+      ? 'O produto deixará de aparecer no catálogo, mas continuará vinculado à loja e poderá ser reativado depois.'
       : 'O produto continuará disponível no catálogo global e o histórico dos pedidos será preservado.';
 
     if (!window.confirm(`Deseja ${action}?\n\n${historyNote}`)) return;
@@ -827,7 +827,7 @@ export function ProductsScreen() {
         fetchCategories({ forceRefresh: true }),
       ]);
     } catch (error: any) {
-      showSystemNotice(error?.response?.data?.message || 'Não foi possível remover o produto da loja.');
+      showSystemNotice(error?.response?.data?.message || 'Não foi possível atualizar o produto da loja.');
     }
   };
 
@@ -1170,7 +1170,7 @@ export function ProductsScreen() {
                           <button
                             onClick={() => removeProductFromStore(product)}
                             className="p-1.5 rounded-lg hover:bg-red-50 text-gray-500 hover:text-red-600 transition-colors"
-                            title={product.escopo_catalogo === 'loja' ? 'Excluir produto da loja' : 'Desvincular produto da loja'}
+                            title={product.escopo_catalogo === 'loja' ? 'Desativar produto da loja' : 'Desvincular produto da loja'}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>

@@ -362,7 +362,7 @@ export const productsService = {
   async removeStoreProduct(productStoreId: string) {
     const response = await api.delete(`/produtos_loja/${productStoreId}`);
     invalidateStoreProductsCache();
-    return response.data.data as { removedLocalProduct: boolean };
+    return response.data.data as { deactivatedLocalProduct?: boolean; removedLocalProduct?: boolean };
   },
 
   invalidateStoreProductsCache,
