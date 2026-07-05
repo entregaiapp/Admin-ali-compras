@@ -121,6 +121,8 @@ const formatCurrency = (value: unknown) =>
   `R$ ${parseCurrencyNumber(value)
     .toFixed(2)
     .replace(".", ",")}`;
+const getPaymentSplitGroupId = (payment: any) =>
+  payment?.metadata?.grupo_pagamento_admin || payment?.grupo_pagamento_admin || "";
 const getDailyTicketNumber = (order: any) => {
   const formatted = String(order?.numero_comanda_codigo || "").trim();
   if (formatted) return formatted;
@@ -1539,15 +1541,30 @@ export function OrdersScreen() {
 
     try {
       setConfirmingCashPaymentId(selectedPayment.id);
-      const response = await api.patch(`/pagamentos/${selectedPayment.id}/status`, {
-        status: "aprovado",
-        observacao: "Pagamento recebido pelo caixa",
-      });
-      const updatedPayment = response.data.data || response.data;
+      const splitGroupId = getPaymentSplitGroupId(selectedPayment);
+      const paymentsToConfirm = splitGroupId
+        ? selectedPayments.filter((payment) =>
+            getPaymentSplitGroupId(payment) === splitGroupId &&
+            isCurrentPaymentRecord(payment) &&
+            ["pendente", "em_processamento", "processando"].includes(
+              normalizePaymentText(payment?.status),
+            )
+          )
+        : [selectedPayment];
+      const responses = await Promise.all(
+        paymentsToConfirm.map((payment) =>
+          api.patch(`/pagamentos/${payment.id}/status`, {
+            status: "aprovado",
+            observacao: "Pagamento recebido pelo caixa",
+          }),
+        ),
+      );
+      const updatedPayments = responses.map((response) => response.data.data || response.data);
+      const updatedPayment = updatedPayments[0];
 
       setSelectedPayments((previous) =>
         previous.map((payment) =>
-          payment.id === updatedPayment.id ? updatedPayment : payment,
+          updatedPayments.find((updated) => updated.id === payment.id) || payment,
         ),
       );
       setSelected((previous: any) =>
@@ -1561,7 +1578,11 @@ export function OrdersScreen() {
         ),
       );
       await fetchOrders(1, true, { silent: true });
-      showSystemNotice("Pagamento confirmado como recebido.");
+      showSystemNotice(
+        updatedPayments.length > 1
+          ? "Pagamentos confirmados como recebidos."
+          : "Pagamento confirmado como recebido.",
+      );
     } catch (error) {
       showSystemNotice(
         getApiErrorMessage(
@@ -2103,6 +2124,13 @@ export function OrdersScreen() {
     0,
   );
   const selectedPayment = getPreferredOrderPayment(selected, selectedPayments);
+  const selectedSplitGroupId = getPaymentSplitGroupId(selectedPayment);
+  const selectedSplitPayments = selectedSplitGroupId
+    ? selectedPayments.filter((payment) =>
+        getPaymentSplitGroupId(payment) === selectedSplitGroupId &&
+        isCurrentPaymentRecord(payment)
+      )
+    : [];
   const selectedIsPaid = isOrderPaid(selected, selectedPayments);
   const selectedIsFiado = isFiadoOrder(selected, selectedPayments);
   const selectedIsPendingCash =
@@ -2153,10 +2181,14 @@ export function OrdersScreen() {
   const selectedForPrint = selected
     ? { ...selected, pagamento: selectedPayment }
     : selected;
-  const selectedPaymentMethod = getOrderPaymentMethod(
-    selected,
-    selectedPayment,
-  );
+  const selectedPaymentMethod = selectedSplitPayments.length > 1
+    ? selectedSplitPayments
+        .map((payment) => getOrderPaymentMethod({ pagamento: payment }, payment))
+        .join(" + ")
+    : getOrderPaymentMethod(
+        selected,
+        selectedPayment,
+      );
   const selectedPaymentStatus = getOrderPaymentStatus(
     selected,
     selectedPayment,
@@ -4438,39 +4470,88 @@ export function OrdersScreen() {
                   <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
                     Pagamentos registrados
                   </div>
-                  {selectedPayments.map((payment) => {
-                    const isComplement = payment?.metadata?.tipo === "pagamento_complementar";
-                    const isSelectedCurrent = payment?.id === selectedPayment?.id;
-                    const isCurrent = isSelectedCurrent || isCurrentPaymentRecord(payment);
-                    return (
-                      <div
-                        key={payment.id}
-                        className={`rounded-lg border px-3 py-2 text-xs transition-opacity ${
-                          isCurrent
-                            ? "border-blue-100 bg-blue-50 opacity-100"
-                            : "border-gray-100 bg-gray-50 opacity-50"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <span className="font-semibold text-gray-700">
-                              {isComplement ? "Complemento" : "Original"} - {getOrderPaymentMethod({ pagamento: payment }, payment)}
-                            </span>
-                            {isSelectedCurrent && (
-                              <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
-                                Atual
-                              </span>
-                            )}
+                  {(() => {
+                    const renderedGroups = new Set<string>();
+
+                    return selectedPayments.map((payment) => {
+                      const splitGroupId = getPaymentSplitGroupId(payment);
+                      if (splitGroupId) {
+                        if (renderedGroups.has(splitGroupId)) return null;
+                        renderedGroups.add(splitGroupId);
+                        const groupPayments = selectedPayments.filter((item) => getPaymentSplitGroupId(item) === splitGroupId);
+                        const isSelectedCurrent = groupPayments.some((item) => item?.id === selectedPayment?.id);
+                        const isCurrent = isSelectedCurrent || groupPayments.every(isCurrentPaymentRecord);
+                        const totalSplit = groupPayments.reduce((sum, item) => sum + parseCurrencyNumber(item.valor), 0);
+
+                        return (
+                          <div
+                            key={splitGroupId}
+                            className={`rounded-lg border px-3 py-2 text-xs transition-opacity ${
+                              isCurrent
+                                ? "border-blue-200 bg-blue-50 opacity-100 shadow-sm"
+                                : "border-gray-100 bg-gray-50 opacity-50"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="min-w-0">
+                                <span className="font-semibold text-gray-700">Pagamento dividido</span>
+                                {isCurrent && (
+                                  <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                                    Atual
+                                  </span>
+                                )}
+                              </div>
+                              <span className="font-semibold text-gray-800">{formatCurrency(totalSplit)}</span>
+                            </div>
+                            <div className="mt-2 space-y-1">
+                              {groupPayments.map((item) => (
+                                <div key={item.id} className="flex items-center justify-between gap-2 text-gray-600">
+                                  <span>{getOrderPaymentMethod({ pagamento: item }, item)}</span>
+                                  <span className="font-semibold text-gray-700">{formatCurrency(item.valor)}</span>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="mt-1 flex items-center justify-between gap-2 text-gray-500">
+                              <span className="capitalize">{String(groupPayments[0]?.status || "").replace(/_/g, " ")}</span>
+                              {groupPayments[0]?.pago_em && <span>{formatBrasiliaDate(groupPayments[0].pago_em)}</span>}
+                            </div>
                           </div>
-                          <span className="font-semibold text-gray-800">{formatCurrency(payment.valor)}</span>
+                        );
+                      }
+
+                      const isComplement = payment?.metadata?.tipo === "pagamento_complementar";
+                      const isSelectedCurrent = payment?.id === selectedPayment?.id;
+                      const isCurrent = isSelectedCurrent || isCurrentPaymentRecord(payment);
+                      return (
+                        <div
+                          key={payment.id}
+                          className={`rounded-lg border px-3 py-2 text-xs transition-opacity ${
+                            isCurrent
+                              ? "border-blue-100 bg-blue-50 opacity-100"
+                              : "border-gray-100 bg-gray-50 opacity-50"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <span className="font-semibold text-gray-700">
+                                {isComplement ? "Complemento" : "Original"} - {getOrderPaymentMethod({ pagamento: payment }, payment)}
+                              </span>
+                              {isSelectedCurrent && (
+                                <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                                  Atual
+                                </span>
+                              )}
+                            </div>
+                            <span className="font-semibold text-gray-800">{formatCurrency(payment.valor)}</span>
+                          </div>
+                          <div className="mt-1 flex items-center justify-between gap-2 text-gray-500">
+                            <span className="capitalize">{String(payment.status || "").replace(/_/g, " ")}</span>
+                            {payment.pago_em && <span>{formatBrasiliaDate(payment.pago_em)}</span>}
+                          </div>
                         </div>
-                        <div className="mt-1 flex items-center justify-between gap-2 text-gray-500">
-                          <span className="capitalize">{String(payment.status || "").replace(/_/g, " ")}</span>
-                          {payment.pago_em && <span>{formatBrasiliaDate(payment.pago_em)}</span>}
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    });
+                  })()}
                 </div>
               )}
               {!selectedIsPaid && (
