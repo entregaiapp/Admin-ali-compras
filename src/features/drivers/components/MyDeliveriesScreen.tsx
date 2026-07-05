@@ -6,6 +6,7 @@ import {
   getCachedAssignedDeliveries,
   getPendingStopSync,
   isDriverOnline,
+  saveAssignedDelivery,
   synchronizePendingStops,
 } from '../driverOfflineSync';
 
@@ -29,6 +30,7 @@ export type DriverStop = {
   longitude: number | null;
   status: 'pending' | 'delivered' | 'failed';
   requiresReceiptKey?: boolean;
+  receiptKeyHash?: string | null;
   note?: string;
   paymentMethod?: string | null;
   paymentStatus?: string | null;
@@ -160,7 +162,9 @@ export function MyDeliveriesScreen() {
         },
       });
       const nextTotalPages = Math.max(1, Number(response.data?.total_pages) || 1);
-      setRoutes(sortDeliveries(getApiList(response.data) as DriverRoute[]));
+      const fetchedRoutes = sortDeliveries(getApiList(response.data) as DriverRoute[]);
+      await Promise.all(fetchedRoutes.map(route => saveAssignedDelivery(route).catch(() => undefined)));
+      setRoutes(fetchedRoutes);
       setTotalPages(nextTotalPages);
       setTotals({
         pending: Number(response.data?.totals?.pending) || 0,

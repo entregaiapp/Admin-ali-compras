@@ -248,12 +248,27 @@ export function RouteDetailScreen() {
     const requiresReceiptKey = stopRequiresReceiptKey(stop, route);
 
     const queueConfirmation = async () => {
-      if (status === 'delivered' && requiresReceiptKey && !chaveRecebimento) {
-        setReceiptKeyError('Informe a chave de recebimento com 4 dígitos.');
-        return false;
+      let receiptKeyHash: string | undefined;
+      if (status === 'delivered' && requiresReceiptKey) {
+        if (!chaveRecebimento || !/^\d{4}$/.test(chaveRecebimento)) {
+          setReceiptKeyError('Informe a chave de recebimento com 4 dígitos.');
+          return false;
+        }
+
+        if (!stop.receiptKeyHash) {
+          setReceiptKeyError('Não foi possível validar esta chave offline. Conecte-se para concluir esta entrega.');
+          return false;
+        }
+
+        receiptKeyHash = await hashReceiptKey(chaveRecebimento);
+        if (receiptKeyHash?.toLowerCase() !== stop.receiptKeyHash.toLowerCase()) {
+          setReceiptKeyError('Chave de recebimento inválida.');
+          return false;
+        }
+      } else if (chaveRecebimento) {
+        receiptKeyHash = await hashReceiptKey(chaveRecebimento);
       }
 
-      const receiptKeyHash = chaveRecebimento ? await hashReceiptKey(chaveRecebimento) : undefined;
       await queueStopSync(route.id, stop.id, {
         status,
         reason,
