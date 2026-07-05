@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, Loader2, Plus, Trash2, X } from "lucide-react";
 import api from "@/shared/lib/api";
 
@@ -14,14 +14,15 @@ const PAYMENT_METHODS = [
   { value: "cartao_debito", label: "Cartão de débito" },
   { value: "dinheiro", label: "Dinheiro" },
 ];
-
-const parseCurrencyInput = (value: string) => {
-  const normalized = String(value || "").replace(/\./g, "").replace(",", ".");
-  const number = Number(normalized);
-  return Number.isFinite(number) ? number : 0;
-};
+const MAX_PAYMENT_LINES = 8;
 
 const toCents = (value: unknown) => Math.round(Number(value || 0) * 100);
+const parseCurrencyInputCents = (value: string) => {
+  const digits = String(value || "").replace(/\D/g, "");
+  return digits ? Number(digits) : 0;
+};
+const formatCents = (value: number) => (Math.max(0, value) / 100).toFixed(2).replace(".", ",");
+const parseCurrencyInput = (value: string) => parseCurrencyInputCents(value) / 100;
 const formatCurrency = (value: unknown) =>
   `R$ ${Number(value || 0).toFixed(2).replace(".", ",")}`;
 
@@ -44,29 +45,31 @@ export function PendingPaymentMethodModal({
   onUpdated: (result: any) => void;
 }) {
   const total = Number(order?.valor_total || order?.total || 0);
+  const totalCents = toCents(total);
   const [lines, setLines] = useState<PaymentLine[]>([
-    { forma_pagamento: currentMethod || "dinheiro", valor: total ? total.toFixed(2).replace(".", ",") : "" },
+    { forma_pagamento: currentMethod || "dinheiro", valor: totalCents ? formatCents(totalCents) : "" },
   ]);
   const [observacao, setObservacao] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const selectedMethods = useMemo(
-    () => new Set(lines.map((line) => line.forma_pagamento).filter(Boolean)),
-    [lines],
-  );
-  const paidTotal = lines.reduce((sum, line) => sum + parseCurrencyInput(line.valor), 0);
-  const remaining = Math.max(0, total - paidTotal);
-  const isComplete = total > 0 && toCents(paidTotal) === toCents(total);
+  const paidCents = lines.reduce((sum, line) => sum + parseCurrencyInputCents(line.valor), 0);
+  const remainingCents = Math.max(0, totalCents - paidCents);
+  const remaining = remainingCents / 100;
+  const isComplete = totalCents > 0 && paidCents === totalCents;
+  const hasInvalidLine = lines.some((line) => {
+    const valueCents = parseCurrencyInputCents(line.valor);
+    return (Boolean(line.forma_pagamento) || valueCents > 0) && (!line.forma_pagamento || valueCents <= 0);
+  });
   const canAddLine =
     !isComplete &&
-    lines.length < PAYMENT_METHODS.length &&
-    lines.every((line) => line.forma_pagamento && parseCurrencyInput(line.valor) > 0);
+    lines.length < MAX_PAYMENT_LINES &&
+    lines.every((line) => line.forma_pagamento && parseCurrencyInputCents(line.valor) > 0);
 
   useEffect(() => {
     if (!canAddLine) return;
-    setLines((current) => [...current, { forma_pagamento: "", valor: remaining.toFixed(2).replace(".", ",") }]);
-  }, [canAddLine, remaining]);
+    setLines((current) => [...current, { forma_pagamento: "", valor: formatCents(remainingCents) }]);
+  }, [canAddLine, remainingCents]);
 
   const updateLine = (index: number, patch: Partial<PaymentLine>) => {
     setLines((current) =>
@@ -74,17 +77,36 @@ export function PendingPaymentMethodModal({
     );
   };
 
+  const updateLineValue = (index: number, rawValue: string) => {
+    setLines((current) => {
+      const otherLinesTotal = current.reduce(
+        (sum, line, lineIndex) => sum + (lineIndex === index ? 0 : parseCurrencyInputCents(line.valor)),
+        0,
+      );
+      const maxAllowed = Math.max(0, totalCents - otherLinesTotal);
+      const nextCents = Math.min(parseCurrencyInputCents(rawValue), maxAllowed);
+
+      return current.map((line, lineIndex) =>
+        lineIndex === index ? { ...line, valor: nextCents > 0 ? formatCents(nextCents) : "" } : line,
+      );
+    });
+  };
+
   const removeLine = (index: number) => {
     setLines((current) => current.filter((_, lineIndex) => lineIndex !== index));
   };
 
   const submit = async () => {
-    const pagamentos = lines
-      .map((line) => ({
-        forma_pagamento: line.forma_pagamento,
-        valor: Number(parseCurrencyInput(line.valor).toFixed(2)),
-      }))
-      .filter((line) => line.forma_pagamento && line.valor > 0);
+    const paymentsByMethod = new Map<string, number>();
+    lines.forEach((line) => {
+      const valueCents = parseCurrencyInputCents(line.valor);
+      if (!line.forma_pagamento || valueCents <= 0) return;
+      paymentsByMethod.set(line.forma_pagamento, (paymentsByMethod.get(line.forma_pagamento) || 0) + valueCents);
+    });
+    const pagamentos = Array.from(paymentsByMethod.entries()).map(([forma_pagamento, valueCents]) => ({
+      forma_pagamento,
+      valor: Number((valueCents / 100).toFixed(2)),
+    }));
 
     setBusy(true);
     setError("");
@@ -124,9 +146,6 @@ export function PendingPaymentMethodModal({
           <div className="space-y-2">
             {lines.map((line, index) => {
               const lineValue = parseCurrencyInput(line.valor);
-              const options = PAYMENT_METHODS.filter(
-                (method) => method.value === line.forma_pagamento || !selectedMethods.has(method.value),
-              );
 
               return (
                 <div key={index} className="grid grid-cols-[1fr_132px_36px] gap-2">
@@ -136,7 +155,7 @@ export function PendingPaymentMethodModal({
                     className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-blue-400"
                   >
                     <option value="">Selecione</option>
-                    {options.map((method) => (
+                    {PAYMENT_METHODS.map((method) => (
                       <option key={method.value} value={method.value}>
                         {method.label}
                       </option>
@@ -144,7 +163,7 @@ export function PendingPaymentMethodModal({
                   </select>
                   <input
                     value={line.valor}
-                    onChange={(event) => updateLine(index, { valor: event.target.value })}
+                    onChange={(event) => updateLineValue(index, event.target.value)}
                     inputMode="decimal"
                     className="h-11 rounded-lg border border-slate-200 px-3 text-right text-sm font-semibold text-slate-700 outline-none focus:border-blue-400"
                     placeholder="0,00"
@@ -166,10 +185,10 @@ export function PendingPaymentMethodModal({
             })}
           </div>
 
-          {!isComplete && lines.length < PAYMENT_METHODS.length && (
+          {!isComplete && lines.length < MAX_PAYMENT_LINES && (
             <button
               type="button"
-              onClick={() => setLines((current) => [...current, { forma_pagamento: "", valor: remaining.toFixed(2).replace(".", ",") }])}
+              onClick={() => setLines((current) => [...current, { forma_pagamento: "", valor: formatCents(remainingCents) }])}
               className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -181,7 +200,7 @@ export function PendingPaymentMethodModal({
             <div className="flex justify-between text-sm text-slate-600">
               <span>Resta pagar</span>
               <span className={isComplete ? "font-semibold text-green-700" : "font-semibold text-amber-700"}>
-                {formatCurrency(Math.max(0, total - paidTotal))}
+                {formatCurrency(remaining)}
               </span>
             </div>
             <div className="mt-1 flex justify-between text-sm font-semibold text-slate-800">
@@ -202,7 +221,7 @@ export function PendingPaymentMethodModal({
           <button onClick={onClose} className="rounded-lg border px-4 py-2 text-sm font-semibold text-slate-700">Cancelar</button>
           <button
             onClick={submit}
-            disabled={busy || !isComplete || lines.some((line) => !line.forma_pagamento || parseCurrencyInput(line.valor) <= 0)}
+            disabled={busy || !isComplete || hasInvalidLine}
             className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
             style={{ backgroundColor: primaryColor }}
           >
