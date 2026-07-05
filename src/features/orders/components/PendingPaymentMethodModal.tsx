@@ -68,8 +68,8 @@ export function PendingPaymentMethodModal({
 
   useEffect(() => {
     if (!canAddLine) return;
-    setLines((current) => [...current, { forma_pagamento: "", valor: formatCents(remainingCents) }]);
-  }, [canAddLine, remainingCents]);
+    setLines((current) => [...current, { forma_pagamento: "", valor: "" }]);
+  }, [canAddLine]);
 
   const updateLine = (index: number, patch: Partial<PaymentLine>) => {
     setLines((current) =>
@@ -188,7 +188,7 @@ export function PendingPaymentMethodModal({
           {!isComplete && lines.length < MAX_PAYMENT_LINES && (
             <button
               type="button"
-              onClick={() => setLines((current) => [...current, { forma_pagamento: "", valor: formatCents(remainingCents) }])}
+              onClick={() => setLines((current) => [...current, { forma_pagamento: "", valor: "" }])}
               className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
             >
               <Plus className="h-3.5 w-3.5" />
