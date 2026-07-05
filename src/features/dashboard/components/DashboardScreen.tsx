@@ -422,8 +422,8 @@ export function DashboardScreen() {
             title="Baixar catálogo, clientes, imagens e configurações para acesso mais rápido"
           >
             <Zap className="h-4 w-4" />
-            <span className="hidden sm:inline">Deixar o sistema ultrarrápido</span>
-            <span className="sm:hidden">Ultrarrápido</span>
+            <span className="hidden sm:inline">Otimizar o sistema</span>
+            <span className="sm:hidden">Otimizar</span>
           </button>
           <div className="flex flex-wrap items-center gap-2 bg-white/10 rounded-lg p-1 text-sm">
             <Calendar className="w-4 h-4 ml-2 mr-1 text-white/70" />
