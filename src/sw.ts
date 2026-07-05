@@ -7,19 +7,22 @@ declare const self: ServiceWorkerGlobalScope & {
   __WB_MANIFEST: Array<{ url: string; revision?: string | null }>;
 };
 
-const CACHE_NAME = 'admin-delivery-push-v1';
-const IMAGE_CACHE_PREFIX = 'ali-compras-admin-images:';
+const CACHE_NAME = 'admin-delivery-pwa-v2';
 const PRECACHE_URLS = self.__WB_MANIFEST.map((entry) => entry.url);
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS)).then(() => self.skipWaiting()));
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.addAll(PRECACHE_URLS))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
       .then((keys) => Promise.all(keys
-        .filter((key) => key !== CACHE_NAME && !key.startsWith(IMAGE_CACHE_PREFIX))
+        .filter((key) => key !== CACHE_NAME && key.startsWith('admin-delivery-'))
         .map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
   );
@@ -27,17 +30,14 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
-
-  // Images are populated on demand by the dashboard's performance action. Keeping
-  // this cache separate lets the app reuse catalog media even when offline.
-  if (event.request.destination === 'image') {
-    event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request)));
-    return;
-  }
-
   if (new URL(event.request.url).origin !== self.location.origin) return;
+
   event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request).then((response) => response || caches.match('/index.html') as Promise<Response>))
+    fetch(event.request).catch(() =>
+      caches.match(event.request).then((response) =>
+        response || caches.match('/index.html') as Promise<Response>
+      )
+    )
   );
 });
 

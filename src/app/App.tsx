@@ -5,9 +5,7 @@ import { router } from './router/router';
 import { EntregaiAnimatedSplash } from '@/shared/components/EntregaiAnimatedSplash';
 
 export default function App() {
-  const [showPostLoginSplash, setShowPostLoginSplash] = useState(() => {
-    return sessionStorage.getItem('entregai_post_login_splash') === '1';
-  });
+  const [showPostLoginSplash, setShowPostLoginSplash] = useState(false);
 
   useEffect(() => {
     const handlePostLoginSplash = () => setShowPostLoginSplash(true);
@@ -18,7 +16,6 @@ export default function App() {
   }, []);
 
   const handleSplashFinish = useCallback(() => {
-    sessionStorage.removeItem('entregai_post_login_splash');
     setShowPostLoginSplash(false);
   }, []);
 

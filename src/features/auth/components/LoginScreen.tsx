@@ -19,7 +19,6 @@ const PLATFORM_BRANDING = {
 };
 
 const showPostLoginSplash = () => {
-  sessionStorage.setItem('entregai_post_login_splash', '1');
   window.dispatchEvent(new Event('entregai-post-login-splash'));
 };
 

@@ -1,11 +1,5 @@
 import api from "@/shared/lib/api";
-import { deleteAdminCachedData, getAdminCachedData, getAdminCacheScope } from '@/features/performance';
 import type { ProductConfiguration, ProductStorePayload } from "../types/product";
-
-const STORE_PRODUCTS_CACHE_PREFIX = "admin-store-products:v1:";
-const ACTIVE_CATEGORIES_CACHE_PREFIX = "admin-product-categories:v10:";
-const CACHE_MAX_AGE = 5 * 60 * 1000;
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
 
 const toList = (payload: any) => {
   const data = payload?.data;
@@ -25,66 +19,8 @@ const toPaginatedProducts = (payload: any) => {
   };
 };
 
-const getSessionItem = <T,>(key: string): T | null => {
-  try {
-    const stored = sessionStorage.getItem(key);
-    if (!stored) return null;
-
-    const parsed = JSON.parse(stored);
-    if (!parsed?.createdAt || Date.now() - parsed.createdAt > CACHE_MAX_AGE) {
-      sessionStorage.removeItem(key);
-      return null;
-    }
-
-    return parsed.data as T;
-  } catch {
-    return null;
-  }
-};
-
-const setSessionItem = (key: string, data: unknown) => {
-  try {
-    sessionStorage.setItem(key, JSON.stringify({ createdAt: Date.now(), data }));
-  } catch {
-    // Network results remain usable if browser storage is unavailable.
-  }
-};
-
-const getStoreId = (): string | null => {
-  try {
-    const lojaId = JSON.parse(localStorage.getItem("user") || "{}")?.loja_id;
-    return UUID_REGEX.test(lojaId) ? lojaId : null;
-  } catch {
-    return null;
-  }
-};
-
-const clearCacheByPrefix = (prefix: string) => {
-  try {
-    Object.keys(sessionStorage)
-      .filter((key) => key.startsWith(prefix))
-      .forEach((key) => sessionStorage.removeItem(key));
-  } catch {
-    // Ignore unavailable storage.
-  }
-};
-
-const invalidateStoreProductsCache = () => {
-  clearCacheByPrefix(STORE_PRODUCTS_CACHE_PREFIX);
-  clearCacheByPrefix(ACTIVE_CATEGORIES_CACHE_PREFIX);
-  void deleteAdminCachedData(getAdminCacheScope(), 'catalog:products');
-  void deleteAdminCachedData(getAdminCacheScope(), 'catalog:configurations');
-};
-
-const getWarmedStoreProducts = () => getAdminCachedData<any[]>(getAdminCacheScope(), 'catalog:products');
-
-const getWarmedCategories = () => getAdminCachedData<any[]>(getAdminCacheScope(), 'catalog:categories');
-
 export const productsService = {
   async getStoreProducts() {
-    const warmedProducts = await getWarmedStoreProducts();
-    if (warmedProducts) return warmedProducts;
-
     const response = await api.get("/produtos_loja");
     return toList(response.data);
   },
@@ -100,49 +36,13 @@ export const productsService = {
     purchaseMode?: 'simples' | 'configuravel';
     includeOptionProducts?: boolean;
   }, options: { forceRefresh?: boolean } = {}) {
+    void options;
     const active =
       params.active !== undefined
         ? params.active
         : params.activeOnly
           ? true
           : undefined;
-    const cacheKey = `${STORE_PRODUCTS_CACHE_PREFIX}${JSON.stringify({
-      lojaId: getStoreId(),
-      search: params.search?.trim() || "",
-      categoryId: params.categoryId || "",
-      active,
-      promoOnly: Boolean(params.promoOnly),
-      purchaseMode: params.purchaseMode || '',
-      includeOptionProducts: Boolean(params.includeOptionProducts),
-      page: params.page,
-      perPage: params.perPage,
-    })}`;
-    const cached = options.forceRefresh ? null : getSessionItem<ReturnType<typeof toPaginatedProducts>>(cacheKey);
-    if (cached) return cached;
-
-    const canUseWarmedCatalog = !options.forceRefresh
-      && !params.search?.trim()
-      && !params.categoryId
-      && !params.promoOnly;
-    if (canUseWarmedCatalog) {
-      const warmedProducts = await getWarmedStoreProducts();
-      if (warmedProducts) {
-        const filteredProducts = warmedProducts.filter((product: any) => {
-          const productIsActive = product.ativo_na_loja ?? product.ativo;
-          if (active !== undefined && Boolean(productIsActive) !== active) return false;
-          if (params.purchaseMode && product.modo_compra !== params.purchaseMode) return false;
-          return true;
-        });
-        const offset = (params.page - 1) * params.perPage;
-        return {
-          products: filteredProducts.slice(offset, offset + params.perPage),
-          total: filteredProducts.length,
-          page: params.page,
-          perPage: params.perPage,
-          totalPages: Math.max(1, Math.ceil(filteredProducts.length / params.perPage)),
-        };
-      }
-    }
 
     const response = await api.get("/produtos_loja", {
       params: {
@@ -157,9 +57,7 @@ export const productsService = {
       },
     });
 
-    const result = toPaginatedProducts(response.data);
-    setSessionItem(cacheKey, result);
-    return result;
+    return toPaginatedProducts(response.data);
   },
 
   async getStoreProductsByIds(ids: string[]) {
@@ -214,15 +112,10 @@ export const productsService = {
   },
 
   async getActiveCategories(options: { forceRefresh?: boolean } = {}) {
+    void options;
     // Os filtros de produtos devem refletir exclusivamente o catálogo da loja.
     // A API também inclui os ancestrais necessários para preservar a navegação
     // por departamento, categoria e subcategoria.
-    // Não há cache aqui: categorias variam conforme vínculos e não podem vazar
-    // de uma loja ou sessão anterior para o módulo atual.
-    if (!options.forceRefresh) {
-      const warmedCategories = await getWarmedCategories();
-      if (warmedCategories) return warmedCategories;
-    }
     const categoriesEndpoint = "/categorias";
     const firstResponse = await api.get(categoriesEndpoint, {
       params: { ativa: true, apenas_vinculadas: true, page: 1, per_page: 100 },
@@ -275,13 +168,11 @@ export const productsService = {
 
   async createStoreProduct(payload: ProductStorePayload) {
     const response = await api.post("/produtos_loja", payload);
-    invalidateStoreProductsCache();
     return response.data.data;
   },
 
   async createLocalProduct(payload: Record<string, any>) {
     const response = await api.post("/produtos_loja/locais", payload);
-    invalidateStoreProductsCache();
     return response.data.data;
   },
 
@@ -294,7 +185,6 @@ export const productsService = {
     const response = await api.put(`/produtos_loja/${productStoreId}/configuracao`, configuration, {
       timeout: 60000,
     });
-    invalidateStoreProductsCache();
     return response.data.data;
   },
 
@@ -316,13 +206,11 @@ export const productsService = {
       timeout: 60000,
     });
 
-    invalidateStoreProductsCache();
     return response.data.data;
   },
 
   async updateStoreProduct(productStoreId: string, payload: Partial<ProductStorePayload> & Record<string, any>) {
     await api.patch(`/produtos_loja/${productStoreId}`, payload);
-    invalidateStoreProductsCache();
   },
 
   async uploadProductImage(productId: string, file: File, isPrimary = true) {
@@ -332,7 +220,6 @@ export const productsService = {
     const response = await api.post(`/produtos/${productId}/images/upload`, formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
-    invalidateStoreProductsCache();
     return response.data.data;
   },
 
@@ -341,7 +228,6 @@ export const productsService = {
       url,
       is_primary: isPrimary,
     });
-    invalidateStoreProductsCache();
     return response.data.data;
   },
 
@@ -351,19 +237,14 @@ export const productsService = {
 
   async toggleHighlight(productStoreId: string, highlighted: boolean) {
     await api.patch(`/produtos_loja/${productStoreId}`, { destaque: highlighted });
-    invalidateStoreProductsCache();
   },
 
   async toggleStatus(productStoreId: string, active: boolean) {
     await api.patch(`/produtos_loja/${productStoreId}/ativo`, { ativo: active });
-    invalidateStoreProductsCache();
   },
 
   async removeStoreProduct(productStoreId: string) {
     const response = await api.delete(`/produtos_loja/${productStoreId}`);
-    invalidateStoreProductsCache();
     return response.data.data as { deactivatedLocalProduct?: boolean; removedLocalProduct?: boolean };
   },
-
-  invalidateStoreProductsCache,
 };
