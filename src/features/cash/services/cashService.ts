@@ -90,7 +90,7 @@ export type AvailableCashOrder = {
 };
 
 export type CashMovement = {
-  tipo_registro: 'pedido' | 'manual';
+  tipo_registro: 'pedido' | 'manual' | 'fiado_recebimento';
   id: string;
   pedido_id?: string | null;
   numero_pedido?: string | null;

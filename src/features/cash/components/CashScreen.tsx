@@ -78,6 +78,7 @@ const paymentLabel: Record<string, string> = {
   cartao_debito: 'débito',
   cartao_credito: 'crédito',
   fiado: 'fiado',
+  fiado_recebimento: 'recebimento de fiado',
   pendente: 'pendente',
   sangria: 'saída',
   suprimento: 'entrada',
@@ -867,13 +868,16 @@ export function CashScreen() {
         movements.map((item) => {
           const isOut = ['sangria', 'despesa_rapida'].includes(item.tipo_movimentacao || item.origem_inclusao);
           const isManual = item.tipo_registro === 'manual';
+          const isFiadoReceipt = item.tipo_registro === 'fiado_recebimento';
           return (
             <div key={`${item.tipo_registro}-${item.id}`} className="flex items-center gap-4 border-b border-gray-100 px-5 py-4 last:border-b-0">
               <span className={`flex h-9 w-9 items-center justify-center rounded-full ${isOut ? 'bg-pink-100 text-pink-600' : 'bg-emerald-100 text-emerald-600'}`}>
                 {isOut ? <Minus className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="font-semibold text-gray-900">{isManual ? item.motivo : `Venda PDV #${item.numero_pedido}`}</div>
+                <div className="font-semibold text-gray-900">
+                  {isManual ? item.motivo : isFiadoReceipt ? 'Recebimento de fiado' : `Venda PDV #${item.numero_pedido}`}
+                </div>
                 <div className="truncate text-sm text-gray-500">
                   {isManual ? item.cliente_nome : item.cliente_nome || 'Cliente'} · {formatBrasiliaDate(item.criado_em)}
                 </div>
@@ -881,7 +885,7 @@ export function CashScreen() {
               <div className="text-right">
                 <div className={`font-bold ${isOut ? 'text-pink-600' : 'text-emerald-600'}`}>{isOut ? '-' : '+'}{currency(item.valor)}</div>
                 <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-600">
-                  {isManual ? `${paymentLabel[item.tipo_movimentacao || item.origem_inclusao] || item.origem_inclusao} · ` : ''}
+                  {isManual || isFiadoReceipt ? `${paymentLabel[item.tipo_movimentacao || item.origem_inclusao] || item.origem_inclusao} · ` : ''}
                   {paymentLabel[item.forma_pagamento] || item.forma_pagamento}
                 </span>
               </div>

@@ -218,6 +218,19 @@ const formatMoney = (value: unknown) =>
     .toFixed(2)
     .replace(".", ",");
 
+const toCents = (value: unknown) => Math.round(Number(value || 0) * 100);
+const parseCurrencyInputCents = (value: string) => {
+  const digits = String(value || "").replace(/\D/g, "");
+  return digits ? Number(digits) : 0;
+};
+const formatCents = (value: number) =>
+  (Math.max(0, value) / 100).toFixed(2).replace(".", ",");
+
+type SalaoPaymentLine = {
+  forma_pagamento: string;
+  valor: string;
+};
+
 const escapePrintHtml = (value: unknown) =>
   String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -296,6 +309,7 @@ export function SalaoPage() {
   const [closeMesaTarget, setCloseMesaTarget] = useState<any | null>(null);
   const [paymentTarget, setPaymentTarget] = useState<any | null>(null);
   const [paymentMethod, setPaymentMethod] = useState("dinheiro");
+  const [paymentLines, setPaymentLines] = useState<SalaoPaymentLine[]>([]);
   const loadingRef = useRef(false);
   const queuedManualRefreshRef = useRef(false);
   const selectedComandaIdRef = useRef("");
@@ -931,12 +945,31 @@ export function SalaoPage() {
   };
 
   const confirmPayment = async (comanda: any) => {
+    const totalCents = toCents(comanda?.total || 0);
+    const paymentsByMethod = new Map<string, number>();
+    paymentLines.forEach((line) => {
+      const valueCents = parseCurrencyInputCents(line.valor);
+      if (!line.forma_pagamento || valueCents <= 0) return;
+      paymentsByMethod.set(line.forma_pagamento, (paymentsByMethod.get(line.forma_pagamento) || 0) + valueCents);
+    });
+    const pagamentos = Array.from(paymentsByMethod.entries()).map(([forma_pagamento, valueCents]) => ({
+      forma_pagamento,
+      valor: Number((valueCents / 100).toFixed(2)),
+    }));
+    const payload = pagamentos.length > 1
+      ? { pagamentos }
+      : { forma_pagamento: pagamentos[0]?.forma_pagamento || paymentMethod };
+
+    if (pagamentos.length > 1 && pagamentos.reduce((sum, item) => sum + toCents(item.valor), 0) !== totalCents) {
+      showSystemNotice("A soma dos pagamentos deve ser igual ao total da mesa.");
+      return;
+    }
+
     setActionBusy(`payment-${comanda.id}`);
     try {
-      await salaoService.confirmPayment(comanda.id, {
-        forma_pagamento: paymentMethod,
-      });
+      await salaoService.confirmPayment(comanda.id, payload);
       setPaymentTarget(null);
+      setPaymentLines([]);
       setSelectedComanda(null);
       await load();
     } catch (error: any) {
@@ -1717,6 +1750,10 @@ export function SalaoPage() {
                           <button
                             onClick={() => {
                               setPaymentMethod("dinheiro");
+                              setPaymentLines([{
+                                forma_pagamento: "dinheiro",
+                                valor: formatCents(toCents(selectedComanda.total || 0)),
+                              }]);
                               setPaymentTarget(selectedComanda);
                             }}
                             className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white sm:min-h-12 sm:px-4 sm:text-sm"
@@ -1949,7 +1986,7 @@ export function SalaoPage() {
       </div>
       {paymentTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl">
             <div className="flex items-start gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
                 <CreditCard className="h-5 w-5" />
@@ -1966,48 +2003,114 @@ export function SalaoPage() {
                 </p>
               </div>
             </div>
-            <div className="mt-5 grid gap-2">
-              {SALAO_PAYMENT_METHODS.map((method) => {
-                const active = paymentMethod === method.value;
-                return (
-                  <button
-                    key={method.value}
-                    type="button"
-                    onClick={() => setPaymentMethod(method.value)}
-                    disabled={actionBusy === `payment-${paymentTarget.id}`}
-                    className={`flex min-h-11 items-center justify-between rounded-xl border px-4 py-3 text-left text-sm font-bold disabled:opacity-60 ${
-                      active
-                        ? "border-emerald-500 bg-emerald-50 text-emerald-900"
-                        : "border-slate-200 bg-white text-slate-700"
-                    }`}
-                  >
-                    {method.label}
-                    {active && (
-                      <span className="h-2.5 w-2.5 rounded-full bg-emerald-600" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="mt-5 grid gap-2 sm:grid-cols-2">
-              <button
-                onClick={() => setPaymentTarget(null)}
-                disabled={actionBusy === `payment-${paymentTarget.id}`}
-                className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700 disabled:opacity-60"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={() => void confirmPayment(paymentTarget)}
-                disabled={actionBusy === `payment-${paymentTarget.id}`}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
-              >
-                {actionBusy === `payment-${paymentTarget.id}` && (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                )}
-                Confirmar pagamento
-              </button>
-            </div>
+            {(() => {
+              const totalCents = toCents(paymentTarget.total || 0);
+              const paidCents = paymentLines.reduce((sum, line) => sum + parseCurrencyInputCents(line.valor), 0);
+              const remainingCents = Math.max(0, totalCents - paidCents);
+              const isComplete = totalCents > 0 && paidCents === totalCents;
+              const canAddLine = !isComplete && paymentLines.length < 8 && paymentLines.every((line) => line.forma_pagamento && parseCurrencyInputCents(line.valor) > 0);
+              const hasInvalidLine = paymentLines.some((line) => {
+                const valueCents = parseCurrencyInputCents(line.valor);
+                return (Boolean(line.forma_pagamento) || valueCents > 0) && (!line.forma_pagamento || valueCents <= 0);
+              });
+              const updateLine = (index: number, patch: Partial<SalaoPaymentLine>) => {
+                setPaymentLines((current) => current.map((line, lineIndex) => lineIndex === index ? { ...line, ...patch } : line));
+              };
+              const updateLineValue = (index: number, rawValue: string) => {
+                setPaymentLines((current) => {
+                  const otherLinesTotal = current.reduce((sum, line, lineIndex) => sum + (lineIndex === index ? 0 : parseCurrencyInputCents(line.valor)), 0);
+                  const nextCents = Math.min(parseCurrencyInputCents(rawValue), Math.max(0, totalCents - otherLinesTotal));
+                  return current.map((line, lineIndex) => lineIndex === index ? { ...line, valor: nextCents > 0 ? formatCents(nextCents) : "" } : line);
+                });
+              };
+
+              return (
+                <>
+                  <div className="mt-5 space-y-2">
+                    {paymentLines.map((line, index) => (
+                      <div key={index} className="grid grid-cols-[1fr_132px_36px] gap-2">
+                        <select
+                          value={line.forma_pagamento}
+                          onChange={(event) => {
+                            updateLine(index, { forma_pagamento: event.target.value });
+                            setPaymentMethod(event.target.value || paymentMethod);
+                          }}
+                          disabled={actionBusy === `payment-${paymentTarget.id}`}
+                          className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-emerald-400 disabled:opacity-60"
+                        >
+                          <option value="">Selecione</option>
+                          {SALAO_PAYMENT_METHODS.map((method) => (
+                            <option key={method.value} value={method.value}>{method.label}</option>
+                          ))}
+                        </select>
+                        <input
+                          value={line.valor}
+                          onChange={(event) => updateLineValue(index, event.target.value)}
+                          inputMode="decimal"
+                          disabled={actionBusy === `payment-${paymentTarget.id}`}
+                          className="h-11 rounded-xl border border-slate-200 px-3 text-right text-sm font-semibold text-slate-700 outline-none focus:border-emerald-400 disabled:opacity-60"
+                          placeholder="0,00"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setPaymentLines((current) => current.filter((_, lineIndex) => lineIndex !== index))}
+                          disabled={paymentLines.length === 1 || actionBusy === `payment-${paymentTarget.id}`}
+                          className="flex h-11 items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                          title="Remover forma"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  {canAddLine && (
+                    <button
+                      type="button"
+                      onClick={() => setPaymentLines((current) => [...current, { forma_pagamento: "", valor: "" }])}
+                      disabled={actionBusy === `payment-${paymentTarget.id}`}
+                      className="mt-3 inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      Adicionar forma
+                    </button>
+                  )}
+                  <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <div className="flex justify-between text-sm text-slate-600">
+                      <span>Resta pagar</span>
+                      <span className={isComplete ? "font-semibold text-emerald-700" : "font-semibold text-amber-700"}>
+                        R$ {formatCents(remainingCents)}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex justify-between text-sm font-semibold text-slate-800">
+                      <span>Total da mesa</span>
+                      <span>R$ {formatMoney(paymentTarget.total)}</span>
+                    </div>
+                  </div>
+                  <div className="mt-5 grid gap-2 sm:grid-cols-2">
+                    <button
+                      onClick={() => {
+                        setPaymentTarget(null);
+                        setPaymentLines([]);
+                      }}
+                      disabled={actionBusy === `payment-${paymentTarget.id}`}
+                      className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700 disabled:opacity-60"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={() => void confirmPayment(paymentTarget)}
+                      disabled={actionBusy === `payment-${paymentTarget.id}` || !isComplete || hasInvalidLine}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+                    >
+                      {actionBusy === `payment-${paymentTarget.id}` && (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      )}
+                      Confirmar pagamento
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
