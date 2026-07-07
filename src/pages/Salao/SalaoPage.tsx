@@ -16,6 +16,7 @@ import {
   Receipt,
   Search,
   ShoppingCart,
+  SlidersHorizontal,
   Trash2,
   UserCheck,
 } from "lucide-react";
@@ -35,6 +36,33 @@ import api from "@/shared/lib/api";
 import { SalaoProductConfiguratorModal } from "./SalaoProductConfiguratorModal";
 
 const PRIMARY = "#122a4c";
+const TABLE_CARD_SCALE_STORAGE_KEY = "admin_salao_table_card_scale";
+const TABLE_CARD_SCALE_MIN = 0.78;
+const TABLE_CARD_SCALE_MAX = 1.32;
+const TABLE_CARD_SCALE_STEP = 0.02;
+
+const hexToRgba = (hex: string, alpha: number) => {
+  const normalized = hex.replace("#", "");
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) return `rgba(18, 42, 76, ${alpha})`;
+
+  const value = parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+const clampTableCardScale = (value: unknown) => {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return 1;
+  return Math.min(TABLE_CARD_SCALE_MAX, Math.max(TABLE_CARD_SCALE_MIN, numericValue));
+};
+
+const getStoredTableCardScale = () => {
+  if (typeof window === "undefined") return 1;
+  return clampTableCardScale(localStorage.getItem(TABLE_CARD_SCALE_STORAGE_KEY));
+};
+
 const SALAO_PAYMENT_METHODS = [
   { value: "dinheiro", label: "Dinheiro" },
   { value: "pix", label: "PIX" },
@@ -213,6 +241,13 @@ const sortMesasByNumber = (items: any[]) =>
     ),
   );
 
+const normalizeMesaSearch = (value: unknown) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+
 const formatMoney = (value: unknown) =>
   Number(value || 0)
     .toFixed(2)
@@ -282,6 +317,9 @@ export function SalaoPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [creatingTable, setCreatingTable] = useState(false);
   const [newTableNumber, setNewTableNumber] = useState("");
+  const [appliedTableSearch, setAppliedTableSearch] = useState("");
+  const [tableCardScale, setTableCardScale] = useState(getStoredTableCardScale);
+  const [tableScaleControlOpen, setTableScaleControlOpen] = useState(false);
   const [selectedComanda, setSelectedComanda] = useState<any | null>(null);
   const [comandaModule, setComandaModule] = useState<
     "mesa" | "participantes" | "pedidos"
@@ -339,6 +377,10 @@ export function SalaoPage() {
     void loadCurrentStore().catch(() => undefined);
   }, [loadCurrentStore]);
 
+  useEffect(() => {
+    localStorage.setItem(TABLE_CARD_SCALE_STORAGE_KEY, String(tableCardScale));
+  }, [tableCardScale]);
+
   const playRealtimeAlert = useCallback(() => {
     if (!soundEnabledRef.current) return;
     const audio = audioContextRef.current;
@@ -347,11 +389,11 @@ export function SalaoPage() {
     const oscillator = audio.createOscillator();
     const gain = audio.createGain();
     oscillator.frequency.value = 880;
-    gain.gain.setValueAtTime(0.08, audio.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.25);
+    gain.gain.setValueAtTime(0.22, audio.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.35);
     oscillator.connect(gain).connect(audio.destination);
     oscillator.start();
-    oscillator.stop(audio.currentTime + 0.25);
+    oscillator.stop(audio.currentTime + 0.35);
   }, []);
 
   const load = useCallback(
@@ -565,6 +607,7 @@ export function SalaoPage() {
         capacidade: 4,
       });
       setNewTableNumber("");
+      setAppliedTableSearch("");
       await load();
     } catch (error: any) {
       showSystemNotice(
@@ -776,6 +819,7 @@ export function SalaoPage() {
       setSelectedProductId("");
       setItemQuantity("1");
       setItemNotes("");
+      playRealtimeAlert();
       await load();
     } catch (error: any) {
       showSystemNotice(
@@ -851,6 +895,7 @@ export function SalaoPage() {
       setSelectedComanda(updated);
       setConfiguringProduct(null);
       setComandaModule("pedidos");
+      playRealtimeAlert();
       await load();
     } catch (error: any) {
       showSystemNotice(
@@ -1128,6 +1173,47 @@ export function SalaoPage() {
   const selectedProduct = productPool.find(
     (product) => product.id === selectedProductId,
   );
+  const tableSearchQuery = newTableNumber.trim();
+  const normalizedTableSearchQuery = normalizeMesaSearch(tableSearchQuery);
+  const typedTableMatches = useMemo(() => {
+    if (!normalizedTableSearchQuery) return [];
+    return mesas.filter((mesa) => {
+      const number = normalizeMesaSearch(mesa?.numero);
+      const name = normalizeMesaSearch(mesa?.nome);
+      return (
+        number.includes(normalizedTableSearchQuery) ||
+        name.includes(normalizedTableSearchQuery)
+      );
+    });
+  }, [mesas, normalizedTableSearchQuery]);
+  const visibleMesas = useMemo(() => {
+    const search = normalizeMesaSearch(appliedTableSearch);
+    if (!search) return mesas;
+    return mesas.filter((mesa) => {
+      const number = normalizeMesaSearch(mesa?.numero);
+      const name = normalizeMesaSearch(mesa?.nome);
+      return number.includes(search) || name.includes(search);
+    });
+  }, [appliedTableSearch, mesas]);
+  const canSearchTable = Boolean(tableSearchQuery && typedTableMatches.length > 0);
+  const tableActionLabel = canSearchTable ? "Buscar" : "Mesa";
+  const TableActionIcon = canSearchTable ? Search : Plus;
+  const tableCardScalePercent = Math.round(tableCardScale * 100);
+  const tableCardGridMinWidth = Math.round(252 * tableCardScale);
+  const tableCardGap = Math.round(10 * tableCardScale);
+  const tableCardPadding = Math.round(12 * tableCardScale);
+  const tableCardBottomPadding = Math.round(56 * tableCardScale);
+  const tableCardMinHeight = Math.round(128 * tableCardScale);
+  const tableCardDeleteButtonSize = Math.round(32 * tableCardScale);
+  const tableCardDeleteButtonOffset = Math.round(12 * tableCardScale);
+  const handleTableSearchOrCreate = async () => {
+    if (!tableSearchQuery) return;
+    if (canSearchTable) {
+      setAppliedTableSearch(tableSearchQuery);
+      return;
+    }
+    await createMesa();
+  };
   const mesasById = useMemo(
     () => new Map(mesas.map((mesa) => [mesa.id, mesa])),
     [mesas],
@@ -1149,7 +1235,6 @@ export function SalaoPage() {
   const canAdminAddItems = selectedComanda
     ? ["aberta", "aguardando_conta"].includes(selectedComanda.status)
     : false;
-  const activeTabClass = "bg-white text-gray-900 shadow-sm";
   const tableStatusClass: Record<string, string> = {
     livre: "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200",
     ocupada: "bg-rose-100 text-rose-800 ring-1 ring-rose-200",
@@ -1160,47 +1245,106 @@ export function SalaoPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-gray-50">
-      <div className="border-b border-gray-200 bg-white px-3 py-2 sm:px-6 sm:py-4">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-lg font-semibold text-gray-900 sm:text-xl">
-              Salão
-            </h1>
-            <p className="text-xs text-gray-500 sm:text-sm">
-              Mesas, comandas, atendimento e cozinha.
-            </p>
-          </div>
-          <button
-            onClick={() => void load({ manual: true, includeProducts: true })}
-            disabled={loading || refreshing}
-            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#122a4c] px-3 py-2 text-xs font-semibold text-white shadow-md shadow-blue-200 hover:bg-[#0b1e38] disabled:opacity-60 sm:min-h-11 sm:px-4 sm:text-sm"
-          >
-            <RefreshCw
-              className={`h-4 w-4 ${loading || refreshing ? "animate-spin" : ""}`}
-            />
-            {loading || refreshing ? "Atualizando..." : "Atualizar"}
-          </button>
-        </div>
-        <div className="mt-3 flex gap-1 overflow-x-auto rounded-xl bg-gray-100 p-1 scrollbar-hide">
+      <div className="border-b border-gray-200 bg-white px-4 pt-2">
+        <div
+          className="flex gap-1 overflow-x-auto scrollbar-hide"
+          role="tablist"
+          aria-label="Áreas do salão"
+        >
           {[
             ["mesas", Armchair, "Mesas", pendingMesas.length],
             ["comandas", ClipboardList, "Comandas", pendingMesas.length],
             ["kds", ChefHat, "KDS", 0],
-          ].map(([id, Icon, label, pendingCount]) => (
+          ].map(([id, Icon, label, pendingCount]) => {
+            const active = tab === id;
+            return (
+              <button
+                key={String(id)}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setTab(id as any)}
+                className={`relative isolate inline-flex min-w-24 shrink-0 items-center justify-center gap-2 overflow-hidden border-b-2 px-4 py-3 text-sm font-semibold transition-all duration-200 ${
+                  active
+                    ? "text-gray-900"
+                    : "border-transparent text-gray-500 hover:text-gray-800"
+                }`}
+                style={
+                  active ? { borderBottomColor: PRIMARY, color: PRIMARY } : undefined
+                }
+              >
+                {active && (
+                  <>
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-x-0 bottom-0 h-7"
+                      style={{
+                        background: `linear-gradient(to top, ${hexToRgba(PRIMARY, 0.13)} 0%, ${hexToRgba(PRIMARY, 0.055)} 38%, ${hexToRgba(PRIMARY, 0)} 100%)`,
+                      }}
+                    />
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-x-3 bottom-0 h-1 blur-md"
+                      style={{
+                        backgroundColor: hexToRgba(PRIMARY, 0.22),
+                      }}
+                    />
+                  </>
+                )}
+                <Icon className="relative z-10 h-4 w-4" />
+                <span className="relative z-10">{label}</span>
+                {Number(pendingCount) > 0 && (
+                  <span className="relative z-10 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-100 px-1.5 text-[10px] font-extrabold text-amber-800">
+                    {pendingCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+          <div className="ml-auto flex flex-none items-center gap-2 py-1.5">
             <button
-              key={String(id)}
-              onClick={() => setTab(id as any)}
-              className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold sm:min-h-11 sm:gap-2 sm:px-4 sm:text-sm ${tab === id ? activeTabClass : "text-gray-500"}`}
+              type="button"
+              onClick={() => void load({ manual: true, includeProducts: true })}
+              disabled={loading || refreshing}
+              className="relative inline-flex h-9 w-9 flex-none items-center justify-center rounded-full text-white shadow-sm transition-all hover:opacity-90 disabled:cursor-default disabled:opacity-45"
+              style={{ backgroundColor: PRIMARY }}
+              title={loading || refreshing ? "Atualizando..." : "Atualizar"}
+              aria-label={loading || refreshing ? "Atualizando salão" : "Atualizar salão"}
             >
-              <Icon className="h-4 w-4" />
-              {label}
-              {Number(pendingCount) > 0 && (
-                <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-extrabold text-amber-800">
-                  {pendingCount}
-                </span>
-              )}
+              <RefreshCw
+                className={`h-4 w-4 ${loading || refreshing ? "animate-spin" : ""}`}
+              />
             </button>
-          ))}
+            <button
+              type="button"
+              onClick={() => setTableScaleControlOpen((current) => !current)}
+              className="inline-flex h-9 w-9 flex-none items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 shadow-sm transition-all hover:border-gray-300 hover:text-gray-900"
+              title="Ajustar tamanho dos cards"
+              aria-label="Ajustar tamanho dos cards de mesa"
+              aria-expanded={tableScaleControlOpen}
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+            </button>
+            {tableScaleControlOpen && (
+              <div className="flex w-44 flex-none items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 shadow-sm">
+                <input
+                  type="range"
+                  min={TABLE_CARD_SCALE_MIN}
+                  max={TABLE_CARD_SCALE_MAX}
+                  step={TABLE_CARD_SCALE_STEP}
+                  value={tableCardScale}
+                  onChange={(event) =>
+                    setTableCardScale(clampTableCardScale(event.target.value))
+                  }
+                  className="h-1.5 w-full accent-[#122a4c]"
+                  aria-label="Tamanho dos cards de mesa"
+                />
+                <span className="w-9 text-right text-[11px] font-bold text-gray-600">
+                  {tableCardScalePercent}%
+                </span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1215,23 +1359,61 @@ export function SalaoPage() {
             <div className="flex w-full max-w-sm gap-2">
               <input
                 value={newTableNumber}
-                onChange={(event) => setNewTableNumber(event.target.value)}
+                onChange={(event) => {
+                  setNewTableNumber(event.target.value);
+                  if (!event.target.value.trim()) setAppliedTableSearch("");
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void handleTableSearchOrCreate();
+                  }
+                }}
                 placeholder="Número da mesa"
                 className="h-12 flex-1 rounded-xl border border-gray-300 px-3 text-base"
               />
               <button
-                onClick={() => void createMesa()}
-                disabled={creatingTable || !newTableNumber.trim()}
+                type="button"
+                onClick={() => void handleTableSearchOrCreate()}
+                disabled={creatingTable || !tableSearchQuery}
                 className="inline-flex min-h-12 items-center gap-2 rounded-xl px-4 text-sm font-semibold text-white disabled:opacity-60"
                 style={{ backgroundColor: PRIMARY }}
               >
-                <Plus className="h-4 w-4" />
-                Mesa
+                {creatingTable ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <TableActionIcon className="h-4 w-4" />
+                )}
+                {creatingTable ? "Criando..." : tableActionLabel}
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-              {mesas.map((mesa) => {
+            {appliedTableSearch && (
+              <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                <span>
+                  {visibleMesas.length} mesa{visibleMesas.length !== 1 ? "s" : ""} encontrada{visibleMesas.length !== 1 ? "s" : ""} para "{appliedTableSearch}".
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAppliedTableSearch("");
+                    setNewTableNumber("");
+                  }}
+                  className="font-semibold text-gray-700 underline-offset-2 hover:underline"
+                >
+                  Limpar busca
+                </button>
+              </div>
+            )}
+
+            <div
+              className="grid"
+              style={{
+                gap: tableCardGap,
+                gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${tableCardGridMinWidth}px), 1fr))`,
+              }}
+            >
+              {visibleMesas.map((mesa) => {
                 const pendingAction = getMesaPendingAction(mesa);
                 const hasOpenComanda = Boolean(mesa.comanda_aberta);
                 const handleMesaClick = () => void openMesa(mesa);
@@ -1251,40 +1433,77 @@ export function SalaoPage() {
                         handleMesaClick();
                       }
                     }}
-                    className={`relative min-h-32 rounded-xl border p-3 pb-14 shadow-sm transition-all ${
+                    className={`relative rounded-xl border shadow-sm transition-all ${
                       realtimeMesaId === mesa.id
                         ? "border-emerald-500 bg-emerald-100 ring-4 ring-emerald-200 animate-pulse"
                         : pendingAction?.cardClass || "border-gray-200 bg-white"
                     } ${hasOpenComanda ? "cursor-pointer hover:border-blue-300 hover:shadow-md" : ""}`}
+                    style={{
+                      minHeight: tableCardMinHeight,
+                      padding: tableCardPadding,
+                      paddingBottom: tableCardBottomPadding,
+                    }}
                   >
                     <div className="flex items-start justify-between">
                       <div>
-                        <div className="text-xs text-gray-500">Mesa</div>
-                        <div className="text-xl font-semibold text-gray-900">
+                        <div
+                          className="text-gray-500"
+                          style={{ fontSize: 12 * tableCardScale }}
+                        >
+                          Mesa
+                        </div>
+                        <div
+                          className="font-semibold text-gray-900"
+                          style={{ fontSize: 20 * tableCardScale, lineHeight: 1.2 }}
+                        >
                           {mesa.numero}
                         </div>
                       </div>
                       <span
-                        className={`rounded-full px-2 py-1 text-[10px] font-extrabold uppercase tracking-wide ${tableStatusClass[mesa.status] || "bg-gray-100 text-gray-700"}`}
+                        className={`rounded-full font-extrabold uppercase tracking-wide ${tableStatusClass[mesa.status] || "bg-gray-100 text-gray-700"}`}
+                        style={{
+                          fontSize: 10 * tableCardScale,
+                          padding: `${4 * tableCardScale}px ${8 * tableCardScale}px`,
+                          whiteSpace: "nowrap",
+                        }}
                       >
                         {mesa.status?.replace(/_/g, " ")}
                       </span>
                     </div>
                     {pendingAction && (
                       <div
-                        className={`mt-2 inline-flex max-w-full items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-bold ${pendingAction.className}`}
+                        className={`flex w-full max-w-full items-center rounded-md border font-bold leading-snug ${pendingAction.className}`}
+                        style={{
+                          gap: 4 * tableCardScale,
+                          marginTop: 8 * tableCardScale,
+                          padding: `${4 * tableCardScale}px ${8 * tableCardScale}px`,
+                          fontSize: 11 * tableCardScale,
+                        }}
                       >
-                        <CircleAlert className="h-3.5 w-3.5 shrink-0" />
-                        <span className="truncate">
+                        <CircleAlert
+                          className="shrink-0"
+                          style={{
+                            height: 14 * tableCardScale,
+                            width: 14 * tableCardScale,
+                          }}
+                        />
+                        <span>
                           Ação pendente: {pendingAction.label}
                         </span>
                       </div>
                     )}
                     {mesa.comanda_aberta && (
                       <div
-                        className={`mt-3 space-y-2 rounded-md px-3 py-2 text-xs text-gray-700 ${pendingAction ? "bg-white/60" : "bg-gray-50"}`}
+                        className={`rounded-md text-gray-700 ${pendingAction ? "bg-white/60" : "bg-gray-50"}`}
+                        style={{
+                          marginTop: 12 * tableCardScale,
+                          padding: `${8 * tableCardScale}px ${12 * tableCardScale}px`,
+                          fontSize: 12 * tableCardScale,
+                        }}
                       >
-                        <div>R$ {formatMoney(mesa.comanda_aberta.total)}</div>
+                        <div style={{ marginBottom: 8 * tableCardScale }}>
+                          R$ {formatMoney(mesa.comanda_aberta.total)}
+                        </div>
                         <button
                           type="button"
                           onClick={(event) => {
@@ -1292,27 +1511,58 @@ export function SalaoPage() {
                             setCloseMesaTarget(mesa);
                           }}
                           disabled={actionBusy === `close-${mesa.comanda_aberta.id}`}
-                          className="inline-flex min-h-8 w-full items-center justify-center gap-1.5 rounded-lg bg-[#122a4c] px-2 py-1 text-xs font-bold text-white disabled:opacity-60"
+                          className="inline-flex w-full items-center justify-center rounded-lg bg-[#122a4c] font-bold text-white disabled:opacity-60"
+                          style={{
+                            minHeight: 32 * tableCardScale,
+                            gap: 6 * tableCardScale,
+                            padding: `${4 * tableCardScale}px ${8 * tableCardScale}px`,
+                            fontSize: 12 * tableCardScale,
+                          }}
                         >
                           {actionBusy === `close-${mesa.comanda_aberta.id}` ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <Loader2
+                              className="animate-spin"
+                              style={{
+                                height: 14 * tableCardScale,
+                                width: 14 * tableCardScale,
+                              }}
+                            />
                           ) : (
-                            <Receipt className="h-3.5 w-3.5" />
+                            <Receipt
+                              style={{
+                                height: 14 * tableCardScale,
+                                width: 14 * tableCardScale,
+                              }}
+                            />
                           )}
                           Fechar mesa
                         </button>
                       </div>
                     )}
                     {!mesa.comanda_aberta && (
-                      <div className="mt-3 space-y-1.5 sm:mt-4 sm:space-y-2">
+                      <div style={{ marginTop: 12 * tableCardScale }}>
                         <button
                           onClick={() => void openComanda(mesa)}
                           disabled={actionBusy === `open-${mesa.id}`}
-                          className="min-h-9 w-full rounded-lg border border-gray-200 px-2 py-1 text-xs font-semibold hover:bg-gray-50 disabled:opacity-50"
+                          className="w-full rounded-lg border border-gray-200 font-semibold hover:bg-gray-50 disabled:opacity-50"
+                          style={{
+                            minHeight: 36 * tableCardScale,
+                            padding: `${4 * tableCardScale}px ${8 * tableCardScale}px`,
+                            fontSize: 12 * tableCardScale,
+                          }}
                         >
                           {actionBusy === `open-${mesa.id}` ? (
-                            <span className="inline-flex items-center gap-2">
-                              <Loader2 className="h-4 w-4 animate-spin" />{" "}
+                            <span
+                              className="inline-flex items-center"
+                              style={{ gap: 8 * tableCardScale }}
+                            >
+                              <Loader2
+                                className="animate-spin"
+                                style={{
+                                  height: 16 * tableCardScale,
+                                  width: 16 * tableCardScale,
+                                }}
+                              />{" "}
                               Abrindo...
                             </span>
                           ) : (
@@ -1331,12 +1581,29 @@ export function SalaoPage() {
                       }}
                       onKeyDown={(event) => event.stopPropagation()}
                       disabled={actionBusy === `delete-${mesa.id}`}
-                      className="absolute bottom-3 right-3 inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-200 bg-white text-red-700 hover:bg-red-50 disabled:opacity-60"
+                      className="absolute inline-flex items-center justify-center rounded-md border border-red-200 bg-white text-red-700 hover:bg-red-50 disabled:opacity-60"
+                      style={{
+                        bottom: tableCardDeleteButtonOffset,
+                        right: tableCardDeleteButtonOffset,
+                        height: tableCardDeleteButtonSize,
+                        width: tableCardDeleteButtonSize,
+                      }}
                     >
                       {actionBusy === `delete-${mesa.id}` ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <Loader2
+                          className="animate-spin"
+                          style={{
+                            height: 16 * tableCardScale,
+                            width: 16 * tableCardScale,
+                          }}
+                        />
                       ) : (
-                        <Trash2 className="h-4 w-4" />
+                        <Trash2
+                          style={{
+                            height: 16 * tableCardScale,
+                            width: 16 * tableCardScale,
+                          }}
+                        />
                       )}
                     </button>
                   </div>

@@ -91,6 +91,20 @@ const buildWhatsappUrl = (phone: any, message: string) => {
   return `https://wa.me/${normalizedPhone}?text=${encodeURIComponent(message)}`;
 };
 
+const getListGroupAccentColor = (groupKey: string) => {
+  const colors: Record<string, string> = {
+    andamento: "#2563eb",
+    cancelamentos: "#dc2626",
+    saiu_para_entrega: statusColor.saiu_para_entrega?.text || "#ea580c",
+    entregues: statusColor.entregue?.text || "#16a34a",
+    entregues_aguardando_pagamento: "#d97706",
+    nao_entregues: statusColor.nao_entregue?.text || "#dc2626",
+    cancelados: statusColor.cancelado?.text || "#dc2626",
+  };
+
+  return colors[groupKey] || PRIMARY;
+};
+
 const getOrderCustomerPhone = (order: any) =>
   order?.cliente?.telefone ||
   order?.cliente?.celular ||
@@ -2484,24 +2498,17 @@ export function OrdersScreen() {
             defaultExpanded: false,
           },
         ].filter((group) => group.orders.length > 0);
-  const hasAndamentoGroup = listGroups.some((group) => group.key === "andamento");
   const firstListGroupKey = listGroups[0]?.key || "andamento";
 
   useEffect(() => {
     if (viewMode !== "lista") return;
-    if (["Entrega", "Retirada"].includes(typeFilter) && hasAndamentoGroup) {
-      if (activeListGroupKey !== "andamento") setActiveListGroupKey("andamento");
-      return;
-    }
     if (!listGroups.some((group) => group.key === activeListGroupKey)) {
       setActiveListGroupKey(firstListGroupKey);
     }
   }, [
     activeListGroupKey,
     firstListGroupKey,
-    hasAndamentoGroup,
     listGroups,
-    typeFilter,
     viewMode,
   ]);
 
@@ -2728,13 +2735,31 @@ export function OrdersScreen() {
                         setTypeFilter(tab.value);
                       }
                     }}
-                    className={`relative inline-flex min-w-24 items-center justify-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${active ? "text-gray-900" : "border-transparent text-gray-500 hover:text-gray-800"}`}
+                    className={`relative isolate inline-flex min-w-24 items-center justify-center gap-2 overflow-hidden border-b-2 px-4 py-3 text-sm font-semibold transition-all duration-200 ${active ? "text-gray-900" : "border-transparent text-gray-500 hover:text-gray-800"}`}
                     style={active ? { borderBottomColor: primaryColor, color: primaryColor } : undefined}
                   >
-                    {tab.label}
+                    {active && (
+                      <>
+                        <span
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-x-0 bottom-0 h-7"
+                          style={{
+                            background: `linear-gradient(to top, ${hexToRgba(primaryColor, 0.13)} 0%, ${hexToRgba(primaryColor, 0.055)} 38%, ${hexToRgba(primaryColor, 0)} 100%)`,
+                          }}
+                        />
+                        <span
+                          aria-hidden="true"
+                          className="pointer-events-none absolute inset-x-3 bottom-0 h-1 blur-md"
+                          style={{
+                            backgroundColor: hexToRgba(primaryColor, 0.22),
+                          }}
+                        />
+                      </>
+                    )}
+                    <span className="relative z-10">{tab.label}</span>
                     {count > 0 && (
                       <span
-                        className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white"
+                        className="relative z-10 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white"
                         style={{ backgroundColor: primaryColor }}
                         title={`${count} pedido${count === 1 ? " novo" : "s novos"}`}
                       >
@@ -3084,6 +3109,7 @@ export function OrdersScreen() {
                 >
                   {listGroups.map((group) => {
                     const active = activeListGroup?.key === group.key;
+                    const accentColor = getListGroupAccentColor(group.key);
                     return (
                       <button
                         key={group.key}
@@ -3092,7 +3118,7 @@ export function OrdersScreen() {
                         aria-selected={active}
                         title={group.description}
                         onClick={() => setActiveListGroupKey(group.key)}
-                        className={`relative inline-flex min-w-max items-center justify-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${
+                        className={`relative isolate inline-flex min-w-max items-center justify-center gap-2 overflow-hidden border-b-2 px-4 py-3 text-sm font-semibold transition-all duration-200 ${
                           active
                             ? "text-gray-900"
                             : "border-transparent text-gray-500 hover:text-gray-800"
@@ -3100,22 +3126,40 @@ export function OrdersScreen() {
                         style={
                           active
                             ? {
-                                borderBottomColor: primaryColor,
-                                color: primaryColor,
+                                borderBottomColor: accentColor,
+                                color: accentColor,
                               }
                             : undefined
                         }
                       >
-                        {group.title}
+                        {active && (
+                          <>
+                            <span
+                              aria-hidden="true"
+                              className="pointer-events-none absolute inset-x-0 bottom-0 h-7"
+                              style={{
+                                background: `linear-gradient(to top, ${hexToRgba(accentColor, 0.13)} 0%, ${hexToRgba(accentColor, 0.055)} 38%, ${hexToRgba(accentColor, 0)} 100%)`,
+                              }}
+                            />
+                            <span
+                              aria-hidden="true"
+                              className="pointer-events-none absolute inset-x-3 bottom-0 h-1 blur-md"
+                              style={{
+                                backgroundColor: hexToRgba(accentColor, 0.22),
+                              }}
+                            />
+                          </>
+                        )}
+                        <span className="relative z-10">{group.title}</span>
                         <span
-                          className={`inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold ${
+                          className={`relative z-10 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold ${
                             active
                               ? "text-white"
                               : "bg-gray-100 text-gray-500"
                           }`}
                           style={
                             active
-                              ? { backgroundColor: primaryColor }
+                              ? { backgroundColor: accentColor }
                               : undefined
                           }
                         >

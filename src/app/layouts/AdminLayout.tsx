@@ -47,6 +47,50 @@ const superAdminItems = [
 ];
 
 
+const routeAliases: Record<string, string> = {
+  '/pedidos': '/orders',
+  '/produtos': '/products',
+  '/products-import': '/products',
+  '/importar-produtos': '/products',
+  '/categorias': '/categories',
+  '/clientes': '/customers',
+  '/caixa': '/cash',
+  '/configuracoes': '/settings',
+};
+
+const resolveNavItemForPath = (pathname: string) => {
+  const alias = Object.entries(routeAliases)
+    .sort((a, b) => b[0].length - a[0].length)
+    .find(([legacyPath]) => pathname === legacyPath || pathname.startsWith(`${legacyPath}/`));
+  const normalizedPath = alias ? pathname.replace(alias[0], alias[1]) : pathname;
+
+  return navItems.find((item) => normalizedPath === item.path || normalizedPath.startsWith(`${item.path}/`)) || null;
+};
+
+function RouteAccessDenied({ onGoHome }: { onGoHome: () => void }) {
+  return (
+    <div className="flex flex-1 items-center justify-center bg-gray-50 p-6">
+      <div className="w-full max-w-md rounded-xl border border-amber-200 bg-white p-6 text-center shadow-sm">
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-50 text-amber-700">
+          <Key className="h-5 w-5" />
+        </div>
+        <h2 className="text-base font-semibold text-gray-900">Você não tem permissão para acessar esta rota</h2>
+        <p className="mt-2 text-sm text-gray-500">
+          Entre em contato com um administrador caso precise liberar este acesso.
+        </p>
+        <button
+          type="button"
+          onClick={onGoHome}
+          className="mt-5 rounded-lg px-4 py-2 text-sm font-semibold text-white"
+          style={{ backgroundColor: PRIMARY }}
+        >
+          Ir para uma área disponível
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [storeName, setStoreName] = useState('Carregando...');
@@ -182,12 +226,21 @@ export function AdminLayout() {
     }))
     .filter(group => group.items.length > 0);
 
-  if (salaoEnabled === false && location.pathname.startsWith('/salao')) {
-    return <Navigate to="/orders" replace />;
-  }
-  if (fiadoEnabled === false && location.pathname.startsWith('/fiados')) {
-    return <Navigate to="/orders" replace />;
-  }
+  const currentNavItem = resolveNavItemForPath(location.pathname);
+  const currentRouteModuleLoading =
+    (currentNavItem?.path === '/salao' && salaoEnabled === null) ||
+    (currentNavItem?.path === '/fiados' && fiadoEnabled === null);
+  const currentRouteAccessDenied =
+    !currentRouteModuleLoading &&
+    (
+      (location.pathname.startsWith('/permissions') && user?.perfil !== 'superadmin') ||
+      Boolean(currentNavItem && !canViewNavItem(currentNavItem))
+    );
+  const firstAvailableRoute = visibleNavGroups[0]?.items[0]?.path || '/login';
+  const handleGoToAvailableRoute = () => {
+    navigate(firstAvailableRoute, { replace: true });
+    setSidebarOpen(false);
+  };
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
@@ -315,7 +368,7 @@ export function AdminLayout() {
 
           <div className="flex-1">
             <h1 className="text-sm font-semibold text-gray-800">
-              {navItems.find(n => isActive(n.path))?.label ?? 'Painel'}
+              {currentNavItem?.label ?? 'Painel'}
             </h1>
           </div>
 
@@ -336,7 +389,18 @@ export function AdminLayout() {
 
         {/* Content */}
         <main className="flex-1 min-h-0 overflow-hidden flex flex-col">
-          <Outlet />
+          {currentRouteModuleLoading ? (
+            <div className="flex flex-1 items-center justify-center">
+              <div
+                className="h-8 w-8 animate-spin rounded-full border-4 border-gray-200"
+                style={{ borderColor: `${PRIMARY}40`, borderTopColor: PRIMARY }}
+              />
+            </div>
+          ) : currentRouteAccessDenied ? (
+            <RouteAccessDenied onGoHome={handleGoToAvailableRoute} />
+          ) : (
+            <Outlet />
+          )}
         </main>
       </div>
     </div>
