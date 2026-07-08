@@ -2530,64 +2530,117 @@ export function SalaoPage() {
                             Nenhum produto adicionado.
                           </div>
                         ) : (
-                          selectedComanda.itens.map((item: any) => (
-                            <div
-                              key={item.id}
-                              className={`flex min-w-0 max-w-full items-start justify-between gap-2 overflow-hidden rounded-lg border border-gray-100 p-2 sm:gap-3 sm:p-3 ${item.status === "cancelado" ? "bg-slate-50 opacity-75" : ""}`}
-                            >
-                              <div className="min-w-0 flex-1 overflow-hidden">
-                                <div className="break-words text-sm font-medium leading-tight text-gray-900 [overflow-wrap:anywhere] sm:text-base">
-                                  {item.nome_produto}
-                                </div>
-                                <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-gray-500 sm:mt-1 sm:gap-1.5 sm:text-xs">
-                                  <span className="min-w-0 break-words [overflow-wrap:anywhere]">
-                                    {item.quantidade} x R${" "}
-                                    {formatMoney(item.preco_unitario)}
-                                  </span>
-                                  <span
-                                    className={`inline-flex max-w-full rounded-full border px-2 py-0.5 font-bold ${getSalaoStatusStyle(item.status).badge}`}
-                                  >
-                                    {getSalaoStatusStyle(item.status).label}
-                                  </span>
-                                </div>
-                                {(item.adicionado_por || item.autor_label) && (
-                                  <div className="mt-0.5 break-words text-[11px] font-semibold text-blue-700 [overflow-wrap:anywhere] sm:mt-1 sm:text-xs">
-                                    {salaoItemAuthorLabel(item)}
+                          selectedComanda.itens.map((item: any) => {
+                            const itemSelections = arrayOrEmpty<any>(item.selecoes);
+                            const itemVariation = String(item.nome_variacao || "").trim();
+                            const itemNote = String(item.observacoes || "").trim();
+
+                            return (
+                              <div
+                                key={item.id}
+                                className={`flex min-w-0 max-w-full items-start justify-between gap-2 overflow-hidden rounded-lg border border-gray-100 p-2 sm:gap-3 sm:p-3 ${item.status === "cancelado" ? "bg-slate-50 opacity-75" : ""}`}
+                              >
+                                <div className="min-w-0 flex-1 overflow-hidden">
+                                  <div className="break-words text-sm font-medium leading-tight text-gray-900 [overflow-wrap:anywhere] sm:text-base">
+                                    {item.nome_produto}
                                   </div>
-                                )}
-                                {item.observacoes && (
-                                  <div className="mt-0.5 whitespace-pre-wrap break-words text-[11px] text-gray-500 [overflow-wrap:anywhere] sm:mt-1 sm:text-xs">
-                                    {item.observacoes}
+                                  <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-gray-500 sm:mt-1 sm:gap-1.5 sm:text-xs">
+                                    <span className="min-w-0 break-words [overflow-wrap:anywhere]">
+                                      {item.quantidade} x R${" "}
+                                      {formatMoney(item.preco_unitario)}
+                                    </span>
+                                    <span
+                                      className={`inline-flex max-w-full rounded-full border px-2 py-0.5 font-bold ${getSalaoStatusStyle(item.status).badge}`}
+                                    >
+                                      {getSalaoStatusStyle(item.status).label}
+                                    </span>
                                   </div>
-                                )}
-                              </div>
-                              <div className="flex max-w-[82px] shrink-0 flex-col items-end gap-1.5 sm:max-w-none sm:gap-2">
-                                <div className="break-words text-right text-xs font-semibold text-gray-900 [overflow-wrap:anywhere] sm:text-sm">
-                                  R$ {formatMoney(item.preco_total)}
-                                </div>
-                                <button
-                                  type="button"
-                                  title="Remover produto da mesa"
-                                  aria-label={`Remover ${item.nome_produto}`}
-                                  onClick={() => void removeItemFromComanda(item)}
-                                  disabled={
-                                    item.status === "cancelado" ||
-                                    !["aberta", "aguardando_conta"].includes(
-                                      selectedComanda.status,
-                                    ) ||
-                                    actionBusy === `remove-item-${item.id}`
-                                  }
-                                  className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-red-200 bg-white text-red-700 hover:bg-red-50 disabled:opacity-40 sm:h-8 sm:w-8"
-                                >
-                                  {actionBusy === `remove-item-${item.id}` ? (
-                                    <Loader2 className="h-3.5 w-3.5 animate-spin sm:h-4 sm:w-4" />
-                                  ) : (
-                                    <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                                  {itemVariation && (
+                                    <div className="mt-1 break-words text-[11px] font-semibold text-slate-700 [overflow-wrap:anywhere] sm:text-xs">
+                                      Tamanho: {itemVariation}
+                                    </div>
                                   )}
-                                </button>
+                                  {itemSelections.length > 0 && (
+                                    <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50/50 p-2">
+                                      <div className="text-[10px] font-bold uppercase text-blue-700 sm:text-[11px]">
+                                        Adicionais e opções
+                                      </div>
+                                      <div className="mt-1 space-y-1">
+                                        {itemSelections.map((selection, index) => {
+                                          const quantity = Number(selection.quantidade || 1);
+                                          const extra = Number(selection.preco_contribuicao || 0);
+
+                                          return (
+                                            <div
+                                              key={selection.id || `${item.id}-selection-${index}`}
+                                              className="flex min-w-0 flex-wrap items-start justify-between gap-2 text-[11px] leading-snug text-slate-700 sm:text-xs"
+                                            >
+                                              <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">
+                                                <span className="font-semibold">
+                                                  {selection.nome_grupo || "Opção"}:
+                                                </span>{" "}
+                                                {selection.nome_opcao || "Opção"}
+                                                {quantity > 1 ? ` x${quantity}` : ""}
+                                                {selection.fracao ? ` (${selection.fracao})` : ""}
+                                              </span>
+                                              {extra > 0 && (
+                                                <span className="shrink-0 break-words text-right font-semibold text-slate-900 [overflow-wrap:anywhere]">
+                                                  + R$ {formatMoney(extra)}
+                                                </span>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {(item.adicionado_por || item.autor_label) && (
+                                    <div className="mt-1 break-words text-[11px] font-semibold text-blue-700 [overflow-wrap:anywhere] sm:text-xs">
+                                      {salaoItemAuthorLabel(item)}
+                                    </div>
+                                  )}
+                                  {itemNote && (
+                                    <div className="mt-2 flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50/70 p-2 text-[11px] text-amber-950 sm:text-xs">
+                                      <MessageSquareText className="mt-0.5 h-3.5 w-3.5 flex-none text-amber-700" />
+                                      <div className="min-w-0 flex-1">
+                                        <div className="font-bold uppercase text-amber-700">
+                                          Observação
+                                        </div>
+                                        <p className="mt-0.5 whitespace-pre-wrap break-words font-medium [overflow-wrap:anywhere]">
+                                          {itemNote}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex max-w-[82px] shrink-0 flex-col items-end gap-1.5 sm:max-w-none sm:gap-2">
+                                  <div className="break-words text-right text-xs font-semibold text-gray-900 [overflow-wrap:anywhere] sm:text-sm">
+                                    R$ {formatMoney(item.preco_total)}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    title="Remover produto da mesa"
+                                    aria-label={`Remover ${item.nome_produto}`}
+                                    onClick={() => void removeItemFromComanda(item)}
+                                    disabled={
+                                      item.status === "cancelado" ||
+                                      !["aberta", "aguardando_conta"].includes(
+                                        selectedComanda.status,
+                                      ) ||
+                                      actionBusy === `remove-item-${item.id}`
+                                    }
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-red-200 bg-white text-red-700 hover:bg-red-50 disabled:opacity-40 sm:h-8 sm:w-8"
+                                  >
+                                    {actionBusy === `remove-item-${item.id}` ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin sm:h-4 sm:w-4" />
+                                    ) : (
+                                      <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                                    )}
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                          ))
+                            );
+                          })
                         )}
                       </div>
 
