@@ -2648,11 +2648,6 @@ export function OrdersScreen() {
     );
   };
 
-  const toggleSelectableOrder = (order: any, canSelect: boolean) => {
-    if (!canSelect) return;
-    toggleOrderSelection(order.id);
-  };
-
   const resetDeliveryModal = () => {
     setDeliveryModalOrders(null);
     setRouteDriverId("");
@@ -3343,24 +3338,16 @@ export function OrdersScreen() {
                     return (
                       <div
                         key={order.id}
-                        onClick={() =>
-                          toggleSelectableOrder(order, canSelectForDelivery)
-                        }
+                        onClick={() => handleSelectOrder(order)}
                         onKeyDown={(event) => {
-                          if (!canSelectForDelivery) return;
                           if (event.key === "Enter" || event.key === " ") {
                             event.preventDefault();
-                            toggleOrderSelection(order.id);
+                            handleSelectOrder(order);
                           }
                         }}
-                        role={canSelectForDelivery ? "checkbox" : undefined}
-                        aria-checked={
-                          canSelectForDelivery
-                            ? isSelectedForDelivery
-                            : undefined
-                        }
-                        tabIndex={canSelectForDelivery ? 0 : undefined}
-                        className={`px-4 py-3.5 transition-colors border-l-2 ${rowBgClass} ${canSelectForDelivery ? "cursor-pointer hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-inset" : "cursor-default"} ${isSelectedForDelivery ? "" : "border-transparent"}`}
+                        role="button"
+                        tabIndex={0}
+                        className={`px-4 py-3.5 transition-colors border-l-2 ${rowBgClass} cursor-pointer hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-inset ${isSelectedForDelivery ? "" : "border-transparent"}`}
                         style={
                           isSelectedForDelivery
                             ? {
@@ -3380,8 +3367,19 @@ export function OrdersScreen() {
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-start gap-3 flex-1 min-w-0">
                             {canSelectForDelivery && (
-                              <span
-                                aria-hidden="true"
+                              <button
+                                type="button"
+                                aria-label={
+                                  isSelectedForDelivery
+                                    ? "Remover pedido da entrega"
+                                    : "Selecionar pedido para entrega"
+                                }
+                                aria-checked={isSelectedForDelivery}
+                                role="checkbox"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  toggleOrderSelection(order.id);
+                                }}
                                 className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border"
                                 style={{
                                   borderColor: isSelectedForDelivery
@@ -3395,7 +3393,7 @@ export function OrdersScreen() {
                                 {isSelectedForDelivery && (
                                   <CheckCircle2 className="h-3.5 w-3.5 text-white" />
                                 )}
-                              </span>
+                              </button>
                             )}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
@@ -3797,24 +3795,16 @@ export function OrdersScreen() {
                         return (
                           <div
                             key={order.id}
-                            className={`flex items-center gap-3 px-4 py-3 transition-colors border-l-2 ${canSelectForDelivery ? "hover:bg-gray-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-inset" : "cursor-default"} ${isSelectedForDelivery ? "" : "border-transparent"}`}
-                            onClick={() =>
-                              toggleSelectableOrder(order, canSelectForDelivery)
-                            }
+                            className={`flex items-center gap-3 px-4 py-3 transition-colors border-l-2 hover:bg-gray-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-inset ${isSelectedForDelivery ? "" : "border-transparent"}`}
+                            onClick={() => handleSelectOrder(order)}
                             onKeyDown={(event) => {
-                              if (!canSelectForDelivery) return;
                               if (event.key === "Enter" || event.key === " ") {
                                 event.preventDefault();
-                                toggleOrderSelection(order.id);
+                                handleSelectOrder(order);
                               }
                             }}
-                            role={canSelectForDelivery ? "checkbox" : undefined}
-                            aria-checked={
-                              canSelectForDelivery
-                                ? isSelectedForDelivery
-                                : undefined
-                            }
-                            tabIndex={canSelectForDelivery ? 0 : undefined}
+                            role="button"
+                            tabIndex={0}
                             style={
                               isSelectedForDelivery
                                 ? {
@@ -3835,8 +3825,19 @@ export function OrdersScreen() {
                             }
                           >
                             {canSelectForDelivery && (
-                              <span
-                                aria-hidden="true"
+                              <button
+                                type="button"
+                                aria-label={
+                                  isSelectedForDelivery
+                                    ? "Remover pedido da entrega"
+                                    : "Selecionar pedido para entrega"
+                                }
+                                aria-checked={isSelectedForDelivery}
+                                role="checkbox"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  toggleOrderSelection(order.id);
+                                }}
                                 className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border"
                                 style={{
                                   borderColor: isSelectedForDelivery
@@ -3850,7 +3851,7 @@ export function OrdersScreen() {
                                 {isSelectedForDelivery && (
                                   <CheckCircle2 className="h-3.5 w-3.5 text-white" />
                                 )}
-                              </span>
+                              </button>
                             )}
                             <div
                               className="w-5 h-5 rounded-full flex items-center justify-center text-white flex-shrink-0"
