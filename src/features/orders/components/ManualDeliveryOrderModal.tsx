@@ -31,7 +31,10 @@ const mergeUniqueProducts = (current: any[], next: any[]) => {
   return [...current, ...next.filter((product) => !known.has(product.id))];
 };
 const apiError = (error: any) =>
-  error?.response?.data?.error?.message || error?.response?.data?.message || "Não foi possível concluir a operação.";
+  error?.response?.data?.error?.message ||
+  error?.response?.data?.message ||
+  error?.message ||
+  "Não foi possível concluir a operação.";
 const money = (value: any) => Number(value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const normalizeSearchText = (value: string) =>
   value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR");
@@ -144,6 +147,25 @@ const normalizeSavedAddress = (savedAddress: any) => {
   };
 };
 
+const normalizeDeliveryArea = (area: any) => ({
+  ...area,
+  bairro: String(area?.bairro || area?.nome || "").trim(),
+  cidade: String(area?.cidade || "").trim(),
+  estado: String(area?.estado || "").trim().toUpperCase(),
+  taxa_entrega: Math.max(0, Number(area?.taxa_entrega || 0)),
+});
+
+const getStoreAddressDefaults = (store: any) => ({
+  cidade: String(store?.endereco_cidade || store?.cidade || "").trim(),
+  estado: String(store?.endereco_estado || store?.estado || "").trim().toUpperCase(),
+  cep: String(store?.endereco_cep || store?.cep || "").trim(),
+});
+
+const getAreaLabel = (area: any) =>
+  [area.bairro, area.cidade ? `${area.cidade}${area.estado ? ` - ${area.estado}` : ""}` : ""]
+    .filter(Boolean)
+    .join(" · ");
+
 const formatSavedAddress = (savedAddress: any) => {
   if (!savedAddress) return "";
   return [
@@ -212,6 +234,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
   const [address, setAddress] = useState<any>({ ...EMPTY_ADDRESS });
   const [pickupAtStore, setPickupAtStore] = useState(false);
   const [store, setStore] = useState<any>(null);
+  const [deliveryAreas, setDeliveryAreas] = useState<any[]>([]);
   const [themePrimary, setThemePrimary] = useState(primaryColor);
   const [acceptedPaymentMethods, setAcceptedPaymentMethods] = useState<string[]>(DEFAULT_PAYMENT_METHODS);
   const [payment, setPayment] = useState("dinheiro");
@@ -237,6 +260,19 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
   const usePricesWithoutAppTax = fiadoEnabled && fiadoColaborador === true;
   const contactStepBlocked = step === STEP_CONTACT && !contact;
   const collaboratorStepBlocked = step === STEP_COLLABORATOR && fiadoColaborador === null;
+  const estimatedSubtotal = useMemo(() => lines.reduce(
+    (sum, line) => sum + Number(line.preco || 0) * Number(line.quantidade || 0), 0,
+  ), [lines]);
+  const totalItemsInOrder = useMemo(
+    () => lines.reduce((sum, line) => sum + Number(line.quantidade || 0), 0),
+    [lines],
+  );
+  const selectedDeliveryArea = useMemo(
+    () => deliveryAreas.find((area) => area.id === address.area_entrega_id) || null,
+    [address.area_entrega_id, deliveryAreas],
+  );
+  const deliveryFee = pickupAtStore ? 0 : Math.max(0, Number(selectedDeliveryArea?.taxa_entrega || 0));
+  const estimatedTotal = estimatedSubtotal + deliveryFee;
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedProductSearch(productSearch.trim()), 300);
@@ -276,9 +312,14 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
     Promise.allSettled([
       api.get(`/lojas/${lojaId}`),
       api.get(`/lojas/${lojaId}/configuracoes`),
-    ]).then(([storeResult, configResult]) => {
+      api.get(`/lojas/${lojaId}/areas-entrega`),
+    ]).then(([storeResult, configResult, areasResult]) => {
       setStore(storeResult.status === "fulfilled" ? unwrap(storeResult.value) : null);
       const config = configResult.status === "fulfilled" ? unwrap(configResult.value) : null;
+      const areas = areasResult.status === "fulfilled"
+        ? list(areasResult.value).map(normalizeDeliveryArea).filter((area) => area.bairro)
+        : [];
+      setDeliveryAreas(areas);
       setThemePrimary(config?.cor_primaria || primaryColor);
       const methods = Array.isArray(config?.formas_pagamento) && config.formas_pagamento.length
         ? config.formas_pagamento
@@ -312,6 +353,34 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
     }, 300);
     return () => window.clearTimeout(timer);
   }, [contactQuery]);
+
+  useEffect(() => {
+    if (!contact?.novo || !store) return;
+    const defaults = getStoreAddressDefaults(store);
+    if (!defaults.cidade && !defaults.estado && !defaults.cep) return;
+    setAddress((current: any) => ({
+      ...current,
+      cidade: current.cidade || defaults.cidade,
+      estado: current.estado || defaults.estado,
+      cep: current.cep || defaults.cep,
+    }));
+  }, [contact?.novo, store]);
+
+  useEffect(() => {
+    if (!deliveryAreas.length || address.area_entrega_id || !address.bairro) return;
+    const matchedArea = deliveryAreas.find((area) =>
+      area.bairro.toLocaleLowerCase("pt-BR") === String(address.bairro).toLocaleLowerCase("pt-BR") &&
+      (!address.cidade || area.cidade.toLocaleLowerCase("pt-BR") === String(address.cidade).toLocaleLowerCase("pt-BR"))
+    );
+    if (!matchedArea) return;
+    setAddress((current: any) => ({
+      ...current,
+      area_entrega_id: matchedArea.id,
+      bairro: matchedArea.bairro,
+      cidade: matchedArea.cidade || current.cidade,
+      estado: matchedArea.estado || current.estado,
+    }));
+  }, [address.area_entrega_id, address.bairro, address.cidade, deliveryAreas]);
 
   useEffect(() => {
     if (!configuring || !selectedVariation) return;
@@ -362,14 +431,6 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
     }
   };
 
-  const estimatedSubtotal = useMemo(() => lines.reduce(
-    (sum, line) => sum + Number(line.preco || 0) * Number(line.quantidade || 0), 0,
-  ), [lines]);
-  const totalItemsInOrder = useMemo(
-    () => lines.reduce((sum, line) => sum + Number(line.quantidade || 0), 0),
-    [lines],
-  );
-
   const profileContact = useMemo(() => {
     const name = loggedUser?.nome || loggedUser?.name || store?.nome || "Usuário da loja";
     const phoneValue = loggedUser?.telefone || loggedUser?.celular || loggedUser?.phone || store?.telefone || "";
@@ -393,7 +454,22 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
     setLines([]);
     setConfiguring(null);
     setQuick({ nome: selected.nome, telefone: selected.telefone });
-    setAddress(normalizeSavedAddress(selected.ultimo_endereco));
+    const hasSavedAddress = Boolean(selected.ultimo_endereco);
+    const baseAddress = hasSavedAddress
+      ? normalizeSavedAddress(selected.ultimo_endereco)
+      : { ...EMPTY_ADDRESS, ...getStoreAddressDefaults(store) };
+    const matchedArea = deliveryAreas.find((area) =>
+      baseAddress.bairro &&
+      area.bairro.toLocaleLowerCase("pt-BR") === String(baseAddress.bairro).toLocaleLowerCase("pt-BR") &&
+      (!baseAddress.cidade || area.cidade.toLocaleLowerCase("pt-BR") === String(baseAddress.cidade).toLocaleLowerCase("pt-BR"))
+    );
+    setAddress({
+      ...baseAddress,
+      area_entrega_id: matchedArea?.id || "",
+      bairro: matchedArea?.bairro || (hasSavedAddress ? baseAddress.bairro : ""),
+      cidade: matchedArea?.cidade || baseAddress.cidade,
+      estado: matchedArea?.estado || baseAddress.estado,
+    });
     setPickupAtStore(false);
     setError("");
     setStep(fiadoEnabled ? STEP_COLLABORATOR : STEP_PRODUCTS);
@@ -593,6 +669,9 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
     if (!contact || !lines.length) return;
     setBusy(true); setError("");
     try {
+      if (!pickupAtStore && !selectedDeliveryArea) {
+        throw new Error("Selecione um bairro atendido pela loja.");
+      }
       const geo = pickupAtStore ? null : unwrap(await api.post("/geocode-address", {
         street: address.rua, number: address.numero, neighborhood: address.bairro,
         city: address.cidade, state: address.estado, zipCode: address.cep,
@@ -602,6 +681,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
         tipo_pedido: pickupAtStore ? "retirada" : "entrega",
         contato: { nome: contact.nome, telefone: contact.telefone },
         itens: lines.map(({ nome, detalhe, preco, ...line }) => line),
+        taxa_entrega: deliveryFee,
         endereco: pickupAtStore ? null : {
           ...address, latitude: geo.latitude, longitude: geo.longitude,
           geocoding_provider: geo.geocodingProvider, geocoding_source: geo.geocodingSource,
@@ -876,6 +956,12 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
                   <span>Subtotal estimado</span>
                   <span>{money(estimatedSubtotal)}</span>
                 </div>
+                {!pickupAtStore && selectedDeliveryArea && (
+                  <div className="mt-2 flex justify-between text-sm text-slate-600">
+                    <span>Taxa de entrega</span>
+                    <span>{money(deliveryFee)}</span>
+                  </div>
+                )}
               </aside>
             </div>
           )}
@@ -902,7 +988,36 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
                   <label className="text-sm font-medium sm:col-span-4">Rua<input value={address.rua} onChange={(e) => setAddress({ ...address, rua: e.target.value })} className="mt-1 w-full rounded-lg border p-2.5" /></label>
                   <label className="text-sm font-medium sm:col-span-2">Número<input value={address.numero} onChange={(e) => setAddress({ ...address, numero: e.target.value })} className="mt-1 w-full rounded-lg border p-2.5" /></label>
                   <label className="text-sm font-medium sm:col-span-4">Complemento<input value={address.complemento} onChange={(e) => setAddress({ ...address, complemento: e.target.value })} className="mt-1 w-full rounded-lg border p-2.5" /></label>
-                  <label className="text-sm font-medium sm:col-span-3">Bairro<input value={address.bairro} onChange={(e) => setAddress({ ...address, bairro: e.target.value })} className="mt-1 w-full rounded-lg border p-2.5" /></label>
+                  <label className="text-sm font-medium sm:col-span-3">
+                    Bairro e taxa
+                    <select
+                      value={address.area_entrega_id || ""}
+                      onChange={(event) => {
+                        const area = deliveryAreas.find((item) => item.id === event.target.value);
+                        setAddress({
+                          ...address,
+                          area_entrega_id: area?.id || "",
+                          bairro: area?.bairro || "",
+                          cidade: area?.cidade || address.cidade,
+                          estado: area?.estado || address.estado,
+                        });
+                      }}
+                      className="mt-1 w-full rounded-lg border p-2.5"
+                      disabled={pickupAtStore || !deliveryAreas.length}
+                    >
+                      <option value="">{deliveryAreas.length ? "Selecione o bairro" : "Nenhuma área ativa"}</option>
+                      {deliveryAreas.map((area) => (
+                        <option key={area.id} value={area.id}>
+                          {getAreaLabel(area)} · {money(area.taxa_entrega)}
+                        </option>
+                      ))}
+                    </select>
+                    {selectedDeliveryArea && (
+                      <span className="mt-1 block text-xs font-semibold" style={{ color: primary }}>
+                        Taxa adicionada ao pedido: {money(deliveryFee)}
+                      </span>
+                    )}
+                  </label>
                   <label className="text-sm font-medium sm:col-span-2">Cidade<input value={address.cidade} onChange={(e) => setAddress({ ...address, cidade: e.target.value })} className="mt-1 w-full rounded-lg border p-2.5" /></label>
                   <label className="text-sm font-medium sm:col-span-1">UF<input maxLength={2} value={address.estado} onChange={(e) => setAddress({ ...address, estado: e.target.value.toUpperCase() })} className="mt-1 w-full rounded-lg border p-2.5 uppercase" /></label>
                   <label className="text-sm font-medium sm:col-span-6">Ponto de referência<input value={address.ponto_referencia} onChange={(e) => setAddress({ ...address, ponto_referencia: e.target.value })} className="mt-1 w-full rounded-lg border p-2.5" /></label>
@@ -943,7 +1058,10 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
                   <div className="flex justify-between"><dt>Telefone</dt><dd>{contact?.telefone}</dd></div>
                   <div className="flex justify-between"><dt>Produtos</dt><dd>{totalItemsInOrder}</dd></div>
                   <div className="flex justify-between"><dt>{pickupAtStore ? "Retirada" : "Entrega"}</dt><dd className="max-w-[190px] text-right">{pickupAtStore ? (store?.nome || "Na loja") : `${address.rua}, ${address.numero}`}</dd></div>
-                  <div className="flex justify-between border-t pt-3 text-base font-bold"><dt>Subtotal estimado</dt><dd>{money(estimatedSubtotal)}</dd></div>
+                  {!pickupAtStore && <div className="flex justify-between"><dt>Bairro</dt><dd className="max-w-[190px] text-right">{address.bairro || "-"}</dd></div>}
+                  {!pickupAtStore && <div className="flex justify-between"><dt>Taxa de entrega</dt><dd>{money(deliveryFee)}</dd></div>}
+                  <div className="flex justify-between border-t pt-3"><dt>Subtotal estimado</dt><dd>{money(estimatedSubtotal)}</dd></div>
+                  <div className="flex justify-between text-base font-bold"><dt>Total estimado</dt><dd>{money(estimatedTotal)}</dd></div>
                 </dl>
               </section>
             </div>
@@ -953,7 +1071,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
         <footer className="flex items-center justify-between border-t bg-white px-5 py-4 sm:px-7">
           <button disabled={!previousStep || busy} onClick={() => { setError(""); if (previousStep) setStep(previousStep); }} className="inline-flex items-center gap-2 rounded-lg border px-4 py-2.5 font-semibold text-slate-700 disabled:opacity-40"><ArrowLeft className="h-4 w-4" /> Voltar</button>
           {nextStep ? (
-            <button disabled={contactStepBlocked || collaboratorStepBlocked || (step === STEP_PRODUCTS && !lines.length) || (step === STEP_ADDRESS && !pickupAtStore && (!address.rua || !address.numero || !address.bairro || !address.cidade || !address.estado))} onClick={() => { setError(""); setStep(nextStep); }} className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-white disabled:opacity-40" style={buttonStyle}>Continuar <ArrowRight className="h-4 w-4" /></button>
+            <button disabled={contactStepBlocked || collaboratorStepBlocked || (step === STEP_PRODUCTS && !lines.length) || (step === STEP_ADDRESS && !pickupAtStore && (!address.rua || !address.numero || !address.area_entrega_id || !address.bairro || !address.cidade || !address.estado))} onClick={() => { setError(""); setStep(nextStep); }} className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-white disabled:opacity-40" style={buttonStyle}>Continuar <ArrowRight className="h-4 w-4" /></button>
           ) : (
             <button disabled={busy || (payment === "dinheiro" && !semTroco && !trocoPara)} onClick={submit} className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-white disabled:opacity-50" style={buttonStyle}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Criar pedido</button>
           )}
