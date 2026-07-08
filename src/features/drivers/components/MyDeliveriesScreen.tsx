@@ -32,6 +32,8 @@ export type DriverStop = {
   requiresReceiptKey?: boolean;
   receiptKeyHash?: string | null;
   note?: string;
+  deliveryFee?: number | string | null;
+  finishedAt?: string | null;
   paymentMethod?: string | null;
   paymentStatus?: string | null;
   paymentValue?: number | string | null;
