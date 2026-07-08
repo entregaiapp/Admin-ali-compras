@@ -44,6 +44,13 @@ const getDailyTicketNumber = (order: any) => {
     ? String(numeric).padStart(5, "0")
     : "";
 };
+
+export type ComandaPrintMode = "cozinha" | "cliente" | "cliente_cozinha";
+
+type PrintComandaOptions = {
+  mode?: ComandaPrintMode;
+};
+
 const renderItemConfiguration = (item: any) => getOrderItemConfigurationLines(item)
   .map((line) => `<p class="option">${escapeHtml(line)}</p>`)
   .join("");
@@ -177,13 +184,98 @@ const thermalReceiptStyles = `
     }
 `;
 
+const clientReceiptStyles = `
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 80mm; min-height: 30mm; }
+    body {
+      font-family: 'Courier New', Courier, monospace;
+      width: 80mm;
+      min-height: 30mm;
+      max-width: 80mm;
+      margin: 0 auto;
+      padding: 3mm;
+      font-size: 13px;
+      font-weight: 400;
+      color: #000;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    body * { color: #000 !important; }
+    .center { text-align: center; }
+    .bold { font-weight: 800; }
+    .large { font-size: 16px; }
+    .divider-solid { border-top: 1px solid #000; margin: 7px 0; }
+    .divider { border-top: 1px dashed #000; margin: 7px 0; }
+    .row { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
+    .row-total { display: flex; justify-content: space-between; gap: 8px; font-size: 15px; font-weight: 800; margin-bottom: 3px; }
+    .obs { font-size: 13px; line-height: 1.2; margin: 0 0 5px 12px; font-style: italic; }
+    .option { font-size: 12px; line-height: 1.2; margin: 0 0 3px 12px; }
+    p { margin-bottom: 4px; }
+    .tag { display: inline-block; border: 1px solid #000; padding: 1px 6px; font-size: 12px; margin: 2px 0; }
+    .ticket-number { border: 1px solid #000; padding: 5px 4px; margin: 7px 0; text-align: center; }
+    .ticket-label { font-size: 12px; font-weight: 800; letter-spacing: 0; }
+    .ticket-value { display: block; font-size: 24px; line-height: 1; font-weight: 900; margin-top: 3px; }
+    .address-line { font-size: 13px; line-height: 1.2; margin-bottom: 4px; }
+    .product-row { font-size: 14px; line-height: 1.2; margin-bottom: 4px; }
+    .product-row span:first-child { flex: 1; }
+    .product-row span:last-child { white-space: nowrap; }
+    .cash-change { font-size: 13px; line-height: 1.2; margin-bottom: 4px; }
+    @page { size: 80mm 200mm; margin: 0; }
+    @media print {
+      html, body { width: 80mm; min-height: 30mm; }
+      body { margin: 0; padding: 3mm; }
+    }
+`;
+
+const kitchenReceiptStyles = `
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 80mm; min-height: 30mm; }
+    body {
+      font-family: 'Courier New', Courier, monospace;
+      width: 80mm;
+      min-height: 30mm;
+      max-width: 80mm;
+      margin: 0 auto;
+      padding: 3mm;
+      font-size: 18px;
+      font-weight: 900;
+      color: #000;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    body * { color: #000 !important; font-weight: 900; }
+    .center { text-align: center; }
+    .bold { font-weight: 900; }
+    .large { font-size: 22px; }
+    .divider-solid { border-top: 2px solid #000; margin: 9px 0; }
+    .divider { border-top: 1px dashed #000; margin: 9px 0; }
+    .tag { display: inline-block; border: 2px solid #000; padding: 2px 8px; font-size: 18px; margin: 3px 0; }
+    .ticket-number { border: 2px solid #000; padding: 8px 4px; margin: 8px 0; text-align: center; }
+    .ticket-label { font-size: 16px; font-weight: 900; letter-spacing: 0; }
+    .ticket-value { display: block; font-size: 44px; line-height: 1; font-weight: 900; margin-top: 3px; }
+    .product-block { margin-bottom: 10px; }
+    .product-row { display: flex; justify-content: space-between; gap: 8px; font-size: 27px; line-height: 1.12; margin-bottom: 6px; }
+    .product-row span:first-child { flex: 1; }
+    .option { font-size: 20px; line-height: 1.12; margin: 0 0 5px 16px; }
+    .obs { font-size: 24px; line-height: 1.12; margin: 0 0 7px 16px; font-style: italic; }
+    p { margin-bottom: 4px; }
+    @page { size: 80mm 200mm; margin: 0; }
+    @media print {
+      html, body { width: 80mm; min-height: 30mm; }
+      body { margin: 0; padding: 3mm; }
+    }
+`;
+
 export const printComanda = (
   order: any,
   orderItems: any[] = [],
   store?: any,
   targetWindow?: Window | null,
+  options: PrintComandaOptions = {},
 ) => {
-  const subtotal = orderItems.reduce(
+  const mode = options.mode || "cliente_cozinha";
+  const itemsForPrint = Array.isArray(orderItems) ? orderItems : [];
+  const subtotal = itemsForPrint.reduce(
     (value, item) => value + getOrderItemTotal(item),
     0,
   );
@@ -198,6 +290,61 @@ export const printComanda = (
   const isDelivery = isDeliveryOrder(order);
   const storeHeader = renderStoreHeader(store);
   const storeName = printableText(store?.nome);
+  const salaoComanda = order?.salao_comanda || order?.comanda || {};
+  const tableNumber = printableText(
+    salaoComanda?.mesa?.numero ||
+      salaoComanda?.mesa_numero ||
+      order?.mesa?.numero ||
+      order?.mesa_numero,
+  );
+
+  if (mode === "cozinha") {
+    const kitchenHtml = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Comanda da Cozinha ${orderNumber}</title>
+  <style>
+${kitchenReceiptStyles}
+  </style>
+</head>
+<body>
+  <div class="center">
+    <p class="bold large">COMANDA DA COZINHA</p>
+    ${dailyTicketNumber ? `<div class="ticket-number"><span class="ticket-label">COMANDA DO DIA</span><span class="ticket-value">${escapeHtml(dailyTicketNumber)}</span></div>` : ""}
+    <p>Pedido: <span class="bold">${orderNumber}</span></p>
+    ${tableNumber ? `<span class="tag">MESA ${escapeHtml(tableNumber)}</span>` : ""}
+    <p>Data: ${escapeHtml(formatBrasiliaDate(new Date(), { dateStyle: "short", timeStyle: "medium" }))}</p>
+  </div>
+  <div class="divider-solid"></div>
+  <p class="bold">PRODUTOS:</p>
+  ${itemsForPrint.length > 0 ? itemsForPrint
+    .map(
+      (i) => `
+    <section class="product-block">
+      <div class="product-row">
+        <span>${escapeHtml(getOrderItemQuantity(i))}x ${escapeHtml(getOrderItemName(i))}</span>
+      </div>
+      ${renderItemConfiguration(i)}
+      ${i.observacoes || i.obs ? `<p class="obs">Obs: ${escapeHtml(i.observacoes || i.obs)}</p>` : ""}
+    </section>
+  `,
+    )
+    .join("") : "<p>Nenhum item selecionado.</p>"}
+  <script>window.onload = function() { window.print(); window.onafterprint = function() { window.close(); }; }</script>
+</body>
+</html>`;
+
+    const win = targetWindow || window.open("", "_blank", "width=420,height=650");
+    if (win) {
+      win.document.write(kitchenHtml);
+      win.document.close();
+    }
+    return;
+  }
+
+  const receiptStyles =
+    mode === "cliente" ? clientReceiptStyles : thermalReceiptStyles;
 
   const html = `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -205,7 +352,7 @@ export const printComanda = (
   <meta charset="UTF-8">
   <title>Comanda ${orderNumber}</title>
   <style>
-${thermalReceiptStyles}
+${receiptStyles}
   </style>
 </head>
 <body>
@@ -225,7 +372,7 @@ ${thermalReceiptStyles}
   ${isDelivery ? `<p class="address-line"><span class="bold">Endereço:</span> ${escapeHtml(getOrderAddress(order))}</p><p class="address-line"><span class="bold">Bairro:</span> ${escapeHtml(getOrderNeighborhood(order))}</p>` : ""}
   <div class="divider"></div>
   <p class="bold" style="margin-bottom:6px">ITENS DO PEDIDO:</p>
-  ${(Array.isArray(orderItems) ? orderItems : [])
+  ${itemsForPrint
     .map(
       (i) => `
     <div class="row product-row">
@@ -238,7 +385,7 @@ ${thermalReceiptStyles}
     )
     .join("")}
   <div class="divider"></div>
-  <div class="row"><span>Subtotal</span><span>R$ ${formatMoney(orderItems.length > 0 ? subtotal : order.subtotal)}</span></div>
+  <div class="row"><span>Subtotal</span><span>R$ ${formatMoney(itemsForPrint.length > 0 ? subtotal : order.subtotal)}</span></div>
   ${isDelivery ? `<div class="row"><span>Taxa de entrega</span><span>R$ ${formatMoney(delivery)}</span></div>` : '<div class="row"><span>Retirada na loja</span><span>Grátis</span></div>'}
   <div class="row"><span>Desconto</span><span>R$ ${formatMoney(order.desconto)}</span></div>
   <div class="divider-solid"></div>

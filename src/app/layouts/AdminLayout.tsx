@@ -247,14 +247,14 @@ export function AdminLayout() {
       {/* Overlay mobile */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-20 lg:hidden"
+          className="fixed inset-0 z-[200] bg-black/50 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-30 w-64 flex flex-col transition-transform duration-300 ease-in-out
+        className={`fixed inset-y-0 left-0 z-[210] w-64 flex flex-col transition-transform duration-300 ease-in-out
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:static lg:z-auto`}
         style={{ backgroundColor: PRIMARY }}
       >

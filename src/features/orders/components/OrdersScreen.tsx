@@ -41,7 +41,18 @@ import {
   statusFlow,
   statusLabels,
 } from "@/features/orders/constants";
-import { printBairroRoute, printComanda } from "@/features/orders/utils/print";
+import {
+  printBairroRoute,
+  printComanda,
+  type ComandaPrintMode,
+} from "@/features/orders/utils/print";
+import {
+  buildKitchenPrintSelectionItems,
+  getKitchenPrintStorageKey,
+  markKitchenItemsPrinted,
+  readKitchenPrintedKeys,
+  type KitchenPrintSelectionItem,
+} from "@/features/orders/utils/kitchenPrintTracking";
 import {
   canChangeDeliveryCourier,
   getApiErrorMessage,
@@ -72,6 +83,10 @@ import { OrderItemsChecklistModal } from "@/features/orders/components/OrderItem
 import { ManualDeliveryOrderModal } from "@/features/orders/components/ManualDeliveryOrderModal";
 import { AddOrderItemsModal } from "@/features/orders/components/AddOrderItemsModal";
 import { PendingPaymentMethodModal } from "@/features/orders/components/PendingPaymentMethodModal";
+import {
+  ComandaPrintModeModal,
+  KitchenPrintSelectionModal,
+} from "@/features/orders/components/ComandaPrintModals";
 import { showSystemNotice } from "@/shared/components/SystemNoticeModal";
 import {
   MfaApprovalModal,
@@ -486,6 +501,15 @@ export function OrdersScreen() {
   const [confirmStep, setConfirmStep] = useState(false);
   const [primaryColor, setPrimaryColor] = useState(PRIMARY);
   const [storePrintData, setStorePrintData] = useState<any | null>(null);
+  const [printOrder, setPrintOrder] = useState<any | null>(null);
+  const [printBusy, setPrintBusy] = useState(false);
+  const [kitchenPrintSelection, setKitchenPrintSelection] = useState<{
+    order: any;
+    items: any[];
+    orderPayment: any;
+    storageKey: string;
+    selectionItems: KitchenPrintSelectionItem[];
+  } | null>(null);
   const [manualOrderOpen, setManualOrderOpen] = useState(false);
   const [adminAddItemsOrder, setAdminAddItemsOrder] = useState<any | null>(null);
   const [pendingPaymentMethodOrder, setPendingPaymentMethodOrder] = useState<any | null>(null);
@@ -1154,20 +1178,34 @@ export function OrdersScreen() {
     return nextOrder;
   };
 
-  const handlePrintComanda = async (order: any) => {
+  const handlePrintComanda = (order: any) => {
+    setPrintOrder(order);
+  };
+
+  const openComandaPrintWindow = () => {
     const printWindow = window.open("", "_blank", "width=420,height=650");
     if (!printWindow) {
       showSystemNotice(
         "O navegador bloqueou a janela de impressão. Permita pop-ups e tente novamente.",
       );
-      return;
     }
 
-    let printableOrder = order;
+    return printWindow;
+  };
+
+  const handlePrintModeSelected = async (mode: ComandaPrintMode) => {
+    if (!printOrder || printBusy) return;
+
+    const printWindow = openComandaPrintWindow();
+    if (!printWindow) return;
+
+    setPrintBusy(true);
+    let printableOrder = printOrder;
     try {
-      printableOrder = await moveOrderToSeparationForPrint(order);
+      printableOrder = await moveOrderToSeparationForPrint(printOrder);
     } catch (error) {
       printWindow.close();
+      setPrintBusy(false);
       showSystemNotice(
         getApiErrorMessage(
           error,
@@ -1183,19 +1221,76 @@ export function OrdersScreen() {
         selected?.id === printableOrder.id
           ? getPreferredOrderPayment(printableOrder, selectedPayments)
           : getPreferredOrderPayment(printableOrder);
-      printComanda(
-        { ...printableOrder, pagamento: orderPayment },
-        items,
-        storePrintData,
-        printWindow,
-      );
+      if (mode === "cozinha") {
+        const storageKey = getKitchenPrintStorageKey("pedido", printableOrder.id);
+        const selectionItems = buildKitchenPrintSelectionItems(items, storageKey);
+        const hasPrintedHistory = readKitchenPrintedKeys(storageKey).size > 0;
+
+        if (hasPrintedHistory) {
+          printWindow.close();
+          setKitchenPrintSelection({
+            order: printableOrder,
+            items,
+            orderPayment,
+            storageKey,
+            selectionItems,
+          });
+          setPrintOrder(null);
+          setPrintBusy(false);
+          return;
+        }
+
+        const itemKeys = selectionItems.map((item) => item.key);
+        printComanda(
+          { ...printableOrder, pagamento: orderPayment },
+          items,
+          storePrintData,
+          printWindow,
+          { mode },
+        );
+        markKitchenItemsPrinted(storageKey, itemKeys);
+      } else {
+        printComanda(
+          { ...printableOrder, pagamento: orderPayment },
+          items,
+          storePrintData,
+          printWindow,
+          { mode },
+        );
+      }
+      setPrintOrder(null);
       void fetchOrders(1, true, { silent: true });
     } catch {
       printWindow.close();
       showSystemNotice(
         "Não foi possível carregar os produtos deste pedido para impressão.",
       );
+    } finally {
+      setPrintBusy(false);
     }
+  };
+
+  const handlePrintSelectedKitchenItems = (itemKeys: string[]) => {
+    if (!kitchenPrintSelection) return;
+
+    const printWindow = openComandaPrintWindow();
+    if (!printWindow) return;
+
+    const selectedKeys = new Set(itemKeys);
+    const selectedItemsForPrint = kitchenPrintSelection.selectionItems
+      .filter((item) => selectedKeys.has(item.key))
+      .map((item) => item.item);
+
+    printComanda(
+      { ...kitchenPrintSelection.order, pagamento: kitchenPrintSelection.orderPayment },
+      selectedItemsForPrint,
+      storePrintData,
+      printWindow,
+      { mode: "cozinha" },
+    );
+    markKitchenItemsPrinted(kitchenPrintSelection.storageKey, itemKeys);
+    setKitchenPrintSelection(null);
+    void fetchOrders(1, true, { silent: true });
   };
 
   const openItemsChecklist = async (order: any) => {
@@ -2682,6 +2777,24 @@ export function OrdersScreen() {
           primaryColor={primaryColor}
           onClose={() => setPendingPaymentMethodOrder(null)}
           onUpdated={(result) => void refreshSelectedOrderAfterAdminAdjustment(result, "Forma de pagamento pendente atualizada.")}
+        />
+      )}
+      {printOrder && (
+        <ComandaPrintModeModal
+          subtitle={`Pedido ${printOrder.numero_pedido || printOrder.id}`}
+          busy={printBusy}
+          onClose={() => {
+            if (!printBusy) setPrintOrder(null);
+          }}
+          onSelect={(mode) => void handlePrintModeSelected(mode)}
+        />
+      )}
+      {kitchenPrintSelection && (
+        <KitchenPrintSelectionModal
+          subtitle="Novos produtos ficam marcados por padrão. Produtos já impressos ficam desmarcados."
+          items={kitchenPrintSelection.selectionItems}
+          onClose={() => setKitchenPrintSelection(null)}
+          onPrint={handlePrintSelectedKitchenItems}
         />
       )}
       {/* Left panel: list or bairros */}

@@ -5,7 +5,11 @@ type Selection = { group: any; option: any; quantity: number };
 
 type ConfiguredItem = {
   variationId: string;
-  selections: Selection[];
+  selections: Array<Selection & {
+    fraction?: number | null;
+    unitPrice: number;
+    contribution: number;
+  }>;
   quantity: number;
   notes: string;
 };
@@ -25,11 +29,52 @@ const normalizeText = (value: unknown) => String(value || "")
 
 const formatMoney = (value: unknown) => `R$ ${Number(value || 0).toFixed(2).replace(".", ",")}`;
 
-const priceForVariation = (item: any, variationId: string) => {
-  const variationPrice = (item.precos_variacao || []).find(
+const roundCurrency = (value: number) => Number(value.toFixed(2));
+
+const isPromotionActive = (promotional: unknown, endsAt: unknown) =>
+  promotional !== null &&
+  promotional !== undefined &&
+  (!endsAt || new Date(String(endsAt)).getTime() >= Date.now());
+
+const effectivePrice = (
+  regular: unknown,
+  promotional?: unknown,
+  promotionEndsAt?: unknown,
+) => {
+  const regularPrice = Number(regular || 0);
+  const promotionalPrice = Number(promotional);
+  return isPromotionActive(promotional, promotionEndsAt) &&
+    Number.isFinite(promotionalPrice) &&
+    promotionalPrice < regularPrice
+    ? promotionalPrice
+    : regularPrice;
+};
+
+const variationOverrideFor = (item: any, variationId: string) =>
+  (item.precos_variacao || []).find(
     (price: any) => price.variacao_produto_loja_id === variationId,
   );
-  return Number(variationPrice?.preco_promocional ?? variationPrice?.preco_adicional ?? item.preco_promocional ?? item.preco_adicional ?? 0);
+
+const priceForVariation = (item: any, variationId: string) => {
+  const variationPrice = variationOverrideFor(item, variationId);
+  if (variationPrice) {
+    return effectivePrice(
+      variationPrice.preco_adicional ?? item.preco_adicional,
+      variationPrice.preco_promocional,
+      variationPrice.promocao_ate,
+    );
+  }
+
+  return effectivePrice(item.preco_adicional, item.preco_promocional, item.promocao_ate);
+};
+
+const variationPriceFor = (product: any, configuration: any, variationId: string) => {
+  const variation = (configuration?.variacoes || []).find((item: any) => item.id === variationId);
+  if (variation) {
+    return effectivePrice(variation.preco, variation.preco_promocional, variation.promocao_ate);
+  }
+
+  return effectivePrice(product?.preco, product?.preco_promocional, product?.promocao_ate);
 };
 
 const isOptionAvailable = (option: any, variationId: string) => {
@@ -149,14 +194,49 @@ export function SalaoProductConfiguratorModal({
     return "";
   }, [configuration?.variacoes, groups, selections, variationId]);
 
-  const unitPrice = useMemo(() => {
-    const variation = (configuration?.variacoes || []).find((item: any) => item.id === variationId);
-    const base = Number(variation?.preco_promocional ?? variation?.preco ?? product?.preco_promocional ?? product?.preco ?? 0);
-    const options = selections.reduce((total, selection) => (
-      total + (priceForVariation(selection.option, variationId) * selection.quantity)
-    ), 0);
-    return base + options;
-  }, [configuration?.variacoes, product, selections, variationId]);
+  const pricedConfiguration = useMemo(() => {
+    let basePrice = variationPriceFor(product, configuration, variationId);
+    let optionsPrice = 0;
+    const pricedSelections: ConfiguredItem["selections"] = [];
+
+    for (const group of groups) {
+      const groupSelections = selections.filter((selection) => selection.group.id === group.id);
+      const fraction = group.tipo_selecao === "fracionada" && groupSelections.length > 0
+        ? 1 / groupSelections.length
+        : null;
+      let fractionalPrice = 0;
+
+      for (const selection of groupSelections) {
+        const unitPrice = priceForVariation(selection.option, variationId);
+        const contribution = group.tipo_selecao === "fracionada"
+          ? roundCurrency(unitPrice * (fraction || 0))
+          : roundCurrency(unitPrice * selection.quantity);
+
+        if (group.tipo_selecao === "fracionada") {
+          fractionalPrice += contribution;
+        } else {
+          optionsPrice += contribution;
+        }
+
+        pricedSelections.push({
+          ...selection,
+          fraction,
+          unitPrice,
+          contribution,
+        });
+      }
+
+      if (group.tipo_selecao === "fracionada" && group.substitui_preco_base && groupSelections.length > 0) {
+        basePrice = roundCurrency(fractionalPrice);
+      }
+    }
+
+    return {
+      selections: pricedSelections,
+      unitPrice: roundCurrency(basePrice + optionsPrice),
+    };
+  }, [configuration, groups, product, selections, variationId]);
+  const unitPrice = pricedConfiguration.unitPrice;
 
   return (
     <div className="fixed inset-0 z-[100] flex items-end bg-slate-950/50 p-0 backdrop-blur-[1px] sm:items-center sm:justify-center sm:p-6" role="dialog" aria-modal="true" aria-label={`Configurar ${product?.nome || "produto"}`}>
@@ -276,7 +356,7 @@ export function SalaoProductConfiguratorModal({
               <p className="text-lg font-extrabold text-slate-950">{formatMoney(unitPrice * quantity)}</p>
             </div>
           </div>
-          <button type="button" onClick={() => onConfirm({ variationId, selections, quantity, notes })} disabled={Boolean(validationIssue) || busy} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#122a4c] px-4 py-3 text-sm font-extrabold text-white transition-colors hover:bg-[#0b1e38] disabled:cursor-not-allowed disabled:opacity-50">
+          <button type="button" onClick={() => onConfirm({ variationId, selections: pricedConfiguration.selections, quantity, notes })} disabled={Boolean(validationIssue) || busy} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#122a4c] px-4 py-3 text-sm font-extrabold text-white transition-colors hover:bg-[#0b1e38] disabled:cursor-not-allowed disabled:opacity-50">
             {busy ? "Adicionando..." : "Adicionar à mesa"}
           </button>
         </footer>

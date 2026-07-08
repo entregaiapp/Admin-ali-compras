@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Armchair,
@@ -9,7 +10,9 @@ import {
   Printer,
   KeyRound,
   Loader2,
+  Maximize2,
   MessageSquareText,
+  Minimize2,
   Plus,
   QrCode,
   RefreshCw,
@@ -34,12 +37,28 @@ import { productsService } from "@/features/products";
 import { showSystemNotice } from "@/shared/components/SystemNoticeModal";
 import api from "@/shared/lib/api";
 import { SalaoProductConfiguratorModal } from "./SalaoProductConfiguratorModal";
+import type { ComandaPrintMode } from "@/features/orders/utils/print";
+import {
+  ComandaPrintModeModal,
+  KitchenPrintSelectionModal,
+} from "@/features/orders/components/ComandaPrintModals";
+import {
+  buildKitchenPrintSelectionItems,
+  getKitchenPrintStorageKey,
+  markKitchenItemsPrinted,
+  readKitchenPrintedKeys,
+  type KitchenPrintSelectionItem,
+} from "@/features/orders/utils/kitchenPrintTracking";
 
 const PRIMARY = "#122a4c";
 const TABLE_CARD_SCALE_STORAGE_KEY = "admin_salao_table_card_scale";
 const TABLE_CARD_SCALE_MIN = 0.78;
 const TABLE_CARD_SCALE_MAX = 1.32;
 const TABLE_CARD_SCALE_STEP = 0.02;
+const KDS_CARD_SCALE_STORAGE_KEY = "admin_salao_kds_card_scale";
+const KDS_CARD_SCALE_MIN = 0.78;
+const KDS_CARD_SCALE_MAX = 1.32;
+const KDS_CARD_SCALE_STEP = 0.02;
 
 const hexToRgba = (hex: string, alpha: number) => {
   const normalized = hex.replace("#", "");
@@ -61,6 +80,17 @@ const clampTableCardScale = (value: unknown) => {
 const getStoredTableCardScale = () => {
   if (typeof window === "undefined") return 1;
   return clampTableCardScale(localStorage.getItem(TABLE_CARD_SCALE_STORAGE_KEY));
+};
+
+const clampKdsCardScale = (value: unknown) => {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return 1;
+  return Math.min(KDS_CARD_SCALE_MAX, Math.max(KDS_CARD_SCALE_MIN, numericValue));
+};
+
+const getStoredKdsCardScale = () => {
+  if (typeof window === "undefined") return 1;
+  return clampKdsCardScale(localStorage.getItem(KDS_CARD_SCALE_STORAGE_KEY));
 };
 
 const SALAO_PAYMENT_METHODS = [
@@ -253,6 +283,12 @@ const formatMoney = (value: unknown) =>
     .toFixed(2)
     .replace(".", ",");
 
+const salaoPrintItemName = (item: any) =>
+  [item?.nome_produto || "Produto", item?.nome_variacao]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .join(" - ");
+
 const toCents = (value: unknown) => Math.round(Number(value || 0) * 100);
 const parseCurrencyInputCents = (value: string) => {
   const digits = String(value || "").replace(/\D/g, "");
@@ -319,7 +355,10 @@ export function SalaoPage() {
   const [newTableNumber, setNewTableNumber] = useState("");
   const [appliedTableSearch, setAppliedTableSearch] = useState("");
   const [tableCardScale, setTableCardScale] = useState(getStoredTableCardScale);
+  const [kdsCardScale, setKdsCardScale] = useState(getStoredKdsCardScale);
   const [tableScaleControlOpen, setTableScaleControlOpen] = useState(false);
+  const [kdsFullscreen, setKdsFullscreen] = useState(false);
+  const [selectedKdsId, setSelectedKdsId] = useState("");
   const [selectedComanda, setSelectedComanda] = useState<any | null>(null);
   const [comandaModule, setComandaModule] = useState<
     "mesa" | "participantes" | "pedidos"
@@ -348,6 +387,12 @@ export function SalaoPage() {
   const [paymentTarget, setPaymentTarget] = useState<any | null>(null);
   const [paymentMethod, setPaymentMethod] = useState("dinheiro");
   const [paymentLines, setPaymentLines] = useState<SalaoPaymentLine[]>([]);
+  const [printComandaTarget, setPrintComandaTarget] = useState<any | null>(null);
+  const [kitchenPrintSelection, setKitchenPrintSelection] = useState<{
+    comanda: any;
+    storageKey: string;
+    selectionItems: KitchenPrintSelectionItem[];
+  } | null>(null);
   const loadingRef = useRef(false);
   const queuedManualRefreshRef = useRef(false);
   const selectedComandaIdRef = useRef("");
@@ -358,6 +403,9 @@ export function SalaoPage() {
   const realtimeRefreshTimeoutRef = useRef<number | null>(null);
   const lastRealtimeAlertAtRef = useRef(0);
   const comandaDetailRef = useRef<HTMLDivElement | null>(null);
+  const salaoPageRef = useRef<HTMLDivElement | null>(null);
+  const kdsCardRefs = useRef(new Map<string, HTMLDivElement>());
+  const pendingPShortcutTimeoutRef = useRef<number | null>(null);
 
   const loadCurrentStore = useCallback(async () => {
     if (!user?.loja_id) return null;
@@ -380,6 +428,38 @@ export function SalaoPage() {
   useEffect(() => {
     localStorage.setItem(TABLE_CARD_SCALE_STORAGE_KEY, String(tableCardScale));
   }, [tableCardScale]);
+
+  useEffect(() => {
+    localStorage.setItem(KDS_CARD_SCALE_STORAGE_KEY, String(kdsCardScale));
+  }, [kdsCardScale]);
+
+  useEffect(() => {
+    setSelectedKdsId((current) => {
+      if (current && kds.some((item) => item.id === current)) return current;
+      return kds[0]?.id || "";
+    });
+  }, [kds]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setKdsFullscreen(document.fullscreenElement === salaoPageRef.current);
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    };
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (pendingPShortcutTimeoutRef.current) {
+        window.clearTimeout(pendingPShortcutTimeoutRef.current);
+        pendingPShortcutTimeoutRef.current = null;
+      }
+    },
+    [],
+  );
 
   const playRealtimeAlert = useCallback(() => {
     if (!soundEnabledRef.current) return;
@@ -861,7 +941,14 @@ export function SalaoPage() {
 
   const addConfiguredProductToComanda = async (item: {
     variationId: string;
-    selections: Array<{ group: any; option: any; quantity: number }>;
+    selections: Array<{
+      group: any;
+      option: any;
+      quantity: number;
+      fraction?: number | null;
+      unitPrice: number;
+      contribution: number;
+    }>;
     quantity: number;
     notes: string;
   }) => {
@@ -880,15 +967,15 @@ export function SalaoPage() {
         observacoes: item.notes.trim() || undefined,
         configuracao_versao: configuringProduct.configuration?.versao,
         selecoes: item.selections.map(
-          ({ group, option, quantity: optionQuantity }) => ({
+          ({ group, option, quantity: optionQuantity, fraction, unitPrice, contribution }) => ({
             grupo_id: group.id,
             opcao_id: option.id,
             quantidade: optionQuantity,
             nome_grupo: group.nome,
             nome_opcao: option.nome,
-            preco_unitario: Number(option.preco_adicional || 0),
-            preco_contribuicao:
-              Number(option.preco_adicional || 0) * optionQuantity,
+            fracao: fraction || undefined,
+            preco_unitario: unitPrice,
+            preco_contribuicao: contribution,
           }),
         ),
       });
@@ -1061,7 +1148,187 @@ export function SalaoPage() {
     }
   };
 
-  const printSalaoComanda = (comanda: any) => {
+  const setKdsCardRef = (id: string, element: HTMLDivElement | null) => {
+    if (element) {
+      kdsCardRefs.current.set(id, element);
+      return;
+    }
+
+    kdsCardRefs.current.delete(id);
+  };
+
+  const navigateKdsSelection = useCallback(
+    (direction: "up" | "down" | "left" | "right") => {
+      if (!kds.length) return;
+
+      const currentIndex = Math.max(
+        0,
+        kds.findIndex((item) => item.id === selectedKdsId),
+      );
+
+      if (direction === "left" || direction === "right") {
+        const nextIndex =
+          direction === "left"
+            ? Math.max(0, currentIndex - 1)
+            : Math.min(kds.length - 1, currentIndex + 1);
+        setSelectedKdsId(kds[nextIndex]?.id || "");
+        return;
+      }
+
+      const currentItem = kds[currentIndex];
+      const currentElement = currentItem
+        ? kdsCardRefs.current.get(currentItem.id)
+        : null;
+      if (!currentElement) return;
+
+      const currentRect = currentElement.getBoundingClientRect();
+      const currentCenterX = currentRect.left + currentRect.width / 2;
+      let bestMatch: { id: string; score: number } | null = null;
+
+      kds.forEach((item) => {
+        if (item.id === currentItem?.id) return;
+        const element = kdsCardRefs.current.get(item.id);
+        if (!element) return;
+
+        const rect = element.getBoundingClientRect();
+        const isAbove = rect.bottom <= currentRect.top + 1;
+        const isBelow = rect.top >= currentRect.bottom - 1;
+        if ((direction === "up" && !isAbove) || (direction === "down" && !isBelow)) {
+          return;
+        }
+
+        const centerX = rect.left + rect.width / 2;
+        const verticalDistance =
+          direction === "up"
+            ? currentRect.top - rect.bottom
+            : rect.top - currentRect.bottom;
+        const horizontalDistance = Math.abs(centerX - currentCenterX);
+        const score = verticalDistance * 10000 + horizontalDistance;
+
+        if (!bestMatch || score < bestMatch.score) {
+          bestMatch = { id: item.id, score };
+        }
+      });
+
+      if (bestMatch) setSelectedKdsId(bestMatch.id);
+    },
+    [kds, selectedKdsId],
+  );
+
+  const applyKdsShortcut = useCallback(
+    (status: string) => {
+      const selectedItem = kds.find((item) => item.id === selectedKdsId);
+      if (!selectedItem || actionBusy.startsWith(`kds-${selectedItem.id}-`)) return;
+      void updateKds(selectedItem, status);
+    },
+    [actionBusy, kds, selectedKdsId],
+  );
+
+  useEffect(() => {
+    const selectedElement = selectedKdsId
+      ? kdsCardRefs.current.get(selectedKdsId)
+      : null;
+    selectedElement?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [selectedKdsId]);
+
+  useEffect(() => {
+    if (tab !== "kds" && !kdsFullscreen) return;
+    if (
+      paymentTarget ||
+      closeMesaTarget ||
+      qrDownloadMesa ||
+      deleteMesaTarget ||
+      configuringProduct ||
+      printComandaTarget ||
+      kitchenPrintSelection
+    ) {
+      return;
+    }
+
+    const handleKdsKeyDown = (event: KeyboardEvent) => {
+      if (event.altKey || event.ctrlKey || event.metaKey) return;
+
+      const target = event.target as HTMLElement | null;
+      const targetTag = target?.tagName?.toLowerCase();
+      const isTyping =
+        target?.isContentEditable ||
+        targetTag === "input" ||
+        targetTag === "textarea" ||
+        targetTag === "select";
+      if (isTyping) return;
+
+      const navigationByKey: Record<string, "up" | "down" | "left" | "right"> = {
+        ArrowUp: "up",
+        ArrowDown: "down",
+        ArrowLeft: "left",
+        ArrowRight: "right",
+      };
+      const navigationDirection = navigationByKey[event.key];
+      if (navigationDirection) {
+        event.preventDefault();
+        navigateKdsSelection(navigationDirection);
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      if (!["r", "p", "e"].includes(key)) return;
+
+      event.preventDefault();
+      if (key !== "p" && pendingPShortcutTimeoutRef.current) {
+        window.clearTimeout(pendingPShortcutTimeoutRef.current);
+        pendingPShortcutTimeoutRef.current = null;
+      }
+
+      if (key === "r") {
+        applyKdsShortcut("recebido");
+        return;
+      }
+
+      if (key === "e") {
+        applyKdsShortcut("entregue");
+        return;
+      }
+
+      if (pendingPShortcutTimeoutRef.current) {
+        window.clearTimeout(pendingPShortcutTimeoutRef.current);
+        pendingPShortcutTimeoutRef.current = null;
+        applyKdsShortcut("pronto");
+        return;
+      }
+
+      pendingPShortcutTimeoutRef.current = window.setTimeout(() => {
+        pendingPShortcutTimeoutRef.current = null;
+        applyKdsShortcut("preparando");
+      }, 360);
+    };
+
+    window.addEventListener("keydown", handleKdsKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKdsKeyDown);
+      if (pendingPShortcutTimeoutRef.current) {
+        window.clearTimeout(pendingPShortcutTimeoutRef.current);
+        pendingPShortcutTimeoutRef.current = null;
+      }
+    };
+  }, [
+    applyKdsShortcut,
+    closeMesaTarget,
+    configuringProduct,
+    deleteMesaTarget,
+    kdsFullscreen,
+    navigateKdsSelection,
+    paymentTarget,
+    printComandaTarget,
+    qrDownloadMesa,
+    tab,
+    kitchenPrintSelection,
+  ]);
+
+  const printSalaoComanda = (
+    comanda: any,
+    mode: ComandaPrintMode = "cliente_cozinha",
+    selectedItems?: any[],
+  ) => {
     const printWindow = window.open("", "_blank", "width=420,height=650");
     if (!printWindow) {
       showSystemNotice(
@@ -1070,6 +1337,9 @@ export function SalaoPage() {
       return;
     }
 
+    const printableItems = (selectedItems || arrayOrEmpty<any>(comanda.itens)).filter(
+      (item) => item.status !== "cancelado",
+    );
     const participants = arrayOrEmpty<any>(comanda.participantes);
     const participantNames = new Map(
       participants.map((participant) => [
@@ -1081,9 +1351,7 @@ export function SalaoPage() {
       string,
       { name: string; items: any[]; total: number; staff: boolean }
     >();
-    for (const item of arrayOrEmpty<any>(comanda.itens).filter(
-      (item) => item.status !== "cancelado",
-    )) {
+    for (const item of printableItems) {
       const isStaffItem = !item.participante_id;
       const key = isStaffItem
         ? `${item.enviado_por === "garcom" ? "garcom" : "atendimento"}:${item.adicionado_por || item.autor_nome || "Atendimento"}`
@@ -1109,7 +1377,7 @@ export function SalaoPage() {
         ${group.items
           .map(
             (item) => `
-          <div class="row product-row"><span>${escapePrintHtml(item.quantidade)}x ${escapePrintHtml(item.nome_produto)}</span><span>R$ ${formatMoney(item.preco_total)}</span></div>
+          <div class="row product-row"><span>${escapePrintHtml(item.quantidade)}x ${escapePrintHtml(salaoPrintItemName(item))}</span><span>R$ ${formatMoney(item.preco_total)}</span></div>
           ${arrayOrEmpty<any>(item.selecoes)
             .map(
               (selection) =>
@@ -1125,8 +1393,7 @@ export function SalaoPage() {
     `,
       )
       .join("");
-    const total = arrayOrEmpty<any>(comanda.itens)
-      .filter((item) => item.status !== "cancelado")
+    const total = printableItems
       .reduce((sum, item) => sum + Number(item.preco_total || 0), 0);
     const splitPeople = Number(comanda.quantidade_pessoas_divisao || 1);
     const dailyTicketNumber = getDailyTicketNumber(comanda);
@@ -1135,10 +1402,49 @@ export function SalaoPage() {
         ? `<div class="divider"></div><div class="row"><span>Divisão (${splitPeople} pessoas)</span><span>R$ ${formatMoney(total / splitPeople)} por pessoa</span></div>`
         : "";
 
+    if (mode === "cozinha") {
+      const kitchenItems = printableItems
+        .map(
+          (item) => `
+          <section class="product-block">
+            <div class="product-row"><span>${escapePrintHtml(item.quantidade)}x ${escapePrintHtml(salaoPrintItemName(item))}</span></div>
+            ${arrayOrEmpty<any>(item.selecoes)
+              .map(
+                (selection) =>
+                  `<p class="option">${escapePrintHtml(selection.nome_grupo)}: ${escapePrintHtml(selection.nome_opcao)}</p>`,
+              )
+              .join("")}
+            ${item.observacoes ? `<p class="obs">Obs: ${escapePrintHtml(item.observacoes)}</p>` : ""}
+          </section>
+        `,
+        )
+        .join("");
+
+      printWindow.document.write(`<!DOCTYPE html>
+      <html lang="pt-BR"><head><meta charset="UTF-8"><title>Comanda da Cozinha ${escapePrintHtml(comanda.numero_comanda)}</title>
+      <style>
+        *{margin:0;padding:0;box-sizing:border-box}html,body{width:80mm;min-height:30mm}body{font-family:'Courier New',Courier,monospace;width:80mm;min-height:30mm;max-width:80mm;margin:0 auto;padding:3mm;font-size:18px;font-weight:900;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}body *{color:#000!important;font-weight:900}.center{text-align:center}.bold{font-weight:900}.large{font-size:22px}.divider-solid{border-top:2px solid #000;margin:9px 0}.divider{border-top:1px dashed #000;margin:9px 0}.tag{display:inline-block;border:2px solid #000;padding:2px 8px;font-size:18px;margin:3px 0}.ticket-number{border:2px solid #000;padding:8px 4px;margin:8px 0;text-align:center}.ticket-label{font-size:16px;font-weight:900;letter-spacing:0}.ticket-value{display:block;font-size:44px;line-height:1;font-weight:900;margin-top:3px}.product-block{margin-bottom:10px}.product-row{display:flex;justify-content:space-between;gap:8px;font-size:27px;line-height:1.12;margin-bottom:6px}.product-row span:first-child{flex:1}.option{font-size:20px;line-height:1.12;margin:0 0 5px 16px}.obs{font-size:24px;line-height:1.12;margin:0 0 7px 16px;font-style:italic}p{margin-bottom:4px}@page{size:80mm 200mm;margin:0}@media print{html,body{width:80mm;min-height:30mm}body{margin:0;padding:3mm}}
+      </style></head><body>
+        <div class="center">
+          <p class="bold large">COMANDA DA COZINHA</p>
+          ${dailyTicketNumber ? `<div class="ticket-number"><span class="ticket-label">COMANDA DO DIA</span><span class="ticket-value">${escapePrintHtml(dailyTicketNumber)}</span></div>` : ""}
+          <p>Comanda: <span class="bold">${escapePrintHtml(comanda.numero_comanda)}</span></p>
+          <p>Data: ${new Date().toLocaleString("pt-BR")}</p>
+          <span class="tag">MESA ${escapePrintHtml(comanda.mesa?.numero || "-")}</span>
+        </div>
+        <div class="divider-solid"></div>
+        <p class="bold">PRODUTOS:</p>
+        ${kitchenItems || "<p>Nenhum item selecionado.</p>"}
+        <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};};</script>
+      </body></html>`);
+      printWindow.document.close();
+      return;
+    }
+
     printWindow.document.write(`<!DOCTYPE html>
       <html lang="pt-BR"><head><meta charset="UTF-8"><title>Comanda ${escapePrintHtml(comanda.numero_comanda)}</title>
       <style>
-        *{margin:0;padding:0;box-sizing:border-box}html,body{width:80mm;min-height:30mm}body{font-family:'Courier New',Courier,monospace;width:80mm;min-height:30mm;max-width:80mm;margin:0 auto;padding:3mm;font-size:16px;font-weight:700;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}body *{color:#000!important;font-weight:700}.center{text-align:center}.bold{font-weight:800}.large{font-size:19px}.divider-solid{border-top:1px solid #000;margin:8px 0}.divider{border-top:1px dashed #000;margin:8px 0}.row{display:flex;justify-content:space-between;gap:8px;margin-bottom:3px}.row-total{display:flex;justify-content:space-between;gap:8px;font-size:18px;font-weight:800;margin-bottom:3px}.person{padding:8px 0}.person-title{font-weight:800;margin-bottom:6px}.subtotal{margin-top:6px;font-weight:800}.option{font-size:14px;margin:0 0 2px 16px}.obs{font-size:22px;line-height:1.12;margin:0 0 7px 16px;font-style:italic}.tag{display:inline-block;border:1px solid #000;padding:1px 6px;font-size:15px;margin:2px 0}.ticket-number{border:2px solid #000;padding:8px 4px;margin:8px 0;text-align:center}.ticket-label{font-size:15px;font-weight:800;letter-spacing:0}.ticket-value{display:block;font-size:42px;line-height:1;font-weight:900;margin-top:3px}.product-row{font-size:26px;line-height:1.12;margin-bottom:7px}.product-row span:first-child{flex:1}.product-row span:last-child{white-space:nowrap}p{margin-bottom:4px}@page{size:80mm 200mm;margin:0}@media print{html,body{width:80mm;min-height:30mm}body{margin:0;padding:3mm}}
+        *{margin:0;padding:0;box-sizing:border-box}html,body{width:80mm;min-height:30mm}body{font-family:'Courier New',Courier,monospace;width:80mm;min-height:30mm;max-width:80mm;margin:0 auto;padding:3mm;font-size:16px;font-weight:700;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}body *{color:#000!important;font-weight:700}.center{text-align:center}.bold{font-weight:800}.large{font-size:19px}.divider-solid{border-top:1px solid #000;margin:8px 0}.divider{border-top:1px dashed #000;margin:8px 0}.row{display:flex;justify-content:space-between;gap:8px;margin-bottom:3px}.row-total{display:flex;justify-content:space-between;gap:8px;font-size:18px;font-weight:800;margin-bottom:3px}.person{padding:8px 0}.person-title{font-weight:800;margin-bottom:6px}.subtotal{margin-top:6px;font-weight:800}.option{font-size:14px;margin:0 0 2px 16px}.obs{font-size:22px;line-height:1.12;margin:0 0 7px 16px;font-style:italic}.tag{display:inline-block;border:1px solid #000;padding:1px 6px;font-size:15px;margin:2px 0}.ticket-number{border:2px solid #000;padding:8px 4px;margin:8px 0;text-align:center}.ticket-label{font-size:15px;font-weight:800;letter-spacing:0}.ticket-value{display:block;font-size:42px;line-height:1;font-weight:900;margin-top:3px}.product-row{font-size:26px;line-height:1.12;margin-bottom:7px}.product-row span:first-child{flex:1}.product-row span:last-child{white-space:nowrap}p{margin-bottom:4px}@page{size:80mm 200mm;margin:0}@media print{html,body{width:80mm;min-height:30mm}body{margin:0;padding:3mm}}${mode === "cliente" ? "body{font-size:13px;font-weight:400}body *{font-weight:400}.bold,.person-title,.subtotal,.row-total{font-weight:800}.large{font-size:16px}.ticket-number{border-width:1px;padding:5px 4px}.ticket-label{font-size:12px}.ticket-value{font-size:24px}.product-row{font-size:14px;line-height:1.2;margin-bottom:4px}.option{font-size:12px;line-height:1.2;margin-bottom:3px}.obs{font-size:13px;line-height:1.2;margin-bottom:5px}.row-total{font-size:15px}" : ""}
       </style></head><body>
         <div class="center">
           <p class="bold large">COMANDA DO SALÃO</p>
@@ -1158,6 +1464,83 @@ export function SalaoPage() {
         <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};};</script>
       </body></html>`);
     printWindow.document.close();
+  };
+
+  const openSalaoPrintModal = (comanda: any) => {
+    setPrintComandaTarget(comanda);
+  };
+
+  const getSalaoKitchenSelectionItems = (comanda: any, storageKey: string) =>
+    buildKitchenPrintSelectionItems(
+      arrayOrEmpty<any>(comanda.itens).filter((item) => item.status !== "cancelado"),
+      storageKey,
+      {
+        getName: salaoPrintItemName,
+        getQuantity: (item) => Number(item.quantidade || 0),
+        getDetails: (item) =>
+          arrayOrEmpty<any>(item.selecoes).map(
+            (selection) => `${selection.nome_grupo}: ${selection.nome_opcao}`,
+          ),
+        getNote: (item) => String(item.observacoes || "").trim(),
+      },
+    );
+
+  const handleSalaoPrintModeSelected = (mode: ComandaPrintMode) => {
+    if (!printComandaTarget) return;
+
+    if (mode === "cozinha") {
+      const storageKey = getKitchenPrintStorageKey(
+        "salao",
+        printComandaTarget.id,
+      );
+      const selectionItems = getSalaoKitchenSelectionItems(
+        printComandaTarget,
+        storageKey,
+      );
+      const hasPrintedHistory = readKitchenPrintedKeys(storageKey).size > 0;
+
+      if (hasPrintedHistory) {
+        setKitchenPrintSelection({
+          comanda: printComandaTarget,
+          storageKey,
+          selectionItems,
+        });
+        setPrintComandaTarget(null);
+        return;
+      }
+
+      printSalaoComanda(
+        printComandaTarget,
+        "cozinha",
+        selectionItems.map((item) => item.item),
+      );
+      markKitchenItemsPrinted(
+        storageKey,
+        selectionItems.map((item) => item.key),
+      );
+      setPrintComandaTarget(null);
+      return;
+    }
+
+    printSalaoComanda(printComandaTarget, mode);
+    setPrintComandaTarget(null);
+  };
+
+  const handlePrintSelectedSalaoKitchenItems = (itemKeys: string[]) => {
+    if (!kitchenPrintSelection) return;
+
+    const selectedKeys = new Set(itemKeys);
+    const selectedItemsForPrint = kitchenPrintSelection.selectionItems
+      .filter((item) => selectedKeys.has(item.key))
+      .map((item) => item.item);
+
+    printSalaoComanda(
+      kitchenPrintSelection.comanda,
+      "cozinha",
+      selectedItemsForPrint,
+    );
+    markKitchenItemsPrinted(kitchenPrintSelection.storageKey, itemKeys);
+    setKitchenPrintSelection(null);
   };
 
   const productList = productSearch.trim()
@@ -1202,10 +1585,30 @@ export function SalaoPage() {
   const tableCardGridMinWidth = Math.round(252 * tableCardScale);
   const tableCardGap = Math.round(10 * tableCardScale);
   const tableCardPadding = Math.round(12 * tableCardScale);
-  const tableCardBottomPadding = Math.round(56 * tableCardScale);
+  const tableCardMobilePadding = Math.max(8, Math.round(9 * tableCardScale));
+  const tableCardBottomPadding = tableCardPadding;
+  const tableCardMobileBottomPadding = tableCardMobilePadding;
   const tableCardMinHeight = Math.round(128 * tableCardScale);
-  const tableCardDeleteButtonSize = Math.round(32 * tableCardScale);
-  const tableCardDeleteButtonOffset = Math.round(12 * tableCardScale);
+  const tableCardMobileMinHeight = Math.max(112, Math.round(116 * tableCardScale));
+  const kdsCardScalePercent = Math.round(kdsCardScale * 100);
+  const showingKdsControls = tab === "kds" || kdsFullscreen;
+  const activeCardScale = showingKdsControls ? kdsCardScale : tableCardScale;
+  const activeCardScalePercent =
+    showingKdsControls ? kdsCardScalePercent : tableCardScalePercent;
+  const activeCardScaleMin =
+    showingKdsControls ? KDS_CARD_SCALE_MIN : TABLE_CARD_SCALE_MIN;
+  const activeCardScaleMax =
+    showingKdsControls ? KDS_CARD_SCALE_MAX : TABLE_CARD_SCALE_MAX;
+  const activeCardScaleStep =
+    showingKdsControls ? KDS_CARD_SCALE_STEP : TABLE_CARD_SCALE_STEP;
+  const activeCardScaleLabel =
+    showingKdsControls ? "Tamanho dos cards do KDS" : "Tamanho dos cards de mesa";
+  const kdsCardGridMinWidth = Math.round(344 * kdsCardScale);
+  const kdsCardGap = Math.round(12 * kdsCardScale);
+  const kdsCardPadding = Math.round(16 * kdsCardScale);
+  const kdsCardRadius = Math.round(8 * kdsCardScale);
+  const kdsSectionPaddingX = Math.round(12 * kdsCardScale);
+  const kdsSectionPaddingY = Math.round(8 * kdsCardScale);
   const handleTableSearchOrCreate = async () => {
     if (!tableSearchQuery) return;
     if (canSearchTable) {
@@ -1213,6 +1616,35 @@ export function SalaoPage() {
       return;
     }
     await createMesa();
+  };
+  const handleCardScaleChange = (value: string) => {
+    if (showingKdsControls) {
+      setKdsCardScale(clampKdsCardScale(value));
+      return;
+    }
+
+    setTableCardScale(clampTableCardScale(value));
+  };
+  const toggleKdsFullscreen = async () => {
+    if (tab !== "kds") setTab("kds");
+
+    if (kdsFullscreen) {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      setKdsFullscreen(false);
+      return;
+    }
+
+    const target = salaoPageRef.current;
+    if (target?.requestFullscreen) {
+      try {
+        await target.requestFullscreen();
+      } catch {
+        setKdsFullscreen(true);
+      }
+      return;
+    }
+
+    setKdsFullscreen(true);
   };
   const mesasById = useMemo(
     () => new Map(mesas.map((mesa) => [mesa.id, mesa])),
@@ -1242,16 +1674,145 @@ export function SalaoPage() {
     aguardando_conta: "bg-blue-100 text-blue-800 ring-1 ring-blue-200",
     aguardando_garcom: "bg-violet-100 text-violet-800 ring-1 ring-violet-200",
   };
+  const salaoTabs = [
+    {
+      id: "mesas",
+      Icon: Armchair,
+      label: "Mesas",
+      mobileLabel: "Mesas",
+      description: `${pendingMesas.length} mesa${pendingMesas.length === 1 ? "" : "s"} com atenção`,
+      count: pendingMesas.length,
+    },
+    {
+      id: "comandas",
+      Icon: ClipboardList,
+      label: "Comandas",
+      mobileLabel: "Comandas",
+      description: `${comandas.length} comanda${comandas.length === 1 ? "" : "s"} ativa${comandas.length === 1 ? "" : "s"}`,
+      count: pendingMesas.length,
+    },
+    {
+      id: "kds",
+      Icon: ChefHat,
+      label: "KDS",
+      mobileLabel: "KDS",
+      description: `${kds.length} item${kds.length === 1 ? "" : "s"} na cozinha`,
+      count: 0,
+    },
+  ] as const;
+  const activeSalaoTab =
+    salaoTabs.find((item) => item.id === tab) || salaoTabs[0];
+  const ActiveSalaoTabIcon = activeSalaoTab.Icon;
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-gray-50">
-      <div className="border-b border-gray-200 bg-white px-4 pt-2">
+    <div
+      ref={salaoPageRef}
+      className={`flex h-full min-h-0 max-w-full flex-col overflow-x-hidden bg-gray-50 ${
+        kdsFullscreen ? "fixed inset-0 z-[9999]" : ""
+      }`}
+    >
+      <div className="border-b border-gray-200 bg-white px-2.5 py-2 lg:px-4 lg:py-0 lg:pt-2">
+        <div className="lg:hidden">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-[10px] font-extrabold uppercase text-slate-400">
+                Salão
+              </p>
+              <div className="mt-0.5 flex items-center gap-1.5">
+                <span
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white shadow-sm"
+                  style={{ backgroundColor: PRIMARY }}
+                >
+                  <ActiveSalaoTabIcon className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <h1 className="truncate text-sm font-extrabold text-slate-950">
+                    {activeSalaoTab.label}
+                  </h1>
+                  <p className="truncate text-[11px] font-medium leading-tight text-slate-500">
+                    {activeSalaoTab.description}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => void load({ manual: true, includeProducts: true })}
+                disabled={loading || refreshing}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-white shadow-sm disabled:opacity-45"
+                style={{ backgroundColor: PRIMARY }}
+                aria-label={loading || refreshing ? "Atualizando salão" : "Atualizar salão"}
+              >
+                <RefreshCw
+                  className={`h-4 w-4 ${loading || refreshing ? "animate-spin" : ""}`}
+                />
+              </button>
+              {showingKdsControls && (
+                <button
+                  type="button"
+                  onClick={() => void toggleKdsFullscreen()}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm"
+                  aria-label={
+                    kdsFullscreen
+                      ? "Sair da tela cheia do KDS"
+                      : "Abrir KDS em tela cheia"
+                  }
+                >
+                  {kdsFullscreen ? (
+                    <Minimize2 className="h-4 w-4" />
+                  ) : (
+                    <Maximize2 className="h-4 w-4" />
+                  )}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setTableScaleControlOpen((current) => !current)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm"
+                aria-label={activeCardScaleLabel}
+                aria-expanded={tableScaleControlOpen}
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+          {tableScaleControlOpen && (
+            <div className="mt-2 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5">
+              <span className="min-w-0 flex-1 text-xs font-bold text-slate-600">
+                {activeCardScaleLabel}
+              </span>
+              <input
+                type="range"
+                min={activeCardScaleMin}
+                max={activeCardScaleMax}
+                step={activeCardScaleStep}
+                value={activeCardScale}
+                onChange={(event) => handleCardScaleChange(event.target.value)}
+                className="h-1.5 w-28 accent-[#122a4c]"
+                aria-label={activeCardScaleLabel}
+              />
+              <span className="w-9 text-right text-[11px] font-extrabold text-slate-600">
+                {activeCardScalePercent}%
+              </span>
+            </div>
+          )}
+        </div>
         <div
-          className="flex gap-1 overflow-x-auto scrollbar-hide"
-          role="tablist"
-          aria-label="Áreas do salão"
+          className="hidden gap-1 overflow-x-auto scrollbar-hide lg:flex"
+          role={kdsFullscreen ? undefined : "tablist"}
+          aria-label={kdsFullscreen ? undefined : "Áreas do salão"}
         >
-          {[
+          {kdsFullscreen && (
+            <div
+              className="inline-flex min-h-12 shrink-0 items-center gap-2 px-1 text-sm font-bold"
+              style={{ color: PRIMARY }}
+            >
+              <ChefHat className="h-4 w-4" />
+              KDS
+            </div>
+          )}
+          {!kdsFullscreen && [
             ["mesas", Armchair, "Mesas", pendingMesas.length],
             ["comandas", ClipboardList, "Comandas", pendingMesas.length],
             ["kds", ChefHat, "KDS", 0],
@@ -1315,12 +1876,29 @@ export function SalaoPage() {
                 className={`h-4 w-4 ${loading || refreshing ? "animate-spin" : ""}`}
               />
             </button>
+            {showingKdsControls && (
+              <button
+                type="button"
+                onClick={() => void toggleKdsFullscreen()}
+                className="inline-flex h-9 w-9 flex-none items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 shadow-sm transition-all hover:border-gray-300 hover:text-gray-900"
+                title={kdsFullscreen ? "Sair da tela cheia" : "Tela cheia"}
+                aria-label={
+                  kdsFullscreen ? "Sair da tela cheia do KDS" : "Abrir KDS em tela cheia"
+                }
+              >
+                {kdsFullscreen ? (
+                  <Minimize2 className="h-4 w-4" />
+                ) : (
+                  <Maximize2 className="h-4 w-4" />
+                )}
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setTableScaleControlOpen((current) => !current)}
               className="inline-flex h-9 w-9 flex-none items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 shadow-sm transition-all hover:border-gray-300 hover:text-gray-900"
               title="Ajustar tamanho dos cards"
-              aria-label="Ajustar tamanho dos cards de mesa"
+              aria-label={activeCardScaleLabel}
               aria-expanded={tableScaleControlOpen}
             >
               <SlidersHorizontal className="h-4 w-4" />
@@ -1329,18 +1907,16 @@ export function SalaoPage() {
               <div className="flex w-44 flex-none items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1.5 shadow-sm">
                 <input
                   type="range"
-                  min={TABLE_CARD_SCALE_MIN}
-                  max={TABLE_CARD_SCALE_MAX}
-                  step={TABLE_CARD_SCALE_STEP}
-                  value={tableCardScale}
-                  onChange={(event) =>
-                    setTableCardScale(clampTableCardScale(event.target.value))
-                  }
+                  min={activeCardScaleMin}
+                  max={activeCardScaleMax}
+                  step={activeCardScaleStep}
+                  value={activeCardScale}
+                  onChange={(event) => handleCardScaleChange(event.target.value)}
                   className="h-1.5 w-full accent-[#122a4c]"
-                  aria-label="Tamanho dos cards de mesa"
+                  aria-label={activeCardScaleLabel}
                 />
                 <span className="w-9 text-right text-[11px] font-bold text-gray-600">
-                  {tableCardScalePercent}%
+                  {activeCardScalePercent}%
                 </span>
               </div>
             )}
@@ -1348,15 +1924,15 @@ export function SalaoPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-3 pb-20 sm:p-6">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 pb-16 sm:p-6 sm:pb-28 lg:pb-20">
         {loading ? (
           <div className="flex h-64 items-center justify-center text-gray-500">
             <Loader2 className="mr-2 h-5 w-5 animate-spin" />
             Carregando salão...
           </div>
-        ) : tab === "mesas" ? (
-          <div className="space-y-4">
-            <div className="flex w-full max-w-sm gap-2">
+        ) : !kdsFullscreen && tab === "mesas" ? (
+          <div className="space-y-3 sm:space-y-4">
+            <div className="flex w-full max-w-sm gap-1.5 sm:gap-2">
               <input
                 value={newTableNumber}
                 onChange={(event) => {
@@ -1370,19 +1946,19 @@ export function SalaoPage() {
                   }
                 }}
                 placeholder="Número da mesa"
-                className="h-12 flex-1 rounded-xl border border-gray-300 px-3 text-base"
+                className="h-10 min-w-0 flex-1 rounded-lg border border-gray-300 px-2.5 text-[16px] leading-none sm:h-12 sm:rounded-xl sm:px-3"
               />
               <button
                 type="button"
                 onClick={() => void handleTableSearchOrCreate()}
                 disabled={creatingTable || !tableSearchQuery}
-                className="inline-flex min-h-12 items-center gap-2 rounded-xl px-4 text-sm font-semibold text-white disabled:opacity-60"
+                className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-white disabled:opacity-60 sm:min-h-12 sm:gap-2 sm:rounded-xl sm:px-4 sm:text-sm"
                 style={{ backgroundColor: PRIMARY }}
               >
                 {creatingTable ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin sm:h-4 sm:w-4" />
                 ) : (
-                  <TableActionIcon className="h-4 w-4" />
+                  <TableActionIcon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 )}
                 {creatingTable ? "Criando..." : tableActionLabel}
               </button>
@@ -1407,15 +1983,22 @@ export function SalaoPage() {
             )}
 
             <div
-              className="grid"
+              className="grid min-w-0 grid-cols-2 sm:[grid-template-columns:repeat(auto-fill,minmax(min(100%,var(--table-card-grid-min-width)),1fr))]"
               style={{
                 gap: tableCardGap,
-                gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${tableCardGridMinWidth}px), 1fr))`,
-              }}
+                "--table-card-grid-min-width": `${tableCardGridMinWidth}px`,
+              } as CSSProperties}
             >
               {visibleMesas.map((mesa) => {
                 const pendingAction = getMesaPendingAction(mesa);
                 const hasOpenComanda = Boolean(mesa.comanda_aberta);
+                const statusLabel = String(mesa.status || "sem status").replace(
+                  /_/g,
+                  " ",
+                );
+                const statusFontSize =
+                  (statusLabel.length > 12 ? 7.5 : statusLabel.length > 8 ? 8.5 : 9.5) *
+                  tableCardScale;
                 const handleMesaClick = () => void openMesa(mesa);
 
                 return (
@@ -1433,51 +2016,53 @@ export function SalaoPage() {
                         handleMesaClick();
                       }
                     }}
-                    className={`relative rounded-xl border shadow-sm transition-all ${
+                    className={`relative min-w-0 overflow-hidden rounded-lg border shadow-sm transition-all [min-height:var(--table-card-mobile-min-height)] [padding:var(--table-card-mobile-padding)] [padding-bottom:var(--table-card-mobile-bottom-padding)] sm:rounded-xl sm:[min-height:var(--table-card-min-height)] sm:[padding:var(--table-card-padding)] sm:[padding-bottom:var(--table-card-bottom-padding)] ${
                       realtimeMesaId === mesa.id
                         ? "border-emerald-500 bg-emerald-100 ring-4 ring-emerald-200 animate-pulse"
                         : pendingAction?.cardClass || "border-gray-200 bg-white"
                     } ${hasOpenComanda ? "cursor-pointer hover:border-blue-300 hover:shadow-md" : ""}`}
                     style={{
-                      minHeight: tableCardMinHeight,
-                      padding: tableCardPadding,
-                      paddingBottom: tableCardBottomPadding,
-                    }}
+                      "--table-card-mobile-min-height": `${tableCardMobileMinHeight}px`,
+                      "--table-card-min-height": `${tableCardMinHeight}px`,
+                      "--table-card-mobile-padding": `${tableCardMobilePadding}px`,
+                      "--table-card-padding": `${tableCardPadding}px`,
+                      "--table-card-mobile-bottom-padding": `${tableCardMobileBottomPadding}px`,
+                      "--table-card-bottom-padding": `${tableCardBottomPadding}px`,
+                    } as CSSProperties}
                   >
-                    <div className="flex items-start justify-between">
-                      <div>
+                    <div className="flex min-w-0 items-start justify-between gap-1.5">
+                      <div className="min-w-0">
                         <div
-                          className="text-gray-500"
+                          className="break-words text-gray-500 [overflow-wrap:anywhere]"
                           style={{ fontSize: 12 * tableCardScale }}
                         >
                           Mesa
                         </div>
                         <div
-                          className="font-semibold text-gray-900"
+                          className="break-words font-semibold text-gray-900 [overflow-wrap:anywhere]"
                           style={{ fontSize: 20 * tableCardScale, lineHeight: 1.2 }}
                         >
                           {mesa.numero}
                         </div>
                       </div>
                       <span
-                        className={`rounded-full font-extrabold uppercase tracking-wide ${tableStatusClass[mesa.status] || "bg-gray-100 text-gray-700"}`}
+                        className={`max-w-[58%] shrink-0 break-words rounded-full text-center font-extrabold uppercase leading-none tracking-normal [overflow-wrap:anywhere] sm:tracking-wide ${tableStatusClass[mesa.status] || "bg-gray-100 text-gray-700"}`}
                         style={{
-                          fontSize: 10 * tableCardScale,
-                          padding: `${4 * tableCardScale}px ${8 * tableCardScale}px`,
-                          whiteSpace: "nowrap",
+                          fontSize: statusFontSize,
+                          padding: `${3 * tableCardScale}px ${6 * tableCardScale}px`,
                         }}
                       >
-                        {mesa.status?.replace(/_/g, " ")}
+                        {statusLabel}
                       </span>
                     </div>
                     {pendingAction && (
                       <div
-                        className={`flex w-full max-w-full items-center rounded-md border font-bold leading-snug ${pendingAction.className}`}
+                        className={`flex w-full max-w-full min-w-0 items-center overflow-hidden rounded-md border font-bold leading-snug ${pendingAction.className}`}
                         style={{
                           gap: 4 * tableCardScale,
-                          marginTop: 8 * tableCardScale,
-                          padding: `${4 * tableCardScale}px ${8 * tableCardScale}px`,
-                          fontSize: 11 * tableCardScale,
+                          marginTop: 6 * tableCardScale,
+                          padding: `${3 * tableCardScale}px ${5 * tableCardScale}px`,
+                          fontSize: 9.5 * tableCardScale,
                         }}
                       >
                         <CircleAlert
@@ -1487,21 +2072,24 @@ export function SalaoPage() {
                             width: 14 * tableCardScale,
                           }}
                         />
-                        <span>
+                        <span className="min-w-0 break-words [overflow-wrap:anywhere]">
                           Ação pendente: {pendingAction.label}
                         </span>
                       </div>
                     )}
                     {mesa.comanda_aberta && (
                       <div
-                        className={`rounded-md text-gray-700 ${pendingAction ? "bg-white/60" : "bg-gray-50"}`}
+                        className={`min-w-0 overflow-hidden rounded-md text-gray-700 ${pendingAction ? "bg-white/60" : "bg-gray-50"}`}
                         style={{
-                          marginTop: 12 * tableCardScale,
-                          padding: `${8 * tableCardScale}px ${12 * tableCardScale}px`,
-                          fontSize: 12 * tableCardScale,
+                          marginTop: 8 * tableCardScale,
+                          padding: `${6 * tableCardScale}px ${8 * tableCardScale}px`,
+                          fontSize: 11 * tableCardScale,
                         }}
                       >
-                        <div style={{ marginBottom: 8 * tableCardScale }}>
+                        <div
+                          className="break-words [overflow-wrap:anywhere]"
+                          style={{ marginBottom: 6 * tableCardScale }}
+                        >
                           R$ {formatMoney(mesa.comanda_aberta.total)}
                         </div>
                         <button
@@ -1513,10 +2101,10 @@ export function SalaoPage() {
                           disabled={actionBusy === `close-${mesa.comanda_aberta.id}`}
                           className="inline-flex w-full items-center justify-center rounded-lg bg-[#122a4c] font-bold text-white disabled:opacity-60"
                           style={{
-                            minHeight: 32 * tableCardScale,
-                            gap: 6 * tableCardScale,
-                            padding: `${4 * tableCardScale}px ${8 * tableCardScale}px`,
-                            fontSize: 12 * tableCardScale,
+                            minHeight: 28 * tableCardScale,
+                            gap: 4 * tableCardScale,
+                            padding: `${3 * tableCardScale}px ${5 * tableCardScale}px`,
+                            fontSize: 10.5 * tableCardScale,
                           }}
                         >
                           {actionBusy === `close-${mesa.comanda_aberta.id}` ? (
@@ -1535,20 +2123,21 @@ export function SalaoPage() {
                               }}
                             />
                           )}
-                          Fechar mesa
+                          <span className="hidden sm:inline">Fechar mesa</span>
+                          <span className="sm:hidden">Fechar</span>
                         </button>
                       </div>
                     )}
                     {!mesa.comanda_aberta && (
-                      <div style={{ marginTop: 12 * tableCardScale }}>
+                      <div style={{ marginTop: 8 * tableCardScale }}>
                         <button
                           onClick={() => void openComanda(mesa)}
                           disabled={actionBusy === `open-${mesa.id}`}
                           className="w-full rounded-lg border border-gray-200 font-semibold hover:bg-gray-50 disabled:opacity-50"
                           style={{
-                            minHeight: 36 * tableCardScale,
-                            padding: `${4 * tableCardScale}px ${8 * tableCardScale}px`,
-                            fontSize: 12 * tableCardScale,
+                            minHeight: 30 * tableCardScale,
+                            padding: `${3 * tableCardScale}px ${5 * tableCardScale}px`,
+                            fontSize: 10.5 * tableCardScale,
                           }}
                         >
                           {actionBusy === `open-${mesa.id}` ? (
@@ -1563,57 +2152,26 @@ export function SalaoPage() {
                                   width: 16 * tableCardScale,
                                 }}
                               />{" "}
-                              Abrindo...
+                              <span className="hidden sm:inline">Abrindo...</span>
+                              <span className="sm:hidden">...</span>
                             </span>
                           ) : (
-                            "Abrir comanda"
+                            <>
+                              <span className="hidden sm:inline">Abrir comanda</span>
+                              <span className="sm:hidden">Abrir</span>
+                            </>
                           )}
                         </button>
                       </div>
                     )}
-                    <button
-                      type="button"
-                      title="Área crítica: excluir mesa"
-                      aria-label="Área crítica: excluir mesa"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setDeleteMesaTarget(mesa);
-                      }}
-                      onKeyDown={(event) => event.stopPropagation()}
-                      disabled={actionBusy === `delete-${mesa.id}`}
-                      className="absolute inline-flex items-center justify-center rounded-md border border-red-200 bg-white text-red-700 hover:bg-red-50 disabled:opacity-60"
-                      style={{
-                        bottom: tableCardDeleteButtonOffset,
-                        right: tableCardDeleteButtonOffset,
-                        height: tableCardDeleteButtonSize,
-                        width: tableCardDeleteButtonSize,
-                      }}
-                    >
-                      {actionBusy === `delete-${mesa.id}` ? (
-                        <Loader2
-                          className="animate-spin"
-                          style={{
-                            height: 16 * tableCardScale,
-                            width: 16 * tableCardScale,
-                          }}
-                        />
-                      ) : (
-                        <Trash2
-                          style={{
-                            height: 16 * tableCardScale,
-                            width: 16 * tableCardScale,
-                          }}
-                        />
-                      )}
-                    </button>
                   </div>
                 );
               })}
             </div>
           </div>
-        ) : tab === "comandas" ? (
-          <div className="grid gap-3 xl:grid-cols-[minmax(260px,360px)_1fr] xl:gap-4">
-            <div className="space-y-3">
+        ) : !kdsFullscreen && tab === "comandas" ? (
+          <div className="grid min-w-0 max-w-full gap-2 overflow-x-hidden xl:grid-cols-[minmax(260px,360px)_1fr] xl:gap-4">
+            <div className={`space-y-1.5 sm:space-y-3 ${selectedComanda ? "hidden xl:block" : ""}`}>
               {comandas.map((comanda) => {
                 const mesaDaComanda = mesasById.get(
                   comanda.mesa_id || comanda.mesa?.id,
@@ -1633,7 +2191,7 @@ export function SalaoPage() {
                   <button
                     key={comanda.id}
                     onClick={() => void selectComanda(comanda)}
-                    className={`min-h-16 w-full rounded-xl border p-3 text-left shadow-sm hover:border-blue-200 active:scale-[0.99] sm:min-h-20 sm:p-4 ${
+                    className={`min-h-12 w-full rounded-lg border p-2 text-left shadow-sm hover:border-blue-200 active:scale-[0.99] sm:min-h-20 sm:rounded-xl sm:p-4 ${
                       pendingAction
                         ? `${pendingAction.cardClass} ${selectedComanda?.id === comanda.id ? "ring-4 ring-blue-200" : ""}`
                         : selectedComanda?.id === comanda.id
@@ -1641,21 +2199,21 @@ export function SalaoPage() {
                           : getSalaoStatusStyle(comanda.status).card
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-semibold text-gray-900">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-gray-900 sm:text-base">
                           {comanda.numero_comanda}
                         </div>
-                        <div className="text-sm text-gray-500">
+                        <div className="text-xs text-gray-500 sm:text-sm">
                           Mesa {comanda.mesa?.numero}
                         </div>
                       </div>
-                      <div className="text-right">
-                        <div className="font-semibold text-gray-900">
+                      <div className="shrink-0 text-right">
+                        <div className="text-sm font-semibold text-gray-900 sm:text-base">
                           R$ {formatMoney(comanda.total)}
                         </div>
                         <span
-                          className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-bold uppercase ${cardStatusClass}`}
+                          className={`mt-0.5 inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase sm:mt-1 sm:px-2 sm:text-xs ${cardStatusClass}`}
                         >
                           {String(cardStatus || "sem status").replace(
                             /_/g,
@@ -1666,7 +2224,7 @@ export function SalaoPage() {
                     </div>
                     {pendingAction && (
                       <div
-                        className={`mt-2 inline-flex max-w-full items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-bold ${pendingAction.className}`}
+                        className={`mt-1.5 inline-flex max-w-full items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-bold sm:mt-2 sm:px-2 sm:py-1 sm:text-[11px] ${pendingAction.className}`}
                       >
                         <CircleAlert className="h-3.5 w-3.5 shrink-0" />
                         <span className="truncate">
@@ -1681,34 +2239,51 @@ export function SalaoPage() {
 
             <div
               ref={comandaDetailRef}
-              className="scroll-mt-4 rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:p-4"
+              className="max-w-full overflow-x-hidden scroll-mt-2 rounded-lg border border-gray-200 bg-white p-2 shadow-sm sm:scroll-mt-4 sm:rounded-xl sm:p-4"
             >
               {selectedComanda ? (
                 <>
-                  <div className="sticky top-0 z-30 -mx-4 mb-4 flex gap-1 overflow-x-auto border-b border-gray-100 bg-white px-4 py-2 shadow-sm scrollbar-hide">
+                  <div className="mb-2 grid w-full grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 lg:sticky lg:top-0 lg:z-30 lg:-mx-4 lg:mb-4 lg:flex lg:gap-1 lg:overflow-x-auto lg:border-b lg:border-gray-100 lg:bg-white lg:px-4 lg:py-2 lg:shadow-sm lg:scrollbar-hide">
                     {[
-                      ["mesa", Armchair, "Mesa"],
-                      ["pedidos", ShoppingCart, "Produtos e pedidos"],
-                      ["participantes", UserCheck, "Participantes"],
-                    ].map(([id, Icon, label]) => (
+                      {
+                        id: "pedidos",
+                        Icon: ShoppingCart,
+                        label: "Produtos e pedidos",
+                        mobileLabel: "Pedidos",
+                      },
+                      {
+                        id: "mesa",
+                        Icon: Armchair,
+                        label: "Mesa",
+                        mobileLabel: "Mesa",
+                      },
+                      {
+                        id: "participantes",
+                        Icon: UserCheck,
+                        label: "Participantes",
+                        mobileLabel: "Pessoas",
+                      },
+                    ].map(({ id, Icon, label, mobileLabel }) => (
                       <button
                         key={String(id)}
                         onClick={() =>
                           setComandaModule(id as typeof comandaModule)
                         }
-                        className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] font-bold sm:min-h-11 sm:gap-2 sm:px-3 sm:py-2 sm:text-xs ${comandaModule === id ? "bg-[#122a4c] text-white shadow-sm" : "bg-slate-100 text-slate-600"}`}
+                        className={`inline-flex min-h-10 min-w-0 items-center justify-center gap-1 rounded-lg px-1.5 py-1.5 text-center text-[10px] font-extrabold leading-tight lg:min-h-10 lg:shrink-0 lg:flex-row lg:gap-1.5 lg:rounded-xl lg:px-2.5 lg:py-1.5 lg:text-[11px] xl:min-h-11 xl:gap-2 xl:px-3 xl:py-2 xl:text-xs ${comandaModule === id ? "bg-[#122a4c] text-white shadow-sm" : "bg-white text-slate-600 lg:bg-slate-100"}`}
                       >
-                        <Icon className="h-4 w-4" /> {label}
+                        <Icon className="h-3.5 w-3.5 shrink-0 lg:h-4 lg:w-4" />
+                        <span className="truncate lg:hidden">{mobileLabel}</span>
+                        <span className="hidden truncate lg:inline">{label}</span>
                       </button>
                     ))}
                   </div>
-                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <KeyRound className="h-4 w-4 text-blue-800" />
-                      <span className="text-xs font-semibold text-blue-900">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-1.5 rounded-lg border border-blue-100 bg-blue-50 px-2 py-1.5 sm:mb-3 sm:gap-2 sm:rounded-xl sm:px-3 sm:py-2">
+                    <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
+                      <KeyRound className="h-3.5 w-3.5 shrink-0 text-blue-800 sm:h-4 sm:w-4" />
+                      <span className="text-[11px] font-semibold text-blue-900 sm:text-xs">
                         PIN da mesa
                       </span>
-                      <span className="text-lg font-extrabold tracking-widest text-blue-950">
+                      <span className="text-base font-extrabold tracking-widest text-blue-950 sm:text-lg">
                         {latestPin ||
                           selectedComanda.pin_atual ||
                           selectedComanda.pin ||
@@ -1722,13 +2297,13 @@ export function SalaoPage() {
                           selectedComanda.status,
                         )
                       }
-                      className="inline-flex items-center gap-1 rounded-lg border border-blue-200 bg-white px-2 py-1 text-xs font-semibold text-blue-800 disabled:opacity-50"
+                      className="inline-flex items-center gap-1 rounded-md border border-blue-200 bg-white px-1.5 py-1 text-[11px] font-semibold text-blue-800 disabled:opacity-50 sm:rounded-lg sm:px-2 sm:text-xs"
                     >
                       <RefreshCw className="h-3.5 w-3.5" /> Novo PIN
                     </button>
                   </div>
-                  <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-5">
-                    <div className="order-2 lg:order-none">
+                  <div className="grid min-w-0 max-w-full gap-3 overflow-x-hidden lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-5">
+                    <div className="order-2 min-w-0 max-w-full overflow-x-hidden lg:order-none">
                       <div
                         className={
                           comandaModule === "mesa"
@@ -1852,6 +2427,43 @@ export function SalaoPage() {
                         </div>
                         <div
                           className={
+                            comandaModule === "mesa"
+                              ? "rounded-lg border border-red-100 bg-red-50/60 p-2.5 md:col-span-2 sm:p-3"
+                              : "hidden"
+                          }
+                        >
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 text-sm font-semibold text-red-900">
+                                <Trash2 className="h-4 w-4 shrink-0" />
+                                Área da mesa
+                              </div>
+                              <p className="mt-1 text-xs leading-snug text-red-700">
+                                Exclui esta mesa e invalida o QR Code impresso.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                selectedMesa && setDeleteMesaTarget(selectedMesa)
+                              }
+                              disabled={
+                                !selectedMesa ||
+                                actionBusy === `delete-${selectedMesa?.id}`
+                              }
+                              className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100 disabled:opacity-50 sm:min-h-10 sm:px-3"
+                            >
+                              {actionBusy === `delete-${selectedMesa?.id}` ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-3.5 w-3.5" />
+                              )}
+                              Excluir mesa
+                            </button>
+                          </div>
+                        </div>
+                        <div
+                          className={
                             comandaModule === "participantes"
                               ? "rounded-lg border border-gray-100 bg-gray-50 p-2.5 md:col-span-2 sm:p-3"
                               : "hidden"
@@ -1905,52 +2517,52 @@ export function SalaoPage() {
                       <div
                         className={
                           comandaModule === "pedidos"
-                            ? "mt-3 space-y-1.5 sm:mt-4 sm:space-y-2"
+                            ? "mt-2 space-y-1.5 sm:mt-4 sm:space-y-2"
                             : "hidden"
                         }
                       >
-                        <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-gray-900 sm:mb-3">
-                          <ClipboardList className="h-4 w-4" />
+                        <div className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-gray-900 sm:mb-3 sm:gap-2">
+                          <ClipboardList className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                           Pedidos da mesa
                         </div>
                         {(selectedComanda.itens || []).length === 0 ? (
-                          <div className="rounded-lg border border-dashed border-gray-200 p-6 text-center text-sm text-gray-500">
+                          <div className="rounded-lg border border-dashed border-gray-200 p-4 text-center text-xs text-gray-500 sm:p-6 sm:text-sm">
                             Nenhum produto adicionado.
                           </div>
                         ) : (
                           selectedComanda.itens.map((item: any) => (
                             <div
                               key={item.id}
-                              className={`flex items-start justify-between gap-2 rounded-lg border border-gray-100 p-2.5 sm:gap-3 sm:p-3 ${item.status === "cancelado" ? "bg-slate-50 opacity-75" : ""}`}
+                              className={`flex min-w-0 max-w-full items-start justify-between gap-2 overflow-hidden rounded-lg border border-gray-100 p-2 sm:gap-3 sm:p-3 ${item.status === "cancelado" ? "bg-slate-50 opacity-75" : ""}`}
                             >
-                              <div className="min-w-0">
-                                <div className="font-medium text-gray-900">
+                              <div className="min-w-0 flex-1 overflow-hidden">
+                                <div className="break-words text-sm font-medium leading-tight text-gray-900 [overflow-wrap:anywhere] sm:text-base">
                                   {item.nome_produto}
                                 </div>
-                                <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
-                                  <span>
+                                <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-gray-500 sm:mt-1 sm:gap-1.5 sm:text-xs">
+                                  <span className="min-w-0 break-words [overflow-wrap:anywhere]">
                                     {item.quantidade} x R${" "}
                                     {formatMoney(item.preco_unitario)}
                                   </span>
                                   <span
-                                    className={`inline-flex rounded-full border px-2 py-0.5 font-bold ${getSalaoStatusStyle(item.status).badge}`}
+                                    className={`inline-flex max-w-full rounded-full border px-2 py-0.5 font-bold ${getSalaoStatusStyle(item.status).badge}`}
                                   >
                                     {getSalaoStatusStyle(item.status).label}
                                   </span>
                                 </div>
                                 {(item.adicionado_por || item.autor_label) && (
-                                  <div className="mt-1 text-xs font-semibold text-blue-700">
+                                  <div className="mt-0.5 break-words text-[11px] font-semibold text-blue-700 [overflow-wrap:anywhere] sm:mt-1 sm:text-xs">
                                     {salaoItemAuthorLabel(item)}
                                   </div>
                                 )}
                                 {item.observacoes && (
-                                  <div className="mt-1 text-xs text-gray-500">
+                                  <div className="mt-0.5 whitespace-pre-wrap break-words text-[11px] text-gray-500 [overflow-wrap:anywhere] sm:mt-1 sm:text-xs">
                                     {item.observacoes}
                                   </div>
                                 )}
                               </div>
-                              <div className="flex shrink-0 flex-col items-end gap-2">
-                                <div className="text-sm font-semibold text-gray-900">
+                              <div className="flex max-w-[82px] shrink-0 flex-col items-end gap-1.5 sm:max-w-none sm:gap-2">
+                                <div className="break-words text-right text-xs font-semibold text-gray-900 [overflow-wrap:anywhere] sm:text-sm">
                                   R$ {formatMoney(item.preco_total)}
                                 </div>
                                 <button
@@ -1965,12 +2577,12 @@ export function SalaoPage() {
                                     ) ||
                                     actionBusy === `remove-item-${item.id}`
                                   }
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-200 bg-white text-red-700 hover:bg-red-50 disabled:opacity-40"
+                                  className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-red-200 bg-white text-red-700 hover:bg-red-50 disabled:opacity-40 sm:h-8 sm:w-8"
                                 >
                                   {actionBusy === `remove-item-${item.id}` ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin sm:h-4 sm:w-4" />
                                   ) : (
-                                    <Trash2 className="h-4 w-4" />
+                                    <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                                   )}
                                 </button>
                               </div>
@@ -1982,13 +2594,13 @@ export function SalaoPage() {
                       <div
                         className={
                           comandaModule === "pedidos"
-                            ? "mt-3 grid gap-2 sm:mt-5 sm:flex sm:flex-wrap"
+                            ? "mt-2 grid gap-1.5 sm:mt-5 sm:flex sm:flex-wrap sm:gap-2"
                             : "hidden"
                         }
                       >
                         <button
-                          onClick={() => printSalaoComanda(selectedComanda)}
-                          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 sm:min-h-12 sm:px-4 sm:text-sm"
+                          onClick={() => openSalaoPrintModal(selectedComanda)}
+                          className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 sm:min-h-12 sm:gap-2 sm:rounded-xl sm:px-4 sm:py-2 sm:text-sm"
                         >
                           <Printer className="h-4 w-4" />
                           Imprimir comanda
@@ -1999,7 +2611,7 @@ export function SalaoPage() {
                             ["fechada", "paga", "cancelada"].includes(selectedComanda.status) ||
                             actionBusy === `close-${selectedComanda.id}`
                           }
-                          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-white disabled:opacity-50 sm:min-h-12 sm:px-4 sm:text-sm"
+                          className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50 sm:min-h-12 sm:gap-2 sm:rounded-xl sm:px-4 sm:py-2 sm:text-sm"
                           style={{ backgroundColor: PRIMARY }}
                         >
                           {actionBusy === `close-${selectedComanda.id}` ? (
@@ -2023,7 +2635,7 @@ export function SalaoPage() {
                               }]);
                               setPaymentTarget(selectedComanda);
                             }}
-                            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white sm:min-h-12 sm:px-4 sm:text-sm"
+                            className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white sm:min-h-12 sm:gap-2 sm:rounded-xl sm:px-4 sm:py-2 sm:text-sm"
                           >
                             <CreditCard className="h-4 w-4" />
                             Confirmar pagamento
@@ -2035,30 +2647,30 @@ export function SalaoPage() {
                     <div
                       className={
                         comandaModule === "pedidos"
-                          ? "order-1 self-start rounded-xl border border-gray-100 bg-gray-50 p-2.5 shadow-sm lg:order-none lg:sticky lg:top-3 lg:p-3"
+                          ? "order-1 min-w-0 max-w-full self-start overflow-hidden rounded-lg border border-gray-100 bg-gray-50 p-2 shadow-sm lg:order-none lg:sticky lg:top-3 lg:rounded-xl lg:p-3"
                           : "hidden"
                       }
                     >
-                      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-900">
-                        <ShoppingCart className="h-4 w-4" />
+                      <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-gray-900 lg:mb-3 lg:gap-2">
+                        <ShoppingCart className="h-3.5 w-3.5 lg:h-4 lg:w-4" />
                         Adicionar produto
                       </div>
                       <div className="relative">
-                        <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
+                        <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-gray-400 sm:left-3 sm:h-4 sm:w-4" />
                         <input
                           value={productSearch}
                           onChange={(event) =>
                             setProductSearch(event.target.value)
                           }
                           placeholder="Buscar produto"
-                          className="h-12 w-full rounded-xl border border-gray-300 pl-9 pr-3 text-base"
+                          className="h-9 w-full rounded-lg border border-gray-300 pl-8 pr-2.5 text-sm sm:h-12 sm:rounded-xl sm:pl-9 sm:pr-3 sm:text-base"
                         />
                       </div>
 
-                      <div className="mt-3 max-h-52 space-y-2 overflow-auto sm:max-h-64">
+                      <div className="mt-2 max-h-44 space-y-1.5 overflow-auto sm:mt-3 sm:max-h-64 sm:space-y-2">
                         {searchingProducts ? (
-                          <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white p-3 text-sm text-gray-500">
-                            <Loader2 className="h-4 w-4 animate-spin" />
+                          <div className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white p-2 text-xs text-gray-500 sm:gap-2 sm:p-3 sm:text-sm">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin sm:h-4 sm:w-4" />
                             Buscando produtos...
                           </div>
                         ) : productList.length > 0 ? (
@@ -2068,17 +2680,17 @@ export function SalaoPage() {
                             onClick={() =>
                               void selectProductForComanda(product)
                             }
-                            className={`flex w-full items-center justify-between gap-3 rounded-lg border bg-white p-3 text-left ${
+                            className={`flex w-full min-w-0 max-w-full items-center justify-between gap-2 overflow-hidden rounded-lg border bg-white p-2 text-left sm:gap-3 sm:p-3 ${
                               selectedProductId === product.id
                                 ? "border-blue-300"
                                 : "border-gray-200"
                             }`}
                           >
-                            <div className="min-w-0">
-                              <div className="truncate text-sm font-medium text-gray-900">
+                            <div className="min-w-0 flex-1 overflow-hidden">
+                              <div className="break-words text-sm font-medium leading-tight text-gray-900 [overflow-wrap:anywhere]">
                                 {productName(product)}
                               </div>
-                              <div className="text-xs text-gray-500">
+                              <div className="break-words text-[11px] leading-tight text-gray-500 [overflow-wrap:anywhere] sm:text-xs">
                                 {product.modo_compra === "configuravel"
                                   ? "Personalizar adicionais"
                                   : product.categoria_nome ||
@@ -2086,13 +2698,13 @@ export function SalaoPage() {
                                     "Sem categoria"}
                               </div>
                             </div>
-                            <div className="shrink-0 text-sm font-semibold text-gray-900">
+                            <div className="max-w-[72px] shrink-0 break-words text-right text-xs font-semibold text-gray-900 [overflow-wrap:anywhere] sm:max-w-none sm:text-sm">
                               R$ {formatMoney(productPrice(product))}
                             </div>
                           </button>
                           ))
                         ) : (
-                          <div className="rounded-lg border border-gray-200 bg-white p-3 text-center text-sm text-gray-500">
+                          <div className="rounded-lg border border-gray-200 bg-white p-2 text-center text-xs text-gray-500 sm:p-3 sm:text-sm">
                             Nenhum produto encontrado.
                           </div>
                         )}
@@ -2107,25 +2719,25 @@ export function SalaoPage() {
                         )}
 
                       {configurationLoading && (
-                        <div className="mt-3 flex items-center gap-2 text-sm text-gray-500">
-                          <Loader2 className="h-4 w-4 animate-spin" />{" "}
+                        <div className="mt-2 flex items-center gap-1.5 text-xs text-gray-500 sm:mt-3 sm:gap-2 sm:text-sm">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin sm:h-4 sm:w-4" />{" "}
                           Carregando variações e adicionais...
                         </div>
                       )}
-                      <div className="mt-2 grid grid-cols-[84px_1fr] gap-2 sm:mt-3 sm:grid-cols-[92px_1fr]">
+                      <div className="mt-2 grid grid-cols-[72px_minmax(0,1fr)] gap-1.5 sm:mt-3 sm:grid-cols-[92px_1fr] sm:gap-2">
                         <input
                           value={itemQuantity}
                           onChange={(event) =>
                             setItemQuantity(event.target.value)
                           }
-                          className="h-12 rounded-xl border border-gray-300 px-3 text-base"
+                          className="h-9 rounded-lg border border-gray-300 px-2.5 text-sm sm:h-12 sm:rounded-xl sm:px-3 sm:text-base"
                           inputMode="decimal"
                           placeholder="Qtd."
                         />
                         <input
                           value={itemNotes}
                           onChange={(event) => setItemNotes(event.target.value)}
-                          className="h-12 rounded-xl border border-gray-300 px-3 text-base"
+                          className="h-9 min-w-0 rounded-lg border border-gray-300 px-2.5 text-sm sm:h-12 sm:rounded-xl sm:px-3 sm:text-base"
                           placeholder="Observação"
                         />
                       </div>
@@ -2137,7 +2749,7 @@ export function SalaoPage() {
                           configurationLoading ||
                           !canAdminAddItems
                         }
-                        className="mt-2 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-white disabled:opacity-50 sm:mt-3 sm:min-h-12 sm:px-4 sm:text-sm"
+                        className="mt-2 inline-flex min-h-9 w-full items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50 sm:mt-3 sm:min-h-12 sm:gap-2 sm:rounded-xl sm:px-4 sm:py-2 sm:text-sm"
                         style={{ backgroundColor: PRIMARY }}
                       >
                         {addingItem ? (
@@ -2162,51 +2774,111 @@ export function SalaoPage() {
             </div>
           </div>
         ) : (
-          <div className="grid gap-3 xl:grid-cols-3">
+          <div
+            className="grid"
+            style={{
+              gap: kdsCardGap,
+              gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${kdsCardGridMinWidth}px), 1fr))`,
+            }}
+          >
             {kds.map((item) => (
               <div
                 key={item.id}
-                className={`rounded-lg border p-4 shadow-sm ${getSalaoStatusStyle(item.status).card}`}
+                ref={(element) => setKdsCardRef(item.id, element)}
+                tabIndex={0}
+                onClick={() => setSelectedKdsId(item.id)}
+                onFocus={() => setSelectedKdsId(item.id)}
+                aria-current={selectedKdsId === item.id ? "true" : undefined}
+                className={`min-w-0 max-w-full overflow-hidden border shadow-sm outline-none transition-all ${getSalaoStatusStyle(item.status).card} ${
+                  selectedKdsId === item.id
+                    ? "border-blue-600 ring-4 ring-blue-300"
+                    : "hover:border-blue-300"
+                }`}
+                style={{
+                  borderRadius: kdsCardRadius,
+                  padding: kdsCardPadding,
+                }}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="font-semibold text-gray-900">
+                <div
+                  className="flex min-w-0 items-start justify-between"
+                  style={{ gap: 12 * kdsCardScale }}
+                >
+                  <div className="min-w-0 flex-1 overflow-hidden">
+                    <div
+                      className="break-words font-semibold text-gray-900 [overflow-wrap:anywhere]"
+                      style={{ fontSize: 14 * kdsCardScale, lineHeight: 1.25 }}
+                    >
                       {item.nome_produto}
                     </div>
-                    <div className="text-sm text-gray-500">
+                    <div
+                      className="break-words text-gray-500 [overflow-wrap:anywhere]"
+                      style={{ fontSize: 12 * kdsCardScale, lineHeight: 1.3 }}
+                    >
                       Mesa {item.mesa?.numero} · {item.numero_comanda}
                     </div>
                     {item.nome_variacao && (
-                      <div className="mt-1 text-xs font-semibold text-slate-700">
+                      <div
+                        className="break-words font-semibold text-slate-700 [overflow-wrap:anywhere]"
+                        style={{
+                          marginTop: 4 * kdsCardScale,
+                          fontSize: 11 * kdsCardScale,
+                          lineHeight: 1.3,
+                        }}
+                      >
                         Variação: {item.nome_variacao}
                       </div>
                     )}
                   </div>
                   <span
-                    className={`rounded-full border px-2 py-1 text-xs font-bold ${getSalaoStatusStyle(item.status).badge}`}
+                    className={`max-w-[88px] shrink-0 break-words rounded-full border text-center font-bold [overflow-wrap:anywhere] sm:max-w-none ${getSalaoStatusStyle(item.status).badge}`}
+                    style={{
+                      padding: `${4 * kdsCardScale}px ${8 * kdsCardScale}px`,
+                      fontSize: 11 * kdsCardScale,
+                      lineHeight: 1.2,
+                    }}
                   >
                     {getSalaoStatusStyle(item.status).label}
                   </span>
                 </div>
                 {arrayOrEmpty<any>(item.selecoes).length > 0 && (
-                  <div className="mt-3 rounded-lg border border-blue-100 bg-white/80 px-3 py-2">
-                    <div className="text-[11px] font-bold uppercase tracking-wide text-blue-700">
+                  <div
+                    className="rounded-lg border border-blue-100 bg-white/80"
+                    style={{
+                      marginTop: 12 * kdsCardScale,
+                      padding: `${kdsSectionPaddingY}px ${kdsSectionPaddingX}px`,
+                    }}
+                  >
+                    <div
+                      className="font-bold uppercase text-blue-700"
+                      style={{ fontSize: 11 * kdsCardScale }}
+                    >
                       Adicionais e opções
                     </div>
-                    <div className="mt-1.5 space-y-1">
+                    <div
+                      className="space-y-1"
+                      style={{ marginTop: 6 * kdsCardScale }}
+                    >
                       {arrayOrEmpty<any>(item.selecoes).map((selection, index) => {
                         const quantity = Number(selection.quantidade || 1);
                         const extra = Number(selection.preco_contribuicao || 0);
                         return (
-                          <div key={selection.id || `${item.id}-selection-${index}`} className="flex items-start justify-between gap-3 text-xs text-slate-700">
-                            <span className="min-w-0 break-words">
+                          <div
+                            key={selection.id || `${item.id}-selection-${index}`}
+                            className="flex min-w-0 flex-wrap items-start justify-between text-slate-700"
+                            style={{
+                              gap: 12 * kdsCardScale,
+                              fontSize: 12 * kdsCardScale,
+                              lineHeight: 1.3,
+                            }}
+                          >
+                            <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">
                               <span className="font-semibold">{selection.nome_grupo || "Opção"}:</span>{" "}
                               {selection.nome_opcao || "Opção"}
                               {quantity > 1 ? ` x${quantity}` : ""}
                               {selection.fracao ? ` (${selection.fracao})` : ""}
                             </span>
                             {extra > 0 && (
-                              <span className="shrink-0 font-semibold text-slate-900">
+                              <span className="shrink-0 break-words text-right font-semibold text-slate-900 [overflow-wrap:anywhere]">
                                 + R$ {formatMoney(extra)}
                               </span>
                             )}
@@ -2217,29 +2889,65 @@ export function SalaoPage() {
                   </div>
                 )}
                 {String(item.observacoes || "").trim() && (
-                  <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-white/80 px-3 py-2 text-sm text-amber-950">
-                    <MessageSquareText className="mt-0.5 h-4 w-4 flex-none text-amber-700" />
-                    <div className="min-w-0">
-                      <div className="text-[11px] font-bold uppercase tracking-wide text-amber-700">
+                  <div
+                    className="flex items-start rounded-lg border border-amber-200 bg-white/80 text-amber-950"
+                    style={{
+                      gap: 8 * kdsCardScale,
+                      marginTop: 12 * kdsCardScale,
+                      padding: `${kdsSectionPaddingY}px ${kdsSectionPaddingX}px`,
+                      fontSize: 13 * kdsCardScale,
+                      lineHeight: 1.35,
+                    }}
+                  >
+                    <MessageSquareText
+                      className="mt-0.5 flex-none text-amber-700"
+                      style={{
+                        height: 16 * kdsCardScale,
+                        width: 16 * kdsCardScale,
+                      }}
+                    />
+                    <div className="min-w-0 flex-1 overflow-hidden">
+                      <div
+                        className="font-bold uppercase text-amber-700"
+                        style={{ fontSize: 11 * kdsCardScale }}
+                      >
                         Observação
                       </div>
-                      <p className="mt-0.5 whitespace-pre-wrap break-words font-medium">
+                      <p className="mt-0.5 whitespace-pre-wrap break-words font-medium [overflow-wrap:anywhere]">
                         {String(item.observacoes).trim()}
                       </p>
                     </div>
                   </div>
                 )}
-                <div className="mt-4 flex flex-wrap gap-2">
+                <div
+                  className="flex flex-wrap"
+                  style={{
+                    gap: 8 * kdsCardScale,
+                    marginTop: 16 * kdsCardScale,
+                  }}
+                >
                   {["recebido", "preparando", "pronto", "entregue"].map(
                     (status) => (
                       <button
                         key={status}
                         onClick={() => void updateKds(item, status)}
                         disabled={actionBusy.startsWith(`kds-${item.id}-`)}
-                        className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold capitalize text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                        className="inline-flex items-center rounded-lg border border-gray-200 font-semibold capitalize text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                        style={{
+                          minHeight: 40 * kdsCardScale,
+                          gap: 4 * kdsCardScale,
+                          padding: `${8 * kdsCardScale}px ${12 * kdsCardScale}px`,
+                          fontSize: 12 * kdsCardScale,
+                        }}
                       >
                         {actionBusy === `kds-${item.id}-${status}` && (
-                          <Loader2 className="h-3 w-3 animate-spin" />
+                          <Loader2
+                            className="animate-spin"
+                            style={{
+                              height: 12 * kdsCardScale,
+                              width: 12 * kdsCardScale,
+                            }}
+                          />
                         )}
                         {status}
                       </button>
@@ -2251,6 +2959,42 @@ export function SalaoPage() {
           </div>
         )}
       </div>
+      {!kdsFullscreen && (
+        <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-2 pb-[max(env(safe-area-inset-bottom),0.25rem)] pt-1 shadow-[0_-6px_16px_rgba(15,23,42,0.09)] backdrop-blur lg:hidden">
+          <div className="mx-auto grid max-w-md grid-cols-3 gap-0.5">
+            {salaoTabs.map(({ id, Icon, mobileLabel, count }) => {
+              const active = tab === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setTab(id)}
+                  className={`relative flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-lg px-1.5 text-[9px] font-extrabold transition-colors ${
+                    active
+                      ? "bg-[#122a4c] text-white shadow-sm"
+                      : "text-slate-500 hover:bg-slate-100"
+                  }`}
+                  aria-current={active ? "page" : undefined}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  <span className="leading-tight">{mobileLabel}</span>
+                  {Number(count) > 0 && (
+                    <span
+                      className={`absolute right-2 top-1 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-[8px] font-black ${
+                        active
+                          ? "bg-white text-[#122a4c]"
+                          : "bg-amber-100 text-amber-800"
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+      )}
       {paymentTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
           <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl">
@@ -2504,6 +3248,21 @@ export function SalaoPage() {
             </div>
           </div>
         </div>
+      )}
+      {printComandaTarget && (
+        <ComandaPrintModeModal
+          subtitle={`Comanda ${printComandaTarget.numero_comanda || printComandaTarget.id}`}
+          onClose={() => setPrintComandaTarget(null)}
+          onSelect={handleSalaoPrintModeSelected}
+        />
+      )}
+      {kitchenPrintSelection && (
+        <KitchenPrintSelectionModal
+          subtitle="Novos produtos ficam marcados por padrão. Produtos já impressos ficam desmarcados."
+          items={kitchenPrintSelection.selectionItems}
+          onClose={() => setKitchenPrintSelection(null)}
+          onPrint={handlePrintSelectedSalaoKitchenItems}
+        />
       )}
       {configuringProduct && (
         <SalaoProductConfiguratorModal
