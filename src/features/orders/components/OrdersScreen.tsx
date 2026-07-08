@@ -393,6 +393,30 @@ const canQuickArchiveOrder = (order: any) =>
   Boolean(order?.id) &&
   !order?.arquivado &&
   getBackendStatus(order?.status || "") === "entregue";
+const EMPTY_ADMIN_ORDER_ADDRESS = {
+  rua: "",
+  numero: "",
+  complemento: "",
+  bairro: "",
+  cidade: "",
+  estado: "",
+  cep: "",
+  ponto_referencia: "",
+  area_entrega_id: "",
+};
+const normalizeDeliveryArea = (area: any) => ({
+  ...area,
+  bairro: String(area?.bairro || area?.nome || "").trim(),
+  cidade: String(area?.cidade || "").trim(),
+  estado: String(area?.estado || "").trim().toUpperCase(),
+  taxa_entrega: Math.max(0, Number(area?.taxa_entrega || 0)),
+  ativa: area?.ativa !== false,
+});
+const getDeliveryAreaLabel = (area: any) =>
+  [
+    area.bairro,
+    area.cidade ? `${area.cidade}${area.estado ? ` - ${area.estado}` : ""}` : "",
+  ].filter(Boolean).join(" · ");
 const formatOrderDateTime = (value: Date | string) =>
   formatBrasiliaDate(value, { dateStyle: "short", timeStyle: "short" });
 const getOrderCreatedTimestamp = (order: any) =>
@@ -513,6 +537,9 @@ export function OrdersScreen() {
   const [manualOrderOpen, setManualOrderOpen] = useState(false);
   const [adminAddItemsOrder, setAdminAddItemsOrder] = useState<any | null>(null);
   const [pendingPaymentMethodOrder, setPendingPaymentMethodOrder] = useState<any | null>(null);
+  const [addressEditOrder, setAddressEditOrder] = useState<any | null>(null);
+  const [addressEditForm, setAddressEditForm] = useState<any>({ ...EMPTY_ADMIN_ORDER_ADDRESS });
+  const [addressEditSaving, setAddressEditSaving] = useState(false);
   const [manualOrderCreationAllowed, setManualOrderCreationAllowed] = useState(false);
   const [salaoEnabled, setSalaoEnabled] = useState(false);
   const [fiadoEnabled, setFiadoEnabled] = useState(false);
@@ -1129,6 +1156,121 @@ export function OrdersScreen() {
     }
     if ((order.tipo_pedido || order.type || "").toLowerCase() === "entrega") {
       fetchOrderDelivery(order.id);
+    }
+  };
+
+  const getActiveDeliveryAreas = () =>
+    areas.map(normalizeDeliveryArea).filter((area) => area.ativa && area.bairro);
+
+  const findAreaForAddress = (address: any) => {
+    const addressNeighborhood = String(address?.bairro || "").trim().toLocaleLowerCase("pt-BR");
+    const addressCity = String(address?.cidade || "").trim().toLocaleLowerCase("pt-BR");
+    return getActiveDeliveryAreas().find((area) =>
+      area.bairro.toLocaleLowerCase("pt-BR") === addressNeighborhood &&
+      (!addressCity || area.cidade.toLocaleLowerCase("pt-BR") === addressCity)
+    );
+  };
+
+  const openAddressEditModal = (order: any) => {
+    const currentAddress = order?.endereco_cliente || {};
+    const matchedArea = findAreaForAddress(currentAddress);
+    setAddressEditOrder(order);
+    setAddressEditForm({
+      ...EMPTY_ADMIN_ORDER_ADDRESS,
+      cep: currentAddress.cep || "",
+      rua: currentAddress.rua || currentAddress.logradouro || "",
+      numero: currentAddress.numero || "",
+      complemento: currentAddress.complemento || "",
+      bairro: matchedArea?.bairro || currentAddress.bairro || "",
+      cidade: matchedArea?.cidade || currentAddress.cidade || "",
+      estado: matchedArea?.estado || currentAddress.estado || "",
+      ponto_referencia: currentAddress.ponto_referencia || "",
+      area_entrega_id: matchedArea?.id || "",
+    });
+  };
+
+  const closeAddressEditModal = () => {
+    if (addressEditSaving) return;
+    setAddressEditOrder(null);
+    setAddressEditForm({ ...EMPTY_ADMIN_ORDER_ADDRESS });
+  };
+
+  const updateAddressEditArea = (areaId: string) => {
+    const area = getActiveDeliveryAreas().find((item) => item.id === areaId);
+    setAddressEditForm((current: any) => ({
+      ...current,
+      area_entrega_id: area?.id || "",
+      bairro: area?.bairro || "",
+      cidade: area?.cidade || current.cidade,
+      estado: area?.estado || current.estado,
+    }));
+  };
+
+  const saveAddressEdit = async () => {
+    if (!addressEditOrder?.id) return;
+    const area = getActiveDeliveryAreas().find((item) => item.id === addressEditForm.area_entrega_id);
+    if (!area) {
+      showSystemNotice("Selecione um bairro atendido pela loja.");
+      return;
+    }
+    if (!addressEditForm.rua || !addressEditForm.numero || !addressEditForm.cidade || !addressEditForm.estado) {
+      showSystemNotice("Preencha rua, número, cidade e UF.");
+      return;
+    }
+
+    setAddressEditSaving(true);
+    try {
+      const addressPayload = {
+        ...addressEditForm,
+        bairro: area.bairro,
+        cidade: area.cidade || addressEditForm.cidade,
+        estado: area.estado || addressEditForm.estado,
+      };
+      const geo = await api.post("/geocode-address", {
+        street: addressPayload.rua,
+        number: addressPayload.numero,
+        neighborhood: addressPayload.bairro,
+        city: addressPayload.cidade,
+        state: addressPayload.estado,
+        zipCode: addressPayload.cep,
+        complement: addressPayload.complemento,
+        tenantId: addressEditOrder.loja_id,
+      });
+      const geoData = geo.data?.data || geo.data || {};
+      const response = await api.patch(
+        `/pedidos/${addressEditOrder.id}/endereco-admin-delivery`,
+        {
+          area_entrega_id: area.id,
+          endereco: {
+            ...addressPayload,
+            latitude: geoData.latitude,
+            longitude: geoData.longitude,
+            geocoding_provider: geoData.geocodingProvider,
+            geocoding_source: geoData.geocodingSource,
+            formatted_address: geoData.formattedAddress,
+            google_place_id: geoData.placeId,
+          },
+        },
+      );
+      const updatedOrder = response.data?.data || response.data;
+      setOrders((current) =>
+        current.map((order) =>
+          order.id === updatedOrder.id ? { ...order, ...updatedOrder } : order,
+        ),
+      );
+      if (selected?.id === updatedOrder.id) {
+        setSelected((current: any) => current ? { ...current, ...updatedOrder } : updatedOrder);
+        const payments = await fetchOrderPayments(updatedOrder.id);
+        await fetchOrderRefunds(payments);
+        await fetchOrderDelivery(updatedOrder.id);
+      }
+      setAddressEditOrder(null);
+      setAddressEditForm({ ...EMPTY_ADMIN_ORDER_ADDRESS });
+      showSystemNotice("Endereço atualizado e taxa recalculada.");
+    } catch (error: any) {
+      showSystemNotice(getApiErrorMessage(error) || "Não foi possível atualizar o endereço.");
+    } finally {
+      setAddressEditSaving(false);
     }
   };
 
@@ -2418,6 +2560,13 @@ export function OrdersScreen() {
         selected?.checkout_origin ||
         selected?.checkoutOrigin,
     ) === "admin_dashboard";
+  const selectedCanEditAdminDeliveryAddress =
+    Boolean(selected?.id) &&
+    selectedIsAdminDashboardOrder &&
+    selectedIsDelivery &&
+    !["cancelado", "entregue", "saiu_para_entrega"].includes(
+      getBackendStatus(selected?.status || ""),
+    );
   const selectedCanProceed =
     selectedIsPaid ||
     selectedIsFiado ||
@@ -2750,6 +2899,11 @@ export function OrdersScreen() {
       setConfirmingRoute(false);
     }
   };
+
+  const addressEditAreas = getActiveDeliveryAreas();
+  const addressEditArea = addressEditAreas.find(
+    (area) => area.id === addressEditForm.area_entrega_id,
+  );
 
   return (
     <div className="flex h-full">
@@ -4545,6 +4699,16 @@ export function OrdersScreen() {
                         Bairro: {getOrderNeighborhood(selected)}
                       </span>
                     </div>
+                    {selectedCanEditAdminDeliveryAddress && (
+                      <button
+                        type="button"
+                        onClick={() => openAddressEditModal(selected)}
+                        className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50"
+                      >
+                        <MapPin className="h-3.5 w-3.5" />
+                        Editar endereço
+                      </button>
+                    )}
                   </>
                 )}
               </div>
@@ -5263,6 +5427,185 @@ export function OrdersScreen() {
                 className="rounded-lg bg-blue-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
               >
                 Aprovar solicitação
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {addressEditOrder && (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/50 p-4">
+          <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
+            <div className="flex items-start justify-between gap-4 border-b border-gray-100 p-5">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Editar endereço
+                </h2>
+                <p className="mt-1 text-sm text-gray-500">
+                  Pedido {addressEditOrder.numero_pedido || addressEditOrder.id}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeAddressEditModal}
+                disabled={addressEditSaving}
+                className="rounded-full p-1 text-gray-400 hover:bg-gray-100 disabled:opacity-50"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-5">
+              <div className="grid gap-4 sm:grid-cols-6">
+                <label className="text-sm font-medium text-gray-700 sm:col-span-2">
+                  CEP
+                  <input
+                    value={addressEditForm.cep}
+                    onChange={(event) =>
+                      setAddressEditForm((current: any) => ({
+                        ...current,
+                        cep: event.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="text-sm font-medium text-gray-700 sm:col-span-4">
+                  Rua
+                  <input
+                    value={addressEditForm.rua}
+                    onChange={(event) =>
+                      setAddressEditForm((current: any) => ({
+                        ...current,
+                        rua: event.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="text-sm font-medium text-gray-700 sm:col-span-2">
+                  Número
+                  <input
+                    value={addressEditForm.numero}
+                    onChange={(event) =>
+                      setAddressEditForm((current: any) => ({
+                        ...current,
+                        numero: event.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="text-sm font-medium text-gray-700 sm:col-span-4">
+                  Complemento
+                  <input
+                    value={addressEditForm.complemento}
+                    onChange={(event) =>
+                      setAddressEditForm((current: any) => ({
+                        ...current,
+                        complemento: event.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="text-sm font-medium text-gray-700 sm:col-span-3">
+                  Bairro e taxa
+                  <select
+                    value={addressEditForm.area_entrega_id}
+                    onChange={(event) => updateAddressEditArea(event.target.value)}
+                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="">
+                      {addressEditAreas.length ? "Selecione o bairro" : "Nenhuma área ativa"}
+                    </option>
+                    {addressEditAreas.map((area) => (
+                      <option key={area.id} value={area.id}>
+                        {getDeliveryAreaLabel(area)} · {formatCurrency(area.taxa_entrega)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-sm font-medium text-gray-700 sm:col-span-2">
+                  Cidade
+                  <input
+                    value={addressEditForm.cidade}
+                    onChange={(event) =>
+                      setAddressEditForm((current: any) => ({
+                        ...current,
+                        cidade: event.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="text-sm font-medium text-gray-700 sm:col-span-1">
+                  UF
+                  <input
+                    maxLength={2}
+                    value={addressEditForm.estado}
+                    onChange={(event) =>
+                      setAddressEditForm((current: any) => ({
+                        ...current,
+                        estado: event.target.value.toUpperCase(),
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm uppercase"
+                  />
+                </label>
+                <label className="text-sm font-medium text-gray-700 sm:col-span-6">
+                  Ponto de referência
+                  <input
+                    value={addressEditForm.ponto_referencia}
+                    onChange={(event) =>
+                      setAddressEditForm((current: any) => ({
+                        ...current,
+                        ponto_referencia: event.target.value,
+                      }))
+                    }
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </label>
+              </div>
+
+              <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
+                <div className="flex items-start gap-2">
+                  <MapPin className="mt-0.5 h-4 w-4 shrink-0" />
+                  <div>
+                    <p className="font-semibold">
+                      Nova taxa de entrega: {formatCurrency(addressEditArea?.taxa_entrega || 0)}
+                    </p>
+                    <p className="mt-0.5 text-blue-800">
+                      O total do pedido e o pagamento pendente serão atualizados ao salvar.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col-reverse gap-2 border-t border-gray-100 p-5 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={closeAddressEditModal}
+                disabled={addressEditSaving}
+                className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveAddressEdit()}
+                disabled={
+                  addressEditSaving ||
+                  !addressEditForm.area_entrega_id ||
+                  !addressEditForm.rua ||
+                  !addressEditForm.numero ||
+                  !addressEditForm.cidade ||
+                  !addressEditForm.estado
+                }
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {addressEditSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+                Salvar endereço
               </button>
             </div>
           </div>
