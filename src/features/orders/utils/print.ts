@@ -45,6 +45,22 @@ const getDailyTicketNumber = (order: any) => {
     : "";
 };
 
+const getOrderTypeLabelForPrint = (order: any) => {
+  const type = normalizeText(
+    firstPresent(
+      order?.tipo_pedido,
+      order?.tipo_entrega,
+      order?.type,
+      order?.tipo,
+      order?.order_type,
+    ),
+  );
+
+  if (["retirada", "pickup"].includes(type)) return "RETIRADA";
+  if (["salao", "salão", "mesa", "comanda"].includes(type)) return "SALAO";
+  return "ENTREGA";
+};
+
 export type ComandaPrintMode = "cozinha" | "cliente" | "cliente_cozinha";
 
 type PrintComandaOptions = {
@@ -288,6 +304,8 @@ export const printComanda = (
   const orderNumber = escapeHtml(order.numero_pedido || order.id);
   const dailyTicketNumber = getDailyTicketNumber(order);
   const isDelivery = isDeliveryOrder(order);
+  const customerName = printableText(order.cliente?.nome || order.customer) || "Não informado";
+  const orderTypeLabel = getOrderTypeLabelForPrint(order);
   const storeHeader = renderStoreHeader(store);
   const storeName = printableText(store?.nome);
   const salaoComanda = order?.salao_comanda || order?.comanda || {};
@@ -313,6 +331,8 @@ ${kitchenReceiptStyles}
     <p class="bold large">COMANDA DA COZINHA</p>
     ${dailyTicketNumber ? `<div class="ticket-number"><span class="ticket-label">COMANDA DO DIA</span><span class="ticket-value">${escapeHtml(dailyTicketNumber)}</span></div>` : ""}
     <p>Pedido: <span class="bold">${orderNumber}</span></p>
+    <p>Cliente: <span class="bold">${escapeHtml(customerName)}</span></p>
+    <p>Tipo: <span class="bold">${escapeHtml(orderTypeLabel)}</span></p>
     ${tableNumber ? `<span class="tag">MESA ${escapeHtml(tableNumber)}</span>` : ""}
     <p>Data: ${escapeHtml(formatBrasiliaDate(new Date(), { dateStyle: "short", timeStyle: "medium" }))}</p>
   </div>
@@ -363,10 +383,10 @@ ${receiptStyles}
     <p>Pedido: <span class="bold">${orderNumber}</span></p>
     <p>Data: ${escapeHtml(formatBrasiliaDate(orderDate, { dateStyle: "short", timeStyle: "medium" }))}</p>
     ${scheduledDate ? `<p>Entrega agendada: <span class="bold">${escapeHtml(formatBrasiliaDate(scheduledDate, { dateStyle: "short", timeStyle: "short" }))}</span></p>` : ""}
-    <span class="tag">${escapeHtml((order.tipo_pedido || order.type || "").toUpperCase())}</span>
+    <span class="tag">${escapeHtml(orderTypeLabel)}</span>
   </div>
   <div class="divider"></div>
-  <p><span class="bold">Cliente:</span> ${escapeHtml(order.cliente?.nome || order.customer || "Não informado")}</p>
+  <p><span class="bold">Cliente:</span> ${escapeHtml(customerName)}</p>
   <p><span class="bold">Telefone:</span> ${escapeHtml(order.cliente?.telefone || order.phone || "Não informado")}</p>
   ${order.cpf_na_nota ? `<p><span class="bold">CPF na nota:</span> ${escapeHtml(order.cpf_na_nota_cpf || "Informado")}</p>` : ""}
   ${isDelivery ? `<p class="address-line"><span class="bold">Endereço:</span> ${escapeHtml(getOrderAddress(order))}</p><p class="address-line"><span class="bold">Bairro:</span> ${escapeHtml(getOrderNeighborhood(order))}</p>` : ""}
