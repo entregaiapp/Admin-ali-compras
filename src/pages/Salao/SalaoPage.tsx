@@ -13,6 +13,7 @@ import {
   Maximize2,
   MessageSquareText,
   Minimize2,
+  Pencil,
   Plus,
   QrCode,
   RefreshCw,
@@ -302,6 +303,20 @@ type SalaoPaymentLine = {
   valor: string;
 };
 
+type SalaoConfiguredItemInput = {
+  variationId: string;
+  selections: Array<{
+    group: any;
+    option: any;
+    quantity: number;
+    fraction?: number | null;
+    unitPrice: number;
+    contribution: number;
+  }>;
+  quantity: number;
+  notes: string;
+};
+
 const escapePrintHtml = (value: unknown) =>
   String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -373,6 +388,16 @@ export function SalaoPage() {
   const [configuringProduct, setConfiguringProduct] = useState<{
     product: any;
     configuration: any;
+  } | null>(null);
+  const [editingConfiguredItem, setEditingConfiguredItem] = useState<{
+    item: any;
+    product: any;
+    configuration: any;
+  } | null>(null);
+  const [editingSimpleItem, setEditingSimpleItem] = useState<{
+    item: any;
+    quantity: string;
+    notes: string;
   } | null>(null);
   const [configurationLoading, setConfigurationLoading] = useState(false);
   const [itemQuantity, setItemQuantity] = useState("1");
@@ -939,19 +964,21 @@ export function SalaoPage() {
     }
   };
 
-  const addConfiguredProductToComanda = async (item: {
-    variationId: string;
-    selections: Array<{
-      group: any;
-      option: any;
-      quantity: number;
-      fraction?: number | null;
-      unitPrice: number;
-      contribution: number;
-    }>;
-    quantity: number;
-    notes: string;
-  }) => {
+  const buildSalaoSelectionPayload = (item: SalaoConfiguredItemInput) =>
+    item.selections.map(
+      ({ group, option, quantity: optionQuantity, fraction, unitPrice, contribution }) => ({
+        grupo_id: group.id,
+        opcao_id: option.id,
+        quantidade: optionQuantity,
+        nome_grupo: group.nome,
+        nome_opcao: option.nome,
+        fracao: fraction || undefined,
+        preco_unitario: unitPrice,
+        preco_contribuicao: contribution,
+      }),
+    );
+
+  const addConfiguredProductToComanda = async (item: SalaoConfiguredItemInput) => {
     if (!selectedComanda?.id || !configuringProduct) return;
     if (!["aberta", "aguardando_conta"].includes(selectedComanda.status)) {
       setConfiguringProduct(null);
@@ -966,18 +993,7 @@ export function SalaoPage() {
         quantidade: item.quantity,
         observacoes: item.notes.trim() || undefined,
         configuracao_versao: configuringProduct.configuration?.versao,
-        selecoes: item.selections.map(
-          ({ group, option, quantity: optionQuantity, fraction, unitPrice, contribution }) => ({
-            grupo_id: group.id,
-            opcao_id: option.id,
-            quantidade: optionQuantity,
-            nome_grupo: group.nome,
-            nome_opcao: option.nome,
-            fracao: fraction || undefined,
-            preco_unitario: unitPrice,
-            preco_contribuicao: contribution,
-          }),
-        ),
+        selecoes: buildSalaoSelectionPayload(item),
       });
       setSelectedComanda(updated);
       setConfiguringProduct(null);
@@ -992,6 +1008,128 @@ export function SalaoPage() {
       );
     } finally {
       setAddingItem(false);
+    }
+  };
+
+  const clearKitchenPrintFlagForSalaoItem = (itemId: unknown) => {
+    if (!selectedComanda?.id || !itemId) return;
+    const storageKey = getKitchenPrintStorageKey("salao", selectedComanda.id);
+    const printedKeys = readKitchenPrintedKeys(storageKey);
+    if (!printedKeys.delete(String(itemId))) return;
+    try {
+      localStorage.setItem(storageKey, JSON.stringify([...printedKeys]));
+    } catch {
+      // A edição continua válida mesmo se o histórico local de impressão estiver bloqueado.
+    }
+  };
+
+  const openEditComandaItem = async (item: any) => {
+    if (!selectedComanda?.id || item.status === "cancelado") return;
+    if (!["aberta", "aguardando_conta"].includes(selectedComanda.status)) {
+      showSystemNotice("Apenas comandas abertas ou aguardando conta permitem editar produtos.");
+      return;
+    }
+
+    const hasConfiguration = Boolean(
+      item.produto_loja_id &&
+      (item.variacao_produto_loja_id || arrayOrEmpty<any>(item.selecoes).length > 0),
+    );
+
+    if (!hasConfiguration) {
+      setEditingSimpleItem({
+        item,
+        quantity: String(item.quantidade || 1).replace(".", ","),
+        notes: String(item.observacoes || ""),
+      });
+      return;
+    }
+
+    setActionBusy(`load-edit-item-${item.id}`);
+    try {
+      const configuration = await productsService.getProductConfiguration(item.produto_loja_id);
+      const product =
+        products.find((candidate) => candidate.id === item.produto_loja_id) ||
+        productSearchResults?.find((candidate) => candidate.id === item.produto_loja_id) ||
+        {
+          id: item.produto_loja_id,
+          nome: item.nome_produto,
+          preco: item.preco_base,
+          preco_promocional: item.preco_base,
+        };
+      setEditingConfiguredItem({ item, product, configuration });
+    } catch (error: any) {
+      showSystemNotice(
+        error?.response?.data?.message ||
+          error?.message ||
+          "Não foi possível carregar as opções para editar este produto.",
+      );
+    } finally {
+      setActionBusy("");
+    }
+  };
+
+  const saveSimpleComandaItemEdit = async () => {
+    if (!selectedComanda?.id || !editingSimpleItem) return;
+    const quantity = Number(editingSimpleItem.quantity.replace(",", "."));
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      showSystemNotice("Informe uma quantidade válida.");
+      return;
+    }
+
+    setActionBusy(`edit-item-${editingSimpleItem.item.id}`);
+    try {
+      const updated = await salaoService.updateItem(
+        selectedComanda.id,
+        editingSimpleItem.item.id,
+        {
+          quantidade: quantity,
+          observacoes: editingSimpleItem.notes.trim() || null,
+        },
+      );
+      setSelectedComanda(updated);
+      clearKitchenPrintFlagForSalaoItem(editingSimpleItem.item.id);
+      setEditingSimpleItem(null);
+      await load();
+    } catch (error: any) {
+      showSystemNotice(
+        error?.response?.data?.message ||
+          error?.message ||
+          "Não foi possível editar o produto da mesa.",
+      );
+    } finally {
+      setActionBusy("");
+    }
+  };
+
+  const saveConfiguredComandaItemEdit = async (item: SalaoConfiguredItemInput) => {
+    if (!selectedComanda?.id || !editingConfiguredItem) return;
+    setActionBusy(`edit-item-${editingConfiguredItem.item.id}`);
+    try {
+      const updated = await salaoService.updateItem(
+        selectedComanda.id,
+        editingConfiguredItem.item.id,
+        {
+          produto_loja_id: editingConfiguredItem.product.id,
+          variacao_produto_loja_id: item.variationId || undefined,
+          quantidade: item.quantity,
+          observacoes: item.notes.trim() || null,
+          configuracao_versao: editingConfiguredItem.configuration?.versao,
+          selecoes: buildSalaoSelectionPayload(item),
+        },
+      );
+      setSelectedComanda(updated);
+      clearKitchenPrintFlagForSalaoItem(editingConfiguredItem.item.id);
+      setEditingConfiguredItem(null);
+      setComandaModule("pedidos");
+      await load();
+    } catch (error: any) {
+      showSystemNotice(
+        error?.response?.data?.message ||
+          error?.message ||
+          "Não foi possível editar o produto da mesa.",
+      );
+    } finally {
+      setActionBusy("");
     }
   };
 
@@ -1237,9 +1375,11 @@ export function SalaoPage() {
       paymentTarget ||
       closeMesaTarget ||
       qrDownloadMesa ||
-      deleteMesaTarget ||
-      configuringProduct ||
-      printComandaTarget ||
+        deleteMesaTarget ||
+        configuringProduct ||
+        editingConfiguredItem ||
+        editingSimpleItem ||
+        printComandaTarget ||
       kitchenPrintSelection
     ) {
       return;
@@ -1312,10 +1452,12 @@ export function SalaoPage() {
     };
   }, [
     applyKdsShortcut,
-    closeMesaTarget,
-    configuringProduct,
-    deleteMesaTarget,
-    kdsFullscreen,
+      closeMesaTarget,
+      configuringProduct,
+      deleteMesaTarget,
+      editingConfiguredItem,
+      editingSimpleItem,
+      kdsFullscreen,
     navigateKdsSelection,
     paymentTarget,
     printComandaTarget,
@@ -2619,6 +2761,28 @@ export function SalaoPage() {
                                   </div>
                                   <button
                                     type="button"
+                                    title="Editar produto da mesa"
+                                    aria-label={`Editar ${item.nome_produto}`}
+                                    onClick={() => void openEditComandaItem(item)}
+                                    disabled={
+                                      item.status === "cancelado" ||
+                                      !["aberta", "aguardando_conta"].includes(
+                                        selectedComanda.status,
+                                      ) ||
+                                      actionBusy === `load-edit-item-${item.id}` ||
+                                      actionBusy === `edit-item-${item.id}`
+                                    }
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 sm:h-8 sm:w-8"
+                                  >
+                                    {actionBusy === `load-edit-item-${item.id}` ||
+                                    actionBusy === `edit-item-${item.id}` ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin sm:h-4 sm:w-4" />
+                                    ) : (
+                                      <Pencil className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                                    )}
+                                  </button>
+                                  <button
+                                    type="button"
                                     title="Remover produto da mesa"
                                     aria-label={`Remover ${item.nome_produto}`}
                                     onClick={() => void removeItemFromComanda(item)}
@@ -3317,6 +3481,83 @@ export function SalaoPage() {
           onPrint={handlePrintSelectedSalaoKitchenItems}
         />
       )}
+      {editingSimpleItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="break-words text-base font-extrabold text-slate-950 [overflow-wrap:anywhere]">
+                  Editar {editingSimpleItem.item.nome_produto}
+                </h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  Ajuste a quantidade ou observação deste item.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingSimpleItem(null)}
+                disabled={actionBusy === `edit-item-${editingSimpleItem.item.id}`}
+                className="rounded-xl p-2 text-slate-500 hover:bg-slate-100 disabled:opacity-50"
+                aria-label="Fechar edição"
+              >
+                Fechar
+              </button>
+            </div>
+            <label className="mt-5 block">
+              <span className="mb-1.5 block text-sm font-bold text-slate-800">
+                Quantidade
+              </span>
+              <input
+                value={editingSimpleItem.quantity}
+                onChange={(event) =>
+                  setEditingSimpleItem((current) =>
+                    current ? { ...current, quantity: event.target.value } : current,
+                  )
+                }
+                inputMode="decimal"
+                className="h-12 w-full rounded-xl border border-slate-200 px-3 text-base outline-none focus:border-[#122a4c]"
+              />
+            </label>
+            <label className="mt-4 block">
+              <span className="mb-1.5 block text-sm font-bold text-slate-800">
+                Observação
+              </span>
+              <textarea
+                value={editingSimpleItem.notes}
+                onChange={(event) =>
+                  setEditingSimpleItem((current) =>
+                    current ? { ...current, notes: event.target.value } : current,
+                  )
+                }
+                maxLength={500}
+                className="min-h-24 w-full resize-y rounded-xl border border-slate-200 p-3 text-sm outline-none focus:border-[#122a4c]"
+                placeholder="Ex.: sem cebola, molho separado..."
+              />
+            </label>
+            <div className="mt-5 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setEditingSimpleItem(null)}
+                disabled={actionBusy === `edit-item-${editingSimpleItem.item.id}`}
+                className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700 disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveSimpleComandaItemEdit()}
+                disabled={actionBusy === `edit-item-${editingSimpleItem.item.id}`}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#122a4c] px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+              >
+                {actionBusy === `edit-item-${editingSimpleItem.item.id}` && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                Salvar edição
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {configuringProduct && (
         <SalaoProductConfiguratorModal
           product={configuringProduct.product}
@@ -3324,6 +3565,25 @@ export function SalaoPage() {
           busy={addingItem}
           onClose={() => setConfiguringProduct(null)}
           onConfirm={(item) => void addConfiguredProductToComanda(item)}
+        />
+      )}
+      {editingConfiguredItem && (
+        <SalaoProductConfiguratorModal
+          product={editingConfiguredItem.product}
+          configuration={editingConfiguredItem.configuration}
+          initialItem={{
+            variationId: editingConfiguredItem.item.variacao_produto_loja_id || "",
+            selections: editingConfiguredItem.item.selecoes || [],
+            quantity: Number(editingConfiguredItem.item.quantidade || 1),
+            notes: String(editingConfiguredItem.item.observacoes || ""),
+          }}
+          busy={actionBusy === `edit-item-${editingConfiguredItem.item.id}`}
+          title="Editar item"
+          description="Corrija tamanho, adicionais, quantidade ou observação."
+          confirmLabel="Salvar edição"
+          busyLabel="Salvando..."
+          onClose={() => setEditingConfiguredItem(null)}
+          onConfirm={(item) => void saveConfiguredComandaItemEdit(item)}
         />
       )}
     </div>

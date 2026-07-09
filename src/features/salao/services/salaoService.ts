@@ -44,6 +44,9 @@ export const salaoService = {
   addItem: async (comandaId: string, data: Record<string, unknown>) =>
     unwrap(await api.post(`/salao/comandas/${comandaId}/itens`, data)),
 
+  updateItem: async (comandaId: string, itemId: string, data: Record<string, unknown>) =>
+    unwrap(await api.patch(`/salao/comandas/${comandaId}/itens/${itemId}`, data)),
+
   removeItem: async (comandaId: string, itemId: string) =>
     unwrap(await api.delete(`/salao/comandas/${comandaId}/itens/${itemId}`)),
 

@@ -17,7 +17,17 @@ type ConfiguredItem = {
 type SalaoProductConfiguratorModalProps = {
   product: any;
   configuration: any;
+  initialItem?: {
+    variationId?: string;
+    selections?: any[];
+    quantity?: number;
+    notes?: string;
+  } | null;
   busy?: boolean;
+  title?: string;
+  description?: string;
+  confirmLabel?: string;
+  busyLabel?: string;
   onClose: () => void;
   onConfirm: (item: ConfiguredItem) => void;
 };
@@ -95,10 +105,40 @@ const getGroupLimits = (group: any, variationId: string) => {
   };
 };
 
+const initialVariationFor = (configuration: any, initialItem?: SalaoProductConfiguratorModalProps["initialItem"]) =>
+  initialItem?.variationId ||
+  configuration?.variacoes?.find((variation: any) => variation.ativa !== false)?.id ||
+  "";
+
+const initialSelectionsFor = (
+  configuration: any,
+  initialItem?: SalaoProductConfiguratorModalProps["initialItem"],
+) => {
+  const storedSelections = Array.isArray(initialItem?.selections) ? initialItem?.selections || [] : [];
+  const groups = Array.isArray(configuration?.grupos) ? configuration.grupos : [];
+  return storedSelections
+    .map((storedSelection: any) => {
+      const group = groups.find((item: any) => String(item.id) === String(storedSelection.grupo_id));
+      const option = group?.opcoes?.find((item: any) => String(item.id) === String(storedSelection.opcao_id));
+      if (!group || !option) return null;
+      return {
+        group,
+        option,
+        quantity: Math.max(1, Number(storedSelection.quantidade || 1)),
+      };
+    })
+    .filter(Boolean) as Selection[];
+};
+
 export function SalaoProductConfiguratorModal({
   product,
   configuration,
+  initialItem = null,
   busy = false,
+  title = "Personalizar item",
+  description = "Selecione as opções antes de lançar na mesa.",
+  confirmLabel = "Adicionar à mesa",
+  busyLabel = "Adicionando...",
   onClose,
   onConfirm,
 }: SalaoProductConfiguratorModalProps) {
@@ -106,11 +146,11 @@ export function SalaoProductConfiguratorModal({
     () => (configuration?.grupos || []).filter((group: any) => group.ativo !== false),
     [configuration],
   );
-  const initialVariation = configuration?.variacoes?.find((variation: any) => variation.ativa !== false)?.id || "";
+  const initialVariation = initialVariationFor(configuration, initialItem);
   const [variationId, setVariationId] = useState(initialVariation);
-  const [selections, setSelections] = useState<Selection[]>([]);
-  const [quantity, setQuantity] = useState(1);
-  const [notes, setNotes] = useState("");
+  const [selections, setSelections] = useState<Selection[]>(() => initialSelectionsFor(configuration, initialItem));
+  const [quantity, setQuantity] = useState(() => Math.max(1, Number(initialItem?.quantity || 1)));
+  const [notes, setNotes] = useState(initialItem?.notes || "");
   const [search, setSearch] = useState("");
   const searchRef = useRef<HTMLInputElement | null>(null);
 
@@ -243,9 +283,9 @@ export function SalaoProductConfiguratorModal({
       <div className="flex max-h-[94vh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-h-[88vh] sm:rounded-2xl">
         <header className="flex items-start justify-between gap-4 border-b border-slate-100 px-4 py-4 sm:px-6">
           <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Personalizar item</p>
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{title}</p>
             <h2 className="truncate text-lg font-extrabold text-slate-950">{product?.nome || "Produto"}</h2>
-            <p className="mt-0.5 text-sm text-slate-500">Selecione as opções antes de lançar na mesa.</p>
+            <p className="mt-0.5 text-sm text-slate-500">{description}</p>
           </div>
           <button type="button" onClick={onClose} disabled={busy} className="rounded-xl p-2 text-slate-500 hover:bg-slate-100 disabled:opacity-50" aria-label="Fechar configurador">
             <X className="h-5 w-5" />
@@ -357,7 +397,7 @@ export function SalaoProductConfiguratorModal({
             </div>
           </div>
           <button type="button" onClick={() => onConfirm({ variationId, selections: pricedConfiguration.selections, quantity, notes })} disabled={Boolean(validationIssue) || busy} className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#122a4c] px-4 py-3 text-sm font-extrabold text-white transition-colors hover:bg-[#0b1e38] disabled:cursor-not-allowed disabled:opacity-50">
-            {busy ? "Adicionando..." : "Adicionar à mesa"}
+            {busy ? busyLabel : confirmLabel}
           </button>
         </footer>
       </div>
