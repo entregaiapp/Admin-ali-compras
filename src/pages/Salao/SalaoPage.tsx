@@ -23,6 +23,7 @@ import {
   SlidersHorizontal,
   Trash2,
   UserCheck,
+  UserRound,
 } from "lucide-react";
 import { salaoService } from "@/features/salao/services/salaoService";
 import {
@@ -100,6 +101,7 @@ const SALAO_PAYMENT_METHODS = [
   { value: "cartao_debito", label: "Cartão de débito" },
   { value: "cartao_credito", label: "Cartão de crédito" },
 ];
+const SALAO_FIADO_PAYMENT_METHOD = { value: "fiado", label: "Fiado" };
 
 const SALAO_STATUS_STYLES: Record<
   string,
@@ -257,6 +259,27 @@ const unwrapList = (payload: any) => {
   return [];
 };
 
+const phoneSearchPattern = /(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?(?:9?\d{4})[-.\s]?\d{4}/;
+const onlyDigits = (value: string) => String(value || "").replace(/\D/g, "");
+const compactText = (value: string) => String(value || "").replace(/\s+/g, " ").trim();
+const inferQuickContactFromQuery = (query: string) => {
+  const value = compactText(query);
+  if (!value) return { nome: "", telefone: "" };
+
+  const phoneMatch = value.match(phoneSearchPattern);
+  const phoneText = phoneMatch?.[0]?.trim() || "";
+  const fallbackDigits = onlyDigits(value);
+  const hasPhone = onlyDigits(phoneText || value).length >= 8;
+
+  if (!hasPhone) return { nome: value, telefone: "" };
+
+  const nome = phoneMatch ? compactText(value.replace(phoneMatch[0], " ")) : "";
+  return {
+    nome,
+    telefone: phoneText || fallbackDigits || value,
+  };
+};
+
 const arrayOrEmpty = <T,>(value: unknown): T[] =>
   Array.isArray(value) ? value : [];
 
@@ -412,6 +435,12 @@ export function SalaoPage() {
   const [paymentTarget, setPaymentTarget] = useState<any | null>(null);
   const [paymentMethod, setPaymentMethod] = useState("dinheiro");
   const [paymentLines, setPaymentLines] = useState<SalaoPaymentLine[]>([]);
+  const [fiadoEnabled, setFiadoEnabled] = useState(false);
+  const [fiadoContactQuery, setFiadoContactQuery] = useState("");
+  const [fiadoContacts, setFiadoContacts] = useState<any[]>([]);
+  const [fiadoContactLoading, setFiadoContactLoading] = useState(false);
+  const [fiadoSelectedContact, setFiadoSelectedContact] = useState<any | null>(null);
+  const [fiadoQuickContact, setFiadoQuickContact] = useState({ nome: "", telefone: "" });
   const [printComandaTarget, setPrintComandaTarget] = useState<any | null>(null);
   const [kitchenPrintSelection, setKitchenPrintSelection] = useState<{
     comanda: any;
@@ -431,6 +460,14 @@ export function SalaoPage() {
   const salaoPageRef = useRef<HTMLDivElement | null>(null);
   const kdsCardRefs = useRef(new Map<string, HTMLDivElement>());
   const pendingPShortcutTimeoutRef = useRef<number | null>(null);
+  const availablePaymentMethods = useMemo(
+    () => fiadoEnabled ? [...SALAO_PAYMENT_METHODS, SALAO_FIADO_PAYMENT_METHOD] : SALAO_PAYMENT_METHODS,
+    [fiadoEnabled],
+  );
+  const inferredFiadoQuickContact = useMemo(
+    () => inferQuickContactFromQuery(fiadoContactQuery),
+    [fiadoContactQuery],
+  );
 
   const loadCurrentStore = useCallback(async () => {
     if (!user?.loja_id) return null;
@@ -449,6 +486,39 @@ export function SalaoPage() {
   useEffect(() => {
     void loadCurrentStore().catch(() => undefined);
   }, [loadCurrentStore]);
+
+  useEffect(() => {
+    if (!user?.loja_id) return;
+    api.get(`/salao/lojas/${user.loja_id}/modulos`)
+      .then((response) => {
+        const modules = unwrapList(response);
+        setFiadoEnabled(modules.some((module: any) => module.slug === "fiado" && module.enabled === true));
+      })
+      .catch(() => setFiadoEnabled(false));
+  }, [user?.loja_id]);
+
+  useEffect(() => {
+    if (fiadoSelectedContact?.id) {
+      setFiadoContacts([]);
+      setFiadoContactLoading(false);
+      return;
+    }
+    const search = fiadoContactQuery.trim();
+    if (!search) {
+      setFiadoContacts([]);
+      setFiadoContactLoading(false);
+      return;
+    }
+
+    setFiadoContactLoading(true);
+    const timeoutId = window.setTimeout(() => {
+      api.get("/pedidos/admin-delivery/contacts", { params: { busca: search } })
+        .then((response) => setFiadoContacts(unwrapList(response)))
+        .catch(() => setFiadoContacts([]))
+        .finally(() => setFiadoContactLoading(false));
+    }, 300);
+    return () => window.clearTimeout(timeoutId);
+  }, [fiadoContactQuery, fiadoSelectedContact?.id]);
 
   useEffect(() => {
     localStorage.setItem(TABLE_CARD_SCALE_STORAGE_KEY, String(tableCardScale));
@@ -1214,6 +1284,32 @@ export function SalaoPage() {
     }
   };
 
+  const resetFiadoPaymentContact = () => {
+    setFiadoContactQuery("");
+    setFiadoContacts([]);
+    setFiadoContactLoading(false);
+    setFiadoSelectedContact(null);
+    setFiadoQuickContact({ nome: "", telefone: "" });
+  };
+
+  const chooseFiadoContact = (contact: any) => {
+    setFiadoSelectedContact(contact);
+    setFiadoQuickContact({
+      nome: compactText(contact?.nome || ""),
+      telefone: compactText(contact?.telefone || ""),
+    });
+    setFiadoContactQuery(compactText(`${contact?.nome || ""} ${contact?.telefone || ""}`));
+    setFiadoContacts([]);
+  };
+
+  const useFiadoQuickContactFromSearch = () => {
+    setFiadoSelectedContact(null);
+    setFiadoQuickContact((current) => ({
+      nome: current.nome || inferredFiadoQuickContact.nome,
+      telefone: current.telefone || inferredFiadoQuickContact.telefone,
+    }));
+  };
+
   const confirmPayment = async (comanda: any) => {
     const totalCents = toCents(comanda?.total || 0);
     const paymentsByMethod = new Map<string, number>();
@@ -1226,9 +1322,31 @@ export function SalaoPage() {
       forma_pagamento,
       valor: Number((valueCents / 100).toFixed(2)),
     }));
-    const payload = pagamentos.length > 1
+    const hasFiadoPayment = pagamentos.some((item) => item.forma_pagamento === "fiado");
+    if (hasFiadoPayment && pagamentos.length > 1) {
+      showSystemNotice("Fiado deve ser a única forma de pagamento da mesa.");
+      return;
+    }
+
+    let payload: Record<string, unknown> = pagamentos.length > 1
       ? { pagamentos }
       : { forma_pagamento: pagamentos[0]?.forma_pagamento || paymentMethod };
+
+    if (hasFiadoPayment || payload.forma_pagamento === "fiado") {
+      const quickName = compactText(fiadoQuickContact.nome || inferredFiadoQuickContact.nome);
+      const quickPhone = compactText(fiadoQuickContact.telefone || inferredFiadoQuickContact.telefone);
+      const hasExistingContact = Boolean(fiadoSelectedContact?.id);
+      if (!hasExistingContact && (!quickName || onlyDigits(quickPhone).length < 8)) {
+        showSystemNotice("Informe uma pessoa existente ou crie um contato rápido com nome e telefone para lançar no fiado.");
+        return;
+      }
+      payload = {
+        forma_pagamento: "fiado",
+        ...(hasExistingContact
+          ? { contato_rapido_delivery_id: fiadoSelectedContact.id }
+          : { contato: { nome: quickName, telefone: quickPhone } }),
+      };
+    }
 
     if (pagamentos.length > 1 && pagamentos.reduce((sum, item) => sum + toCents(item.valor), 0) !== totalCents) {
       showSystemNotice("A soma dos pagamentos deve ser igual ao total da mesa.");
@@ -1240,6 +1358,7 @@ export function SalaoPage() {
       await salaoService.confirmPayment(comanda.id, payload);
       setPaymentTarget(null);
       setPaymentLines([]);
+      resetFiadoPaymentContact();
       setSelectedComanda(null);
       await load();
     } catch (error: any) {
@@ -2850,6 +2969,7 @@ export function SalaoPage() {
                                 forma_pagamento: "dinheiro",
                                 valor: formatCents(toCents(selectedComanda.total || 0)),
                               }]);
+                              resetFiadoPaymentContact();
                               setPaymentTarget(selectedComanda);
                             }}
                             className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white sm:min-h-12 sm:gap-2 sm:rounded-xl sm:px-4 sm:py-2 sm:text-sm"
@@ -3214,7 +3334,7 @@ export function SalaoPage() {
       )}
       {paymentTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl">
+          <div className="max-h-[calc(100vh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl">
             <div className="flex items-start gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
                 <CreditCard className="h-5 w-5" />
@@ -3236,7 +3356,11 @@ export function SalaoPage() {
               const paidCents = paymentLines.reduce((sum, line) => sum + parseCurrencyInputCents(line.valor), 0);
               const remainingCents = Math.max(0, totalCents - paidCents);
               const isComplete = totalCents > 0 && paidCents === totalCents;
-              const canAddLine = !isComplete && paymentLines.length < 8 && paymentLines.every((line) => line.forma_pagamento && parseCurrencyInputCents(line.valor) > 0);
+              const isFiadoSelected = paymentLines.some((line) => line.forma_pagamento === "fiado");
+              const quickContactName = compactText(fiadoQuickContact.nome || inferredFiadoQuickContact.nome);
+              const quickContactPhone = compactText(fiadoQuickContact.telefone || inferredFiadoQuickContact.telefone);
+              const hasFiadoPerson = Boolean(fiadoSelectedContact?.id) || Boolean(quickContactName && onlyDigits(quickContactPhone).length >= 8);
+              const canAddLine = !isFiadoSelected && !isComplete && paymentLines.length < 8 && paymentLines.every((line) => line.forma_pagamento && parseCurrencyInputCents(line.valor) > 0);
               const hasInvalidLine = paymentLines.some((line) => {
                 const valueCents = parseCurrencyInputCents(line.valor);
                 return (Boolean(line.forma_pagamento) || valueCents > 0) && (!line.forma_pagamento || valueCents <= 0);
@@ -3260,14 +3384,24 @@ export function SalaoPage() {
                         <select
                           value={line.forma_pagamento}
                           onChange={(event) => {
-                            updateLine(index, { forma_pagamento: event.target.value });
-                            setPaymentMethod(event.target.value || paymentMethod);
+                            const nextMethod = event.target.value;
+                            if (nextMethod === "fiado") {
+                              setPaymentMethod("fiado");
+                              setPaymentLines([{
+                                forma_pagamento: "fiado",
+                                valor: formatCents(totalCents),
+                              }]);
+                              return;
+                            }
+                            if (line.forma_pagamento === "fiado") resetFiadoPaymentContact();
+                            updateLine(index, { forma_pagamento: nextMethod });
+                            setPaymentMethod(nextMethod || paymentMethod);
                           }}
                           disabled={actionBusy === `payment-${paymentTarget.id}`}
                           className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-emerald-400 disabled:opacity-60"
                         >
                           <option value="">Selecione</option>
-                          {SALAO_PAYMENT_METHODS.map((method) => (
+                          {availablePaymentMethods.map((method) => (
                             <option key={method.value} value={method.value}>{method.label}</option>
                           ))}
                         </select>
@@ -3275,14 +3409,14 @@ export function SalaoPage() {
                           value={line.valor}
                           onChange={(event) => updateLineValue(index, event.target.value)}
                           inputMode="decimal"
-                          disabled={actionBusy === `payment-${paymentTarget.id}`}
+                          disabled={isFiadoSelected || actionBusy === `payment-${paymentTarget.id}`}
                           className="h-11 rounded-xl border border-slate-200 px-3 text-right text-sm font-semibold text-slate-700 outline-none focus:border-emerald-400 disabled:opacity-60"
                           placeholder="0,00"
                         />
                         <button
                           type="button"
                           onClick={() => setPaymentLines((current) => current.filter((_, lineIndex) => lineIndex !== index))}
-                          disabled={paymentLines.length === 1 || actionBusy === `payment-${paymentTarget.id}`}
+                          disabled={isFiadoSelected || paymentLines.length === 1 || actionBusy === `payment-${paymentTarget.id}`}
                           className="flex h-11 items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                           title="Remover forma"
                         >
@@ -3291,6 +3425,104 @@ export function SalaoPage() {
                       </div>
                     ))}
                   </div>
+                  {isFiadoSelected && (
+                    <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                      <div className="flex items-start gap-2">
+                        <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
+                          <UserRound className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-extrabold text-slate-900">Pessoa do fiado</p>
+                          <p className="mt-0.5 text-xs font-medium text-slate-600">
+                            Escolha um contato existente ou informe nome e telefone para criar um contato rápido.
+                          </p>
+                        </div>
+                      </div>
+                      <div className="mt-3">
+                        <div className="relative">
+                          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                          <input
+                            value={fiadoContactQuery}
+                            onChange={(event) => {
+                              setFiadoContactQuery(event.target.value);
+                              setFiadoSelectedContact(null);
+                            }}
+                            disabled={actionBusy === `payment-${paymentTarget.id}`}
+                            className="h-11 w-full rounded-xl border border-amber-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none focus:border-amber-400 disabled:opacity-60"
+                            placeholder="Buscar por nome ou telefone"
+                          />
+                        </div>
+                        {(fiadoContactLoading || fiadoContacts.length > 0) && (
+                          <div className="mt-2 max-h-40 overflow-auto rounded-xl border border-amber-200 bg-white">
+                            {fiadoContactLoading ? (
+                              <div className="flex items-center gap-2 px-3 py-3 text-xs font-semibold text-slate-500">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                Buscando contatos...
+                              </div>
+                            ) : (
+                              fiadoContacts.map((contact) => (
+                                <button
+                                  key={contact.id}
+                                  type="button"
+                                  onClick={() => chooseFiadoContact(contact)}
+                                  className="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-3 py-2 text-left last:border-b-0 hover:bg-amber-50"
+                                >
+                                  <span className="min-w-0">
+                                    <span className="block truncate text-sm font-bold text-slate-800">{contact.nome}</span>
+                                    <span className="block truncate text-xs font-medium text-slate-500">{contact.telefone}</span>
+                                  </span>
+                                  {Number(contact.fiado_saldo_aberto || 0) > 0 && (
+                                    <span className="shrink-0 rounded-full bg-amber-100 px-2 py-1 text-[11px] font-bold text-amber-800">
+                                      R$ {formatMoney(contact.fiado_saldo_aberto)}
+                                    </span>
+                                  )}
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        )}
+                        {(inferredFiadoQuickContact.nome || inferredFiadoQuickContact.telefone) && !fiadoSelectedContact && (
+                          <button
+                            type="button"
+                            onClick={useFiadoQuickContactFromSearch}
+                            disabled={actionBusy === `payment-${paymentTarget.id}`}
+                            className="mt-2 inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            Usar como contato rápido
+                          </button>
+                        )}
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <input
+                          value={fiadoQuickContact.nome}
+                          onChange={(event) => {
+                            setFiadoSelectedContact(null);
+                            setFiadoQuickContact((current) => ({ ...current, nome: event.target.value }));
+                          }}
+                          disabled={actionBusy === `payment-${paymentTarget.id}`}
+                          className="h-11 rounded-xl border border-amber-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-amber-400 disabled:opacity-60"
+                          placeholder="Nome"
+                        />
+                        <input
+                          value={fiadoQuickContact.telefone}
+                          onChange={(event) => {
+                            setFiadoSelectedContact(null);
+                            setFiadoQuickContact((current) => ({ ...current, telefone: event.target.value }));
+                          }}
+                          inputMode="tel"
+                          disabled={actionBusy === `payment-${paymentTarget.id}`}
+                          className="h-11 rounded-xl border border-amber-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-amber-400 disabled:opacity-60"
+                          placeholder="Telefone"
+                        />
+                      </div>
+                      {fiadoSelectedContact?.id && (
+                        <p className="mt-2 rounded-lg bg-white px-3 py-2 text-xs font-bold text-emerald-700">
+                          Contato selecionado: {fiadoSelectedContact.nome}
+                        </p>
+                      )}
+                    </div>
+                  )}
                   {canAddLine && (
                     <button
                       type="button"
@@ -3319,6 +3551,7 @@ export function SalaoPage() {
                       onClick={() => {
                         setPaymentTarget(null);
                         setPaymentLines([]);
+                        resetFiadoPaymentContact();
                       }}
                       disabled={actionBusy === `payment-${paymentTarget.id}`}
                       className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700 disabled:opacity-60"
@@ -3327,7 +3560,7 @@ export function SalaoPage() {
                     </button>
                     <button
                       onClick={() => void confirmPayment(paymentTarget)}
-                      disabled={actionBusy === `payment-${paymentTarget.id}` || !isComplete || hasInvalidLine}
+                      disabled={actionBusy === `payment-${paymentTarget.id}` || !isComplete || hasInvalidLine || (isFiadoSelected && !hasFiadoPerson)}
                       className="inline-flex items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
                     >
                       {actionBusy === `payment-${paymentTarget.id}` && (
