@@ -431,6 +431,7 @@ export function SalaoPage() {
   const [realtimeMesaId, setRealtimeMesaId] = useState("");
   const [qrDownloadMesa, setQrDownloadMesa] = useState<any | null>(null);
   const [deleteMesaTarget, setDeleteMesaTarget] = useState<any | null>(null);
+  const [deleteItemTarget, setDeleteItemTarget] = useState<any | null>(null);
   const [closeMesaTarget, setCloseMesaTarget] = useState<any | null>(null);
   const [paymentTarget, setPaymentTarget] = useState<any | null>(null);
   const [paymentMethod, setPaymentMethod] = useState("dinheiro");
@@ -1255,6 +1256,7 @@ export function SalaoPage() {
       await salaoService.removeItem(selectedComanda.id, item.id);
       const detail = await salaoService.getComanda(selectedComanda.id);
       setSelectedComanda(detail);
+      setDeleteItemTarget(null);
       await load();
     } catch (error: any) {
       showSystemNotice(
@@ -1495,6 +1497,7 @@ export function SalaoPage() {
       closeMesaTarget ||
       qrDownloadMesa ||
         deleteMesaTarget ||
+        deleteItemTarget ||
         configuringProduct ||
         editingConfiguredItem ||
         editingSimpleItem ||
@@ -1574,6 +1577,7 @@ export function SalaoPage() {
       closeMesaTarget,
       configuringProduct,
       deleteMesaTarget,
+      deleteItemTarget,
       editingConfiguredItem,
       editingSimpleItem,
       kdsFullscreen,
@@ -2904,7 +2908,7 @@ export function SalaoPage() {
                                     type="button"
                                     title="Remover produto da mesa"
                                     aria-label={`Remover ${item.nome_produto}`}
-                                    onClick={() => void removeItemFromComanda(item)}
+                                    onClick={() => setDeleteItemTarget(item)}
                                     disabled={
                                       item.status === "cancelado" ||
                                       !["aberta", "aguardando_conta"].includes(
@@ -3694,6 +3698,53 @@ export function SalaoPage() {
                   <Loader2 className="h-4 w-4 animate-spin" />
                 )}
                 Excluir mesa
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {deleteItemTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-700">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-extrabold text-slate-950">
+                  Excluir produto da mesa?
+                </h2>
+                <p className="mt-2 text-sm text-slate-600">
+                  Confirme se deseja remover este produto da comanda da mesa.
+                </p>
+                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
+                  <div className="font-bold text-slate-900">
+                    {deleteItemTarget.quantidade}x {deleteItemTarget.nome_produto}
+                    {deleteItemTarget.nome_variacao ? ` - ${deleteItemTarget.nome_variacao}` : ""}
+                  </div>
+                  <div className="mt-1 font-semibold text-slate-700">
+                    R$ {formatMoney(deleteItemTarget.preco_total)}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="mt-5 grid gap-2 sm:grid-cols-2">
+              <button
+                onClick={() => setDeleteItemTarget(null)}
+                disabled={Boolean(actionBusy)}
+                className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700 disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => void removeItemFromComanda(deleteItemTarget)}
+                disabled={Boolean(actionBusy)}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {actionBusy === `remove-item-${deleteItemTarget.id}` && (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                )}
+                Excluir produto
               </button>
             </div>
           </div>

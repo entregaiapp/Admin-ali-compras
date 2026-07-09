@@ -29,6 +29,7 @@ import {
   AlertTriangle,
   RotateCcw,
   Plus,
+  Pencil,
 } from "lucide-react";
 import api from "@/shared/lib/api";
 import { formatBrasiliaDate } from "@/shared/lib/dateTime";
@@ -82,6 +83,7 @@ import { DeliveryAssignmentModal } from "@/features/orders/components/DeliveryAs
 import { OrderItemsChecklistModal } from "@/features/orders/components/OrderItemsChecklistModal";
 import { ManualDeliveryOrderModal } from "@/features/orders/components/ManualDeliveryOrderModal";
 import { AddOrderItemsModal } from "@/features/orders/components/AddOrderItemsModal";
+import { EditOrderItemModal } from "@/features/orders/components/EditOrderItemModal";
 import { PendingPaymentMethodModal } from "@/features/orders/components/PendingPaymentMethodModal";
 import {
   ComandaPrintModeModal,
@@ -536,6 +538,7 @@ export function OrdersScreen() {
   } | null>(null);
   const [manualOrderOpen, setManualOrderOpen] = useState(false);
   const [adminAddItemsOrder, setAdminAddItemsOrder] = useState<any | null>(null);
+  const [adminEditItemTarget, setAdminEditItemTarget] = useState<{ order: any; item: any } | null>(null);
   const [pendingPaymentMethodOrder, setPendingPaymentMethodOrder] = useState<any | null>(null);
   const [addressEditOrder, setAddressEditOrder] = useState<any | null>(null);
   const [addressEditForm, setAddressEditForm] = useState<any>({ ...EMPTY_ADMIN_ORDER_ADDRESS });
@@ -1113,6 +1116,7 @@ export function OrdersScreen() {
     }
     await fetchOrders(1, true, { silent: true });
     setAdminAddItemsOrder(null);
+    setAdminEditItemTarget(null);
     setPendingPaymentMethodOrder(null);
     showSystemNotice(message);
   };
@@ -2917,6 +2921,16 @@ export function OrdersScreen() {
           primaryColor={primaryColor}
           onClose={() => setAdminAddItemsOrder(null)}
           onAdjusted={(result) => void refreshSelectedOrderAfterAdminAdjustment(result, "Produtos adicionados ao pedido.")}
+        />
+      )}
+      {adminEditItemTarget && (
+        <EditOrderItemModal
+          order={adminEditItemTarget.order}
+          item={adminEditItemTarget.item}
+          isPaid={isOrderPaid(adminEditItemTarget.order, adminEditItemTarget.order.id === selected?.id ? selectedPayments : [])}
+          primaryColor={primaryColor}
+          onClose={() => setAdminEditItemTarget(null)}
+          onAdjusted={(result) => void refreshSelectedOrderAfterAdminAdjustment(result, "Produto editado no pedido.")}
         />
       )}
       {pendingPaymentMethodOrder && (
@@ -4759,9 +4773,21 @@ export function OrdersScreen() {
                             </div>
                           )}
                         </div>
-                        <div className="shrink-0 text-sm font-medium text-gray-700">
-                          R${" "}
-                          {getOrderItemTotal(item).toFixed(2).replace(".", ",")}
+                        <div className="flex shrink-0 flex-col items-end gap-2">
+                          <div className="text-sm font-medium text-gray-700">
+                            R${" "}
+                            {getOrderItemTotal(item).toFixed(2).replace(".", ",")}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setAdminEditItemTarget({ order: selected, item })}
+                            disabled={!selectedCanAdminAddItems || selectedOrderUpdating || !item.id || !item.produto_loja_id}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-blue-100 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                            title="Editar produto"
+                            aria-label={`Editar ${getOrderItemName(item)}`}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
                         </div>
                       </div>
                     );

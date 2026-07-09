@@ -50,6 +50,8 @@ export function PendingPaymentMethodModal({
     { forma_pagamento: currentMethod || "dinheiro", valor: totalCents ? formatCents(totalCents) : "" },
   ]);
   const [observacao, setObservacao] = useState("");
+  const [cashNeedsChange, setCashNeedsChange] = useState(false);
+  const [cashChangeFor, setCashChangeFor] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -65,11 +67,22 @@ export function PendingPaymentMethodModal({
     !isComplete &&
     lines.length < MAX_PAYMENT_LINES &&
     lines.every((line) => line.forma_pagamento && parseCurrencyInputCents(line.valor) > 0);
+  const singleCashPayment =
+    lines.filter((line) => line.forma_pagamento && parseCurrencyInputCents(line.valor) > 0).length === 1 &&
+    lines.some((line) => line.forma_pagamento === "dinheiro" && parseCurrencyInputCents(line.valor) > 0);
+  const cashChangeForCents = parseCurrencyInputCents(cashChangeFor);
+  const cashChangeInvalid = singleCashPayment && cashNeedsChange && cashChangeForCents < totalCents;
 
   useEffect(() => {
     if (!canAddLine) return;
     setLines((current) => [...current, { forma_pagamento: "", valor: "" }]);
   }, [canAddLine]);
+
+  useEffect(() => {
+    if (singleCashPayment) return;
+    setCashNeedsChange(false);
+    setCashChangeFor("");
+  }, [singleCashPayment]);
 
   const updateLine = (index: number, patch: Partial<PaymentLine>) => {
     setLines((current) =>
@@ -108,6 +121,11 @@ export function PendingPaymentMethodModal({
       valor: Number((valueCents / 100).toFixed(2)),
     }));
 
+    if (cashChangeInvalid) {
+      setError("Informe um valor de troco maior ou igual ao total do pedido.");
+      return;
+    }
+
     setBusy(true);
     setError("");
     try {
@@ -116,7 +134,11 @@ export function PendingPaymentMethodModal({
           ? { pagamentos, observacao: observacao.trim() || undefined }
           : {
               forma_pagamento: pagamentos[0]?.forma_pagamento,
-              sem_troco: true,
+              sem_troco: pagamentos[0]?.forma_pagamento === "dinheiro" ? !cashNeedsChange : true,
+              troco_para:
+                pagamentos[0]?.forma_pagamento === "dinheiro" && cashNeedsChange
+                  ? parseCurrencyInput(cashChangeFor)
+                  : null,
               observacao: observacao.trim() || undefined,
             };
       const response = await api.patch(`/pedidos/${order.id}/pagamento-pendente`, payload);
@@ -209,6 +231,56 @@ export function PendingPaymentMethodModal({
             </div>
           </div>
 
+          {singleCashPayment && (
+            <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+              <div className="text-sm font-bold text-emerald-950">Precisa de troco?</div>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCashNeedsChange(false);
+                    setCashChangeFor("");
+                  }}
+                  className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
+                    !cashNeedsChange
+                      ? "border-emerald-600 bg-white text-emerald-800"
+                      : "border-emerald-200 bg-emerald-100 text-emerald-700"
+                  }`}
+                >
+                  Não precisa
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCashNeedsChange(true)}
+                  className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
+                    cashNeedsChange
+                      ? "border-emerald-600 bg-white text-emerald-800"
+                      : "border-emerald-200 bg-emerald-100 text-emerald-700"
+                  }`}
+                >
+                  Precisa
+                </button>
+              </div>
+              {cashNeedsChange && (
+                <label className="mt-3 block text-sm font-semibold text-emerald-950">
+                  Troco para
+                  <input
+                    value={cashChangeFor}
+                    onChange={(event) => setCashChangeFor(formatCents(parseCurrencyInputCents(event.target.value)))}
+                    inputMode="decimal"
+                    className="mt-1 h-11 w-full rounded-lg border border-emerald-200 bg-white px-3 text-right text-sm font-semibold text-slate-700 outline-none focus:border-emerald-500"
+                    placeholder="0,00"
+                  />
+                  {cashChangeInvalid && (
+                    <span className="mt-1 block text-xs text-red-600">
+                      O valor deve ser maior ou igual ao total do pedido.
+                    </span>
+                  )}
+                </label>
+              )}
+            </section>
+          )}
+
           <textarea
             value={observacao}
             onChange={(event) => setObservacao(event.target.value)}
@@ -221,7 +293,7 @@ export function PendingPaymentMethodModal({
           <button onClick={onClose} className="rounded-lg border px-4 py-2 text-sm font-semibold text-slate-700">Cancelar</button>
           <button
             onClick={submit}
-            disabled={busy || !isComplete || hasInvalidLine}
+            disabled={busy || !isComplete || hasInvalidLine || cashChangeInvalid}
             className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
             style={{ backgroundColor: primaryColor }}
           >
