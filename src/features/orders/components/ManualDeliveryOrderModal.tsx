@@ -206,7 +206,7 @@ const inferQuickContactFromQuery = (query: string) => {
 };
 
 export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fiadoEnabled = false, onClose, onCreated }: {
-  lojaId: string; primaryColor?: string; fiadoEnabled?: boolean; onClose: () => void; onCreated: () => void;
+  lojaId: string; primaryColor?: string; fiadoEnabled?: boolean; onClose: () => void; onCreated: (result: any) => void | Promise<void>;
 }) {
   const [step, setStep] = useState(1);
   const [busy, setBusy] = useState(false);
@@ -677,7 +677,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
         city: address.cidade, state: address.estado, zipCode: address.cep,
         complement: address.complemento, tenantId: lojaId,
       }));
-      await api.post("/pedidos/admin-delivery", {
+      const result = unwrap(await api.post("/pedidos/admin-delivery", {
         tipo_pedido: pickupAtStore ? "retirada" : "entrega",
         contato: { nome: contact.nome, telefone: contact.telefone },
         itens: lines.map(({ nome, detalhe, preco, ...line }) => line),
@@ -694,8 +694,9 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
           sem_troco: payment === "dinheiro" ? semTroco : undefined,
           troco_para: payment === "dinheiro" && !semTroco ? Number(trocoPara.replace(",", ".")) : undefined,
         },
-      });
-      onCreated(); onClose();
+      }));
+      await onCreated(result);
+      onClose();
     } catch (caught) { setError(apiError(caught)); } finally { setBusy(false); }
   };
 
@@ -1073,7 +1074,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
           {nextStep ? (
             <button disabled={contactStepBlocked || collaboratorStepBlocked || (step === STEP_PRODUCTS && !lines.length) || (step === STEP_ADDRESS && !pickupAtStore && (!address.rua || !address.numero || !address.area_entrega_id || !address.bairro || !address.cidade || !address.estado))} onClick={() => { setError(""); setStep(nextStep); }} className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-white disabled:opacity-40" style={buttonStyle}>Continuar <ArrowRight className="h-4 w-4" /></button>
           ) : (
-            <button disabled={busy || (payment === "dinheiro" && !semTroco && !trocoPara)} onClick={submit} className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-white disabled:opacity-50" style={buttonStyle}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Criar pedido</button>
+            <button disabled={busy || (payment === "dinheiro" && !semTroco && !trocoPara)} onClick={submit} className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-white disabled:opacity-50" style={buttonStyle}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Criar pedido e imprimir</button>
           )}
         </footer>
       </div>

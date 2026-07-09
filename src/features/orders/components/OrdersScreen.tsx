@@ -1105,6 +1105,28 @@ export function OrdersScreen() {
     fetchOrders(page + 1);
   };
 
+  const handleManualOrderCreated = async (result: any) => {
+    const createdOrder = result?.order || result;
+    if (createdOrder?.id) {
+      const printableOrder = {
+        ...createdOrder,
+        cliente: result?.contato || createdOrder?.cliente,
+        endereco_cliente: result?.endereco || createdOrder?.endereco_cliente,
+        pagamento: result?.pagamento || createdOrder?.pagamento,
+        pagamentos: result?.pagamento ? [result.pagamento] : createdOrder?.pagamentos,
+      };
+      setViewMode("lista");
+      setTypeFilter(getOrderType(printableOrder) === "retirada" ? "Retirada" : "Entrega");
+      setOrders((current) => [
+        printableOrder,
+        ...current.filter((order) => order.id !== printableOrder.id),
+      ]);
+      setSelected(printableOrder);
+      setPrintOrder(printableOrder);
+    }
+    await fetchOrders(1, true, { silent: true });
+  };
+
   const loadOrderItems = async (orderId: string) => {
     try {
       const response = await api.get(`/pedidos/${orderId}/itens`);
@@ -3056,7 +3078,13 @@ export function OrdersScreen() {
   return (
     <div className="flex h-full">
       {manualOrderOpen && canCreateManualOrder && user?.loja_id && (
-        <ManualDeliveryOrderModal lojaId={user.loja_id} primaryColor={primaryColor} fiadoEnabled={fiadoEnabled} onClose={() => setManualOrderOpen(false)} onCreated={() => fetchOrders(1, true)} />
+        <ManualDeliveryOrderModal
+          lojaId={user.loja_id}
+          primaryColor={primaryColor}
+          fiadoEnabled={fiadoEnabled}
+          onClose={() => setManualOrderOpen(false)}
+          onCreated={handleManualOrderCreated}
+        />
       )}
       {adminAddItemsOrder && (
         <AddOrderItemsModal
