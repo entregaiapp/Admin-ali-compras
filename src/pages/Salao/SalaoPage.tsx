@@ -192,6 +192,13 @@ const getMesaPendingAction = (mesa: any, comanda?: any) => {
       cardClass: "border-amber-300 bg-amber-100 ring-2 ring-amber-200",
     };
   }
+  if (mesa?.status === "aguardando_garcom" || mesa?.destaque === "aguardando_garcom") {
+    return {
+      label: "GarÃ§om solicitado",
+      className: "border-violet-200 bg-white/70 text-violet-900",
+      cardClass: "border-violet-300 bg-violet-100 ring-2 ring-violet-200",
+    };
+  }
   if (
     activeComanda?.status === "aguardando_conta" ||
     mesa?.destaque === "aguardando_conta"
@@ -223,6 +230,19 @@ const getMesaPendingAction = (mesa: any, comanda?: any) => {
     };
   }
   return null;
+};
+
+const isMesaCustomerAttentionPending = (mesa: any) => {
+  const activeComanda = mesa?.comanda_aberta;
+  return (
+    Boolean(mesa?.solicitacao_abertura || mesa?.destaque === "abertura_pendente") ||
+    mesa?.status === "aguardando_garcom" ||
+    mesa?.destaque === "aguardando_garcom" ||
+    activeComanda?.status === "aguardando_conta" ||
+    mesa?.destaque === "aguardando_conta" ||
+    Number(activeComanda?.novos_itens_cliente || 0) > 0 ||
+    mesa?.destaque === "novo_pedido"
+  );
 };
 
 const resolveClientBaseUrl = () => {
@@ -466,17 +486,14 @@ export function SalaoPage() {
   const pendingPShortcutTimeoutRef = useRef<number | null>(null);
   const { enabled: salaoSoundEnabled, setEnabled: setSalaoSoundEnabled } =
     useAlertSoundPreference(user?.loja_id, "salao");
-  const hasPendingCustomerOrders = useMemo(
-    () =>
-      mesas.some(
-        (mesa) => Number(mesa?.comanda_aberta?.novos_itens_cliente || 0) > 0,
-      ),
+  const hasPendingCustomerAttention = useMemo(
+    () => mesas.some(isMesaCustomerAttentionPending),
     [mesas],
   );
   const salaoSound = usePersistentAttentionSound(
     `salao:${user?.loja_id || "sem-loja"}`,
     salaoSoundEnabled,
-    hasPendingCustomerOrders,
+    hasPendingCustomerAttention,
   );
   const availablePaymentMethods = useMemo(
     () => fiadoEnabled ? [...SALAO_PAYMENT_METHODS, SALAO_FIADO_PAYMENT_METHOD] : SALAO_PAYMENT_METHODS,
@@ -2155,14 +2172,14 @@ export function SalaoPage() {
                 if (nextEnabled) salaoSound.arm();
               }}
               className={`relative inline-flex h-9 w-9 flex-none items-center justify-center rounded-full border shadow-sm transition-all ${
-                hasPendingCustomerOrders && salaoSoundEnabled
+                hasPendingCustomerAttention && salaoSoundEnabled
                   ? "animate-pulse border-red-300 bg-red-600 text-white"
                   : salaoSoundEnabled
                     ? "border-transparent text-white"
                     : "border-gray-200 bg-white text-gray-400"
               }`}
               style={
-                salaoSoundEnabled && !hasPendingCustomerOrders
+                salaoSoundEnabled && !hasPendingCustomerAttention
                   ? { backgroundColor: PRIMARY }
                   : undefined
               }
@@ -2175,7 +2192,7 @@ export function SalaoPage() {
               ) : (
                 <BellOff className="h-4 w-4" />
               )}
-              {hasPendingCustomerOrders && (
+              {hasPendingCustomerAttention && (
                 <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-white bg-amber-400" />
               )}
             </button>
