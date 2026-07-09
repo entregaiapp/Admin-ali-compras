@@ -2,6 +2,8 @@ import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Armchair,
+  Bell,
+  BellOff,
   CircleAlert,
   ChefHat,
   ClipboardList,
@@ -51,6 +53,10 @@ import {
   readKitchenPrintedKeys,
   type KitchenPrintSelectionItem,
 } from "@/features/orders/utils/kitchenPrintTracking";
+import {
+  useAlertSoundPreference,
+  usePersistentAttentionSound,
+} from "@/shared/hooks/usePersistentAttentionSound";
 
 const PRIMARY = "#122a4c";
 const TABLE_CARD_SCALE_STORAGE_KEY = "admin_salao_table_card_scale";
@@ -207,7 +213,7 @@ const getMesaPendingAction = (mesa: any, comanda?: any) => {
     };
   }
   if (
-    Number(activeComanda?.novos_itens || 0) > 0 ||
+    Number(activeComanda?.novos_itens_cliente || 0) > 0 ||
     mesa?.destaque === "novo_pedido"
   ) {
     return {
@@ -453,14 +459,25 @@ export function SalaoPage() {
   const selectedComandaIdRef = useRef("");
   const hasLoadedRef = useRef(false);
   const productsLoadedRef = useRef(false);
-  const soundEnabledRef = useRef(false);
-  const audioContextRef = useRef<AudioContext | null>(null);
   const realtimeRefreshTimeoutRef = useRef<number | null>(null);
-  const lastRealtimeAlertAtRef = useRef(0);
   const comandaDetailRef = useRef<HTMLDivElement | null>(null);
   const salaoPageRef = useRef<HTMLDivElement | null>(null);
   const kdsCardRefs = useRef(new Map<string, HTMLDivElement>());
   const pendingPShortcutTimeoutRef = useRef<number | null>(null);
+  const { enabled: salaoSoundEnabled, setEnabled: setSalaoSoundEnabled } =
+    useAlertSoundPreference(user?.loja_id, "salao");
+  const hasPendingCustomerOrders = useMemo(
+    () =>
+      mesas.some(
+        (mesa) => Number(mesa?.comanda_aberta?.novos_itens_cliente || 0) > 0,
+      ),
+    [mesas],
+  );
+  const salaoSound = usePersistentAttentionSound(
+    `salao:${user?.loja_id || "sem-loja"}`,
+    salaoSoundEnabled,
+    hasPendingCustomerOrders,
+  );
   const availablePaymentMethods = useMemo(
     () => fiadoEnabled ? [...SALAO_PAYMENT_METHODS, SALAO_FIADO_PAYMENT_METHOD] : SALAO_PAYMENT_METHODS,
     [fiadoEnabled],
@@ -556,21 +573,6 @@ export function SalaoPage() {
     },
     [],
   );
-
-  const playRealtimeAlert = useCallback(() => {
-    if (!soundEnabledRef.current) return;
-    const audio = audioContextRef.current;
-    if (!audio) return;
-    if (audio.state === "suspended") void audio.resume();
-    const oscillator = audio.createOscillator();
-    const gain = audio.createGain();
-    oscillator.frequency.value = 880;
-    gain.gain.setValueAtTime(0.22, audio.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.35);
-    oscillator.connect(gain).connect(audio.destination);
-    oscillator.start();
-    oscillator.stop(audio.currentTime + 0.35);
-  }, []);
 
   const load = useCallback(
     async (
@@ -702,28 +704,6 @@ export function SalaoPage() {
   }, [productSearch, user?.loja_id]);
 
   useEffect(() => {
-    const enableSound = () => {
-      soundEnabledRef.current = true;
-      if (!audioContextRef.current) {
-        const AudioContextClass =
-          window.AudioContext || (window as any).webkitAudioContext;
-        if (AudioContextClass)
-          audioContextRef.current = new AudioContextClass();
-      }
-      if (audioContextRef.current?.state === "suspended")
-        void audioContextRef.current.resume();
-    };
-    window.addEventListener("pointerdown", enableSound, { once: true });
-    window.addEventListener("keydown", enableSound, { once: true });
-    return () => {
-      window.removeEventListener("pointerdown", enableSound);
-      window.removeEventListener("keydown", enableSound);
-      if (audioContextRef.current) void audioContextRef.current.close();
-      audioContextRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
     const lojaId = user?.loja_id;
     const accessToken = localStorage.getItem("token") || "";
     const realtime = lojaId ? createSalaoAdminRealtime(accessToken) : null;
@@ -741,11 +721,6 @@ export function SalaoPage() {
               ),
             6000,
           );
-        }
-        const now = Date.now();
-        if (now - lastRealtimeAlertAtRef.current >= 1200) {
-          lastRealtimeAlertAtRef.current = now;
-          playRealtimeAlert();
         }
         if (realtimeRefreshTimeoutRef.current)
           window.clearTimeout(realtimeRefreshTimeoutRef.current);
@@ -771,7 +746,7 @@ export function SalaoPage() {
         window.clearTimeout(realtimeRefreshTimeoutRef.current);
       void realtime.removeChannel(channel);
     };
-  }, [load, playRealtimeAlert, user?.loja_id]);
+  }, [load, user?.loja_id]);
 
   const createMesa = async () => {
     if (!newTableNumber.trim()) return;
@@ -875,8 +850,54 @@ export function SalaoPage() {
       }
     }
 
+    const newCustomerItems = Number(mesa.comanda_aberta?.novos_itens_cliente || 0);
+    if (newCustomerItems > 0) {
+      setActionBusy(`attention-${mesa.id}`);
+      try {
+        const result = await salaoService.acknowledgeNewCustomerOrdersForMesa(
+          mesa.id,
+        );
+        const attendedCount = Number(result?.itens_atendidos || 0);
+        setMesas((currentMesas) =>
+          currentMesas.map((currentMesa) => {
+            if (currentMesa.id !== mesa.id) return currentMesa;
+            const currentComanda = currentMesa.comanda_aberta || {};
+            const remainingCustomerItems = Math.max(
+              0,
+              Number(currentComanda.novos_itens_cliente || 0) - attendedCount,
+            );
+            const remainingNewItems = Math.max(
+              0,
+              Number(currentComanda.novos_itens || 0) - attendedCount,
+            );
+            return {
+              ...currentMesa,
+              destaque:
+                currentMesa.destaque === "novo_pedido" && remainingCustomerItems === 0
+                  ? null
+                  : currentMesa.destaque,
+              comanda_aberta: {
+                ...currentComanda,
+                novos_itens: remainingNewItems,
+                novos_itens_cliente: remainingCustomerItems,
+              },
+            };
+          }),
+        );
+      } catch (error: any) {
+        showSystemNotice(
+          error?.response?.data?.message ||
+            error?.message ||
+            "NÃ£o foi possÃ­vel confirmar a atenÃ§Ã£o aos novos pedidos da mesa.",
+        );
+      } finally {
+        setActionBusy("");
+      }
+    }
+
     setTab("comandas");
     await selectComanda(mesa.comanda_aberta);
+    void load({ silent: true });
   };
 
   const downloadQrCode = async (mesa: any, generateNew = false) => {
@@ -995,7 +1016,6 @@ export function SalaoPage() {
       setSelectedProductId("");
       setItemQuantity("1");
       setItemNotes("");
-      playRealtimeAlert();
       await load();
     } catch (error: any) {
       showSystemNotice(
@@ -1069,7 +1089,6 @@ export function SalaoPage() {
       setSelectedComanda(updated);
       setConfiguringProduct(null);
       setComandaModule("pedidos");
-      playRealtimeAlert();
       await load();
     } catch (error: any) {
       showSystemNotice(
@@ -2128,6 +2147,38 @@ export function SalaoPage() {
             );
           })}
           <div className="ml-auto flex flex-none items-center gap-2 py-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                const nextEnabled = !salaoSoundEnabled;
+                setSalaoSoundEnabled(nextEnabled);
+                if (nextEnabled) salaoSound.arm();
+              }}
+              className={`relative inline-flex h-9 w-9 flex-none items-center justify-center rounded-full border shadow-sm transition-all ${
+                hasPendingCustomerOrders && salaoSoundEnabled
+                  ? "animate-pulse border-red-300 bg-red-600 text-white"
+                  : salaoSoundEnabled
+                    ? "border-transparent text-white"
+                    : "border-gray-200 bg-white text-gray-400"
+              }`}
+              style={
+                salaoSoundEnabled && !hasPendingCustomerOrders
+                  ? { backgroundColor: PRIMARY }
+                  : undefined
+              }
+              title={salaoSoundEnabled ? "Som ativado" : "Som desativado"}
+              aria-label={salaoSoundEnabled ? "Som ativado" : "Som desativado"}
+              aria-pressed={salaoSoundEnabled}
+            >
+              {salaoSoundEnabled ? (
+                <Bell className="h-4 w-4" />
+              ) : (
+                <BellOff className="h-4 w-4" />
+              )}
+              {hasPendingCustomerOrders && (
+                <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-white bg-amber-400" />
+              )}
+            </button>
             <button
               type="button"
               onClick={() => void load({ manual: true, includeProducts: true })}

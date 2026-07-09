@@ -1,8 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import type { MouseEvent } from "react";
 import { useSearchParams } from "react-router";
 import {
   Search,
+  Bell,
+  BellOff,
   Eye,
   X,
   Phone,
@@ -95,6 +97,14 @@ import {
   type MfaApproval,
 } from "@/shared/components/MfaApprovalModal";
 import { authService } from "@/features/auth/services/authService";
+import {
+  createOrdersAdminRealtime,
+  ordersTenantTopic,
+} from "@/features/orders/services/ordersRealtime";
+import {
+  useAlertSoundPreference,
+  usePersistentAttentionSound,
+} from "@/shared/hooks/usePersistentAttentionSound";
 
 const getWhatsappPhone = (phone: any) => {
   const digits = String(phone || "").replace(/\D/g, "");
@@ -110,6 +120,7 @@ const buildWhatsappUrl = (phone: any, message: string) => {
 
 const getListGroupAccentColor = (groupKey: string) => {
   const colors: Record<string, string> = {
+    falta_imprimir: "#dc2626",
     andamento: "#2563eb",
     cancelamentos: "#dc2626",
     saiu_para_entrega: statusColor.saiu_para_entrega?.text || "#ea580c",
@@ -463,6 +474,19 @@ const canSelectOrderForDeliveryAssignment = (
     getBackendStatus(order?.status || ""),
   );
 
+const isAppOrderAwaitingPrint = (order: any) => {
+  const type = getOrderType(order);
+  const status = getBackendStatus(order?.status || "");
+  return (
+    (type === "entrega" || type === "retirada") &&
+    !order?.arquivado &&
+    String(order?.origem_checkout || "").toLowerCase() !== "admin_dashboard" &&
+    !order?.comanda_impressa_em &&
+    ACTIVE_WORK_STATUS_KEYS.includes(status) &&
+    !hasPendingCancellationRequest(order)
+  );
+};
+
 export function OrdersScreen() {
   const [searchParams] = useSearchParams();
   const [orders, setOrders] = useState<any[]>([]);
@@ -583,6 +607,33 @@ export function OrdersScreen() {
       return null;
     }
   })();
+  const realtimeRefreshTimeoutRef = useRef<number | null>(null);
+  const { enabled: deliverySoundEnabled, setEnabled: setDeliverySoundEnabled } =
+    useAlertSoundPreference(user?.loja_id, "entrega");
+  const { enabled: pickupSoundEnabled, setEnabled: setPickupSoundEnabled } =
+    useAlertSoundPreference(user?.loja_id, "retirada");
+  const pendingPrintOrders = useMemo(
+    () => orders.filter(isAppOrderAwaitingPrint),
+    [orders],
+  );
+  const hasPendingDeliveryPrint = useMemo(
+    () => pendingPrintOrders.some((order) => getOrderType(order) === "entrega"),
+    [pendingPrintOrders],
+  );
+  const hasPendingPickupPrint = useMemo(
+    () => pendingPrintOrders.some((order) => getOrderType(order) === "retirada"),
+    [pendingPrintOrders],
+  );
+  const deliverySound = usePersistentAttentionSound(
+    `pedidos:${user?.loja_id || "sem-loja"}:entrega`,
+    deliverySoundEnabled,
+    hasPendingDeliveryPrint,
+  );
+  const pickupSound = usePersistentAttentionSound(
+    `pedidos:${user?.loja_id || "sem-loja"}:retirada`,
+    pickupSoundEnabled,
+    hasPendingPickupPrint,
+  );
 
   useEffect(() => {
     setOrders([]);
@@ -856,6 +907,9 @@ export function OrdersScreen() {
           [activeType]: rawData?.checked_at || new Date().toISOString(),
         }));
         setNewOrdersCount((current) => ({ ...current, [activeType]: 0 }));
+        if (displayData.some(isAppOrderAwaitingPrint)) {
+          setActiveListGroupKey("falta_imprimir");
+        }
       }
     } catch (error) {
       console.error("Error fetching orders:", error);
@@ -910,6 +964,66 @@ export function OrdersScreen() {
     salaoEnabled,
     newOrderCursorsReady,
   ]);
+
+  useEffect(() => {
+    if (!user?.loja_id) return;
+
+    const reconcile = () => {
+      if (document.visibilityState === "hidden") return;
+      void fetchOrders(1, true, { silent: true });
+    };
+
+    window.addEventListener("focus", reconcile);
+    window.addEventListener("online", reconcile);
+    document.addEventListener("visibilitychange", reconcile);
+
+    return () => {
+      window.removeEventListener("focus", reconcile);
+      window.removeEventListener("online", reconcile);
+      document.removeEventListener("visibilitychange", reconcile);
+    };
+  }, [user?.loja_id, statusFilter, typeFilter, bairroFilter, search, viewMode]);
+
+  useEffect(() => {
+    const lojaId = user?.loja_id;
+    const accessToken = localStorage.getItem("token") || "";
+    const realtime = lojaId ? createOrdersAdminRealtime(accessToken) : null;
+    if (!realtime || !lojaId) return;
+
+    const scheduleReconcile = () => {
+      if (realtimeRefreshTimeoutRef.current)
+        window.clearTimeout(realtimeRefreshTimeoutRef.current);
+      realtimeRefreshTimeoutRef.current = window.setTimeout(() => {
+        realtimeRefreshTimeoutRef.current = null;
+        void fetchOrders(1, true, { silent: true });
+      }, 150);
+    };
+
+    const channel = realtime
+      .channel(ordersTenantTopic(lojaId), { config: { private: true } })
+      .on("broadcast", { event: "pedidos:update" }, ({ payload }: any) => {
+        const tipoPedido = String(payload?.tipoPedido || "").toLowerCase();
+        if (
+          payload?.event === "PEDIDO_CRIADO" &&
+          payload?.requiresPrintAlert === true &&
+          (tipoPedido === "entrega" || tipoPedido === "retirada")
+        ) {
+          setViewMode("lista");
+          setTypeFilter(tipoPedido === "retirada" ? "Retirada" : "Entrega");
+          setActiveListGroupKey("falta_imprimir");
+        }
+        scheduleReconcile();
+      })
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") scheduleReconcile();
+      });
+
+    return () => {
+      if (realtimeRefreshTimeoutRef.current)
+        window.clearTimeout(realtimeRefreshTimeoutRef.current);
+      void realtime.removeChannel(channel);
+    };
+  }, [user?.loja_id, statusFilter, typeFilter, bairroFilter, search, viewMode]);
 
   const refreshCurrentOrderTab = async () => {
     setOrders([]);
@@ -1339,6 +1453,21 @@ export function OrdersScreen() {
     return printWindow;
   };
 
+  const markOrderComandaPrinted = async (order: any, mode: ComandaPrintMode) => {
+    if (!order?.id || getOrderType(order) === "salao") return order;
+    const response = await api.post(`/pedidos/${order.id}/impressao`, { modo: mode });
+    const updatedOrder = response.data?.data || response.data || {};
+    setOrders((prev) =>
+      prev.map((item) =>
+        item.id === order.id ? { ...item, ...updatedOrder } : item,
+      ),
+    );
+    if (selected?.id === order.id) {
+      setSelected((prev: any) => (prev ? { ...prev, ...updatedOrder } : prev));
+    }
+    return { ...order, ...updatedOrder };
+  };
+
   const handlePrintModeSelected = async (mode: ComandaPrintMode) => {
     if (!printOrder || printBusy) return;
 
@@ -1404,6 +1533,7 @@ export function OrdersScreen() {
           { mode },
         );
       }
+      await markOrderComandaPrinted(printableOrder, mode);
       setPrintOrder(null);
       void fetchOrders(1, true, { silent: true });
     } catch {
@@ -1435,8 +1565,14 @@ export function OrdersScreen() {
       { mode: "cozinha" },
     );
     markKitchenItemsPrinted(kitchenPrintSelection.storageKey, itemKeys);
+    void markOrderComandaPrinted(kitchenPrintSelection.order, "cozinha")
+      .then(() => fetchOrders(1, true, { silent: true }))
+      .catch((error) => {
+        showSystemNotice(
+          getApiErrorMessage(error, "NÃ£o foi possÃ­vel registrar a impressÃ£o da comanda."),
+        );
+      });
     setKitchenPrintSelection(null);
-    void fetchOrders(1, true, { silent: true });
   };
 
   const openItemsChecklist = async (order: any) => {
@@ -2681,12 +2817,20 @@ export function OrdersScreen() {
       ? archivedGroups
       : [
           {
+            key: "falta_imprimir",
+            title: "Falta imprimir",
+            description: "Pedidos do app aguardando impressÃ£o da comanda",
+            orders: filtered.filter(isAppOrderAwaitingPrint),
+            defaultExpanded: true,
+          },
+          {
             key: "andamento",
             title: "Em andamento",
             description: "Recebidos, confirmados, em separação e prontos",
             orders: filtered.filter(
               (order) =>
                 !hasPendingCancellationRequest(order) &&
+                !isAppOrderAwaitingPrint(order) &&
                 activeWorkStatuses.has(getOrderStatusKey(order)),
             ),
             defaultExpanded: true,
@@ -3062,6 +3206,62 @@ export function OrdersScreen() {
                   <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-500 px-1 text-[10px] font-bold text-white">
                     {totalNewOrdersCount > 99 ? "99+" : totalNewOrdersCount}
                   </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const nextEnabled = !deliverySoundEnabled;
+                  setDeliverySoundEnabled(nextEnabled);
+                  if (nextEnabled) deliverySound.arm();
+                }}
+                className={`relative my-1.5 inline-flex h-9 w-9 flex-none items-center justify-center rounded-full border shadow-sm transition-all ${
+                  hasPendingDeliveryPrint && deliverySoundEnabled
+                    ? "animate-pulse border-red-300 bg-red-600 text-white"
+                    : deliverySoundEnabled
+                      ? "border-transparent text-white"
+                      : "border-gray-200 bg-white text-gray-400"
+                }`}
+                style={
+                  deliverySoundEnabled && !hasPendingDeliveryPrint
+                    ? { backgroundColor: primaryColor }
+                    : undefined
+                }
+                title={deliverySoundEnabled ? "Som ativado" : "Som desativado"}
+                aria-label={deliverySoundEnabled ? "Som ativado Delivery" : "Som desativado Delivery"}
+                aria-pressed={deliverySoundEnabled}
+              >
+                {deliverySoundEnabled ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
+                {hasPendingDeliveryPrint && (
+                  <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-white bg-amber-400" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const nextEnabled = !pickupSoundEnabled;
+                  setPickupSoundEnabled(nextEnabled);
+                  if (nextEnabled) pickupSound.arm();
+                }}
+                className={`relative my-1.5 inline-flex h-9 w-9 flex-none items-center justify-center rounded-full border shadow-sm transition-all ${
+                  hasPendingPickupPrint && pickupSoundEnabled
+                    ? "animate-pulse border-red-300 bg-red-600 text-white"
+                    : pickupSoundEnabled
+                      ? "border-transparent text-white"
+                      : "border-gray-200 bg-white text-gray-400"
+                }`}
+                style={
+                  pickupSoundEnabled && !hasPendingPickupPrint
+                    ? { backgroundColor: primaryColor }
+                    : undefined
+                }
+                title={pickupSoundEnabled ? "Som ativado" : "Som desativado"}
+                aria-label={pickupSoundEnabled ? "Som ativado Retirada" : "Som desativado Retirada"}
+                aria-pressed={pickupSoundEnabled}
+              >
+                {pickupSoundEnabled ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
+                {hasPendingPickupPrint && (
+                  <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-white bg-amber-400" />
                 )}
               </button>
             </div>

@@ -17,6 +17,9 @@ export const salaoService = {
   acknowledgeWaiterCallForMesa: async (id: string) =>
     unwrap(await api.post(`/salao/mesas/${id}/atender-garcom`)),
 
+  acknowledgeNewCustomerOrdersForMesa: async (id: string) =>
+    unwrap(await api.post(`/salao/mesas/${id}/atender-novos-pedidos`)),
+
   rotateMesaQr: async (id: string) =>
     unwrap(await api.post(`/salao/mesas/${id}/qrcode/rotate`)),
 
