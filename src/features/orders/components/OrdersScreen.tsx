@@ -3227,8 +3227,8 @@ export function OrdersScreen() {
                     ? { backgroundColor: primaryColor }
                     : undefined
                 }
-                title={deliverySoundEnabled ? "Som ativado" : "Som desativado"}
-                aria-label={deliverySoundEnabled ? "Som ativado Delivery" : "Som desativado Delivery"}
+                title={deliverySoundEnabled ? "Som do Delivery ativado" : "Som do Delivery desativado"}
+                aria-label={deliverySoundEnabled ? "Som do Delivery ativado" : "Som do Delivery desativado"}
                 aria-pressed={deliverySoundEnabled}
               >
                 {deliverySoundEnabled ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
@@ -3255,8 +3255,8 @@ export function OrdersScreen() {
                     ? { backgroundColor: primaryColor }
                     : undefined
                 }
-                title={pickupSoundEnabled ? "Som ativado" : "Som desativado"}
-                aria-label={pickupSoundEnabled ? "Som ativado Retirada" : "Som desativado Retirada"}
+                title={pickupSoundEnabled ? "Som da Retirada ativado" : "Som da Retirada desativado"}
+                aria-label={pickupSoundEnabled ? "Som da Retirada ativado" : "Som da Retirada desativado"}
                 aria-pressed={pickupSoundEnabled}
               >
                 {pickupSoundEnabled ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
