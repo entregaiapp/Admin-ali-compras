@@ -797,7 +797,7 @@ export function SalaoPage() {
         quantidade_pessoas: 1,
       });
       setSelectedComanda(result);
-      setComandaModule("mesa");
+      setComandaModule("pedidos");
       if (result?.pin) {
         setLatestPin(result.pin);
         showSystemNotice(`Comanda aberta. PIN da mesa: ${result.pin}`);
@@ -823,7 +823,7 @@ export function SalaoPage() {
     try {
       const detail = await salaoService.getComanda(comanda.id);
       setSelectedComanda(detail);
-      setComandaModule("mesa");
+      setComandaModule("pedidos");
       requestAnimationFrame(() =>
         comandaDetailRef.current?.scrollIntoView({
           behavior: "smooth",
