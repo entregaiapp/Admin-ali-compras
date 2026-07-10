@@ -3,7 +3,7 @@ import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
-import { TrendingUp, ShoppingCart, Users, XCircle, DollarSign, BarChart3, Calendar, FileText, Download, Eye, ArrowLeft, Printer } from 'lucide-react';
+import { TrendingUp, ShoppingCart, Users, XCircle, DollarSign, BarChart3, Calendar, FileText, Download, Eye, ArrowLeft, Printer, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '@/shared/lib/api';
 import { dateInputInBrasilia } from '@/shared/lib/dateTime';
 import { useNavigate } from 'react-router';
@@ -15,6 +15,34 @@ import {
 const PRIMARY = '#122a4c';
 const COLORS = [PRIMARY, '#2563eb', '#7c3aed', '#16a34a', '#d97706', '#ea580c'];
 const DAY_MS = 24 * 60 * 60 * 1000;
+const SOLD_PRODUCTS_PER_PAGE = 20;
+
+type SoldProduct = {
+  produto_key: string;
+  produto_loja_id?: string | null;
+  produto_id?: string | null;
+  nome: string;
+  unidade_medida: string;
+  tipo_venda: string;
+  quantidade_vendida: number;
+  faturamento_total: number;
+  preco_medio: number;
+  pedidos: number;
+};
+
+type SoldProductsPayload = {
+  data: SoldProduct[];
+  pagination: {
+    page: number;
+    perPage: number;
+    total: number;
+    totalPages: number;
+  };
+  resumo: {
+    quantidade_total: number;
+    faturamento_total: number;
+  };
+};
 
 const parseLocalDate = (value: string) => {
   const [year, month, day] = value.split('-').map(Number);
@@ -322,6 +350,21 @@ export function ReportsScreen() {
   const [generatedReportsLoading, setGeneratedReportsLoading] = useState(false);
   const [selectedReportLoading, setSelectedReportLoading] = useState(false);
   const [generatedReportsError, setGeneratedReportsError] = useState('');
+  const [soldProducts, setSoldProducts] = useState<SoldProduct[]>([]);
+  const [soldProductsLoading, setSoldProductsLoading] = useState(false);
+  const [soldProductsError, setSoldProductsError] = useState('');
+  const [soldProductsSearch, setSoldProductsSearch] = useState('');
+  const [soldProductsPage, setSoldProductsPage] = useState(1);
+  const [soldProductsPagination, setSoldProductsPagination] = useState({
+    page: 1,
+    perPage: SOLD_PRODUCTS_PER_PAGE,
+    total: 0,
+    totalPages: 0,
+  });
+  const [soldProductsSummary, setSoldProductsSummary] = useState({
+    quantidade_total: 0,
+    faturamento_total: 0,
+  });
 
   const loadGeneratedReportDetail = async (reportId: string) => {
     setSelectedReportLoading(true);
@@ -359,6 +402,67 @@ export function ReportsScreen() {
 
     fetchMetrics();
   }, [navigate, startDate, endDate]);
+
+  useEffect(() => {
+    setSoldProductsPage(1);
+  }, [startDate, endDate, soldProductsSearch]);
+
+  useEffect(() => {
+    if (showGeneratedReports) return;
+
+    const fetchSoldProducts = async () => {
+      setSoldProductsLoading(true);
+      setSoldProductsError('');
+
+      try {
+        const response = await api.get('/metricas/produtos-vendidos', {
+          params: {
+            dataInicio: startDate,
+            dataFim: endDate,
+            busca: soldProductsSearch.trim() || undefined,
+            page: soldProductsPage,
+            perPage: SOLD_PRODUCTS_PER_PAGE,
+            ordenarPor: 'faturamento',
+          },
+        });
+        const payload = response.data.data as SoldProductsPayload;
+        setSoldProducts(payload.data || []);
+        setSoldProductsPagination(payload.pagination || {
+          page: soldProductsPage,
+          perPage: SOLD_PRODUCTS_PER_PAGE,
+          total: 0,
+          totalPages: 0,
+        });
+        setSoldProductsSummary(payload.resumo || {
+          quantidade_total: 0,
+          faturamento_total: 0,
+        });
+      } catch (error) {
+        console.error('Error fetching sold products report', error);
+        if ((error as any).response?.status === 401) {
+          navigate('/login');
+          return;
+        }
+        setSoldProducts([]);
+        setSoldProductsPagination({
+          page: soldProductsPage,
+          perPage: SOLD_PRODUCTS_PER_PAGE,
+          total: 0,
+          totalPages: 0,
+        });
+        setSoldProductsSummary({
+          quantidade_total: 0,
+          faturamento_total: 0,
+        });
+        setSoldProductsError('Não foi possível carregar os produtos vendidos.');
+      } finally {
+        setSoldProductsLoading(false);
+      }
+    };
+
+    const timer = window.setTimeout(fetchSoldProducts, 300);
+    return () => window.clearTimeout(timer);
+  }, [navigate, showGeneratedReports, startDate, endDate, soldProductsSearch, soldProductsPage]);
 
   useEffect(() => {
     if (!showGeneratedReports) return;
@@ -416,6 +520,12 @@ export function ReportsScreen() {
   const fiadoPorForma = Array.isArray(fiados?.recebimentos_por_forma_pagamento)
     ? fiados.recebimentos_por_forma_pagamento
     : [];
+  const soldProductsStart = soldProductsPagination.total > 0
+    ? (soldProductsPagination.page - 1) * soldProductsPagination.perPage + 1
+    : 0;
+  const soldProductsEnd = soldProductsPagination.total > 0
+    ? Math.min(soldProductsPagination.page * soldProductsPagination.perPage, soldProductsPagination.total)
+    : 0;
 
   const printOperationalReport = () => {
     const periodLabel = startDate === endDate
@@ -920,6 +1030,120 @@ export function ReportsScreen() {
             )) : (
               <div className="text-center text-sm text-gray-500 py-8">Nenhum produto vendido no período.</div>
             )}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h3 className="font-semibold text-gray-800">Produtos vendidos no período</h3>
+              <p className="text-xs text-gray-400 mt-0.5">Quantidade vendida e faturamento por produto no intervalo selecionado.</p>
+            </div>
+            <div className="relative w-full lg:w-80">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+              <input
+                value={soldProductsSearch}
+                onChange={(event) => setSoldProductsSearch(event.target.value)}
+                placeholder="Buscar produto..."
+                className="w-full rounded-lg border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm text-gray-700 outline-none focus:ring-2 focus:ring-gray-100"
+              />
+            </div>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Produtos encontrados</div>
+              <div className="mt-1 text-lg font-semibold text-gray-900">{soldProductsPagination.total}</div>
+            </div>
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Quantidade vendida</div>
+              <div className="mt-1 text-lg font-semibold text-gray-900">{soldProductsSummary.quantidade_total.toLocaleString('pt-BR')}</div>
+            </div>
+            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="text-xs text-gray-500">Faturamento filtrado</div>
+              <div className="mt-1 text-lg font-semibold text-gray-900">{formatCurrency(soldProductsSummary.faturamento_total)}</div>
+            </div>
+          </div>
+        </div>
+
+        {soldProductsError && (
+          <div className="mx-5 mt-4 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {soldProductsError}
+          </div>
+        )}
+
+        <div className="relative overflow-x-auto">
+          {soldProductsLoading && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60">
+              <div className="w-7 h-7 border-4 border-gray-200 border-t-primary rounded-full animate-spin" style={{ borderColor: `${PRIMARY}40`, borderTopColor: PRIMARY }} />
+            </div>
+          )}
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+              <tr>
+                <th className="px-5 py-3 text-left">Produto</th>
+                <th className="px-5 py-3 text-right">Quantidade vendida</th>
+                <th className="px-5 py-3 text-right">Pedidos</th>
+                <th className="px-5 py-3 text-right">Preço médio</th>
+                <th className="px-5 py-3 text-right">Faturamento</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 bg-white">
+              {soldProducts.length > 0 ? soldProducts.map((product) => (
+                <tr key={product.produto_key} className="hover:bg-gray-50">
+                  <td className="px-5 py-3">
+                    <div className="font-medium text-gray-800">{product.nome}</div>
+                    <div className="text-xs text-gray-400">
+                      {product.tipo_venda === 'peso' ? 'Venda por peso' : 'Venda por unidade'} · {product.unidade_medida || 'un'}
+                    </div>
+                  </td>
+                  <td className="px-5 py-3 text-right font-semibold text-gray-900">
+                    {product.quantidade_vendida.toLocaleString('pt-BR')}
+                  </td>
+                  <td className="px-5 py-3 text-right text-gray-600">{product.pedidos}</td>
+                  <td className="px-5 py-3 text-right text-gray-600">{formatCurrency(product.preco_medio)}</td>
+                  <td className="px-5 py-3 text-right font-semibold text-gray-900">{formatCurrency(product.faturamento_total)}</td>
+                </tr>
+              )) : (
+                <tr>
+                  <td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-500">
+                    {soldProductsLoading ? 'Carregando produtos vendidos...' : 'Nenhum produto vendido no período.'}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex flex-col gap-3 border-t border-gray-100 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-xs text-gray-500">
+            {soldProductsPagination.total > 0
+              ? `Exibindo ${soldProductsStart}-${soldProductsEnd} de ${soldProductsPagination.total} produto${soldProductsPagination.total === 1 ? '' : 's'}`
+              : 'Nenhum produto para exibir'}
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setSoldProductsPage((current) => Math.max(1, current - 1))}
+              disabled={soldProductsLoading || soldProductsPagination.page <= 1}
+              className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Anterior
+            </button>
+            <span className="min-w-20 text-center text-xs text-gray-500">
+              Página {soldProductsPagination.totalPages ? soldProductsPagination.page : 0} de {soldProductsPagination.totalPages || 0}
+            </span>
+            <button
+              type="button"
+              onClick={() => setSoldProductsPage((current) => Math.min(soldProductsPagination.totalPages || current, current + 1))}
+              disabled={soldProductsLoading || soldProductsPagination.page >= soldProductsPagination.totalPages}
+              className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Próxima
+              <ChevronRight className="h-4 w-4" />
+            </button>
           </div>
         </div>
       </div>
