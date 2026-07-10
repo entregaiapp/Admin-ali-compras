@@ -3,7 +3,7 @@ import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
-import { TrendingUp, ShoppingCart, Users, XCircle, DollarSign, BarChart3, Calendar, FileText, Download, Eye, ArrowLeft } from 'lucide-react';
+import { TrendingUp, ShoppingCart, Users, XCircle, DollarSign, BarChart3, Calendar, FileText, Download, Eye, ArrowLeft, Printer } from 'lucide-react';
 import api from '@/shared/lib/api';
 import { dateInputInBrasilia } from '@/shared/lib/dateTime';
 import { useNavigate } from 'react-router';
@@ -64,6 +64,53 @@ const formatDateTime = (value?: string | null) => {
 
 const csvCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
 
+const escapePrintHtml = (value: unknown) =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+const openPrintDocument = (title: string, body: string) => {
+  const printWindow = window.open('', '_blank', 'width=900,height=700');
+  if (!printWindow) {
+    window.alert('Não foi possível abrir a janela de impressão. Verifique se o navegador bloqueou pop-ups.');
+    return false;
+  }
+
+  printWindow.document.write(`<!doctype html>
+    <html lang="pt-BR">
+      <head>
+        <meta charset="UTF-8" />
+        <title>${escapePrintHtml(title)}</title>
+        <style>
+          *{box-sizing:border-box}
+          body{font-family:Arial,sans-serif;margin:0;background:#fff;color:#111827}
+          main{padding:24px;max-width:960px;margin:0 auto}
+          h1{font-size:22px;margin:0 0 4px}
+          h2{font-size:16px;margin:24px 0 10px}
+          .muted{color:#6b7280;font-size:12px}
+          .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:16px}
+          .card{border:1px solid #e5e7eb;border-radius:8px;padding:12px}
+          .label{font-size:11px;color:#6b7280}
+          .value{font-size:18px;font-weight:700;margin-top:4px}
+          table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+          th,td{border-bottom:1px solid #e5e7eb;padding:8px;text-align:left;vertical-align:top}
+          th{text-transform:uppercase;font-size:10px;color:#6b7280;background:#f9fafb}
+          td.num,th.num{text-align:right}
+          @media print{main{padding:12px}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.no-break{break-inside:avoid}}
+        </style>
+      </head>
+      <body>
+        <main>${body}</main>
+        <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};};</script>
+      </body>
+    </html>`);
+  printWindow.document.close();
+  return true;
+};
+
 const reportOriginLabel = (value?: string | null) => {
   const labels: Record<string, string> = {
     cliente: 'Cliente',
@@ -118,6 +165,83 @@ const downloadDeliveryPaymentReportCsv = (report: DeliveryPaymentBillingReport) 
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
+};
+
+const printDeliveryPaymentReport = (report: DeliveryPaymentBillingReport) => {
+  const title = `Relatório de pagamentos na entrega`;
+  const body = `
+    <h1>Relatório de pagamentos na entrega</h1>
+    <div class="muted">${escapePrintHtml(report.loja?.nome || 'Estabelecimento')}</div>
+    <div class="muted">Período: ${escapePrintHtml(formatDate(report.periodo.data_inicio))} até ${escapePrintHtml(formatDate(report.periodo.data_fim))}</div>
+    <div class="muted">Gerado em ${escapePrintHtml(formatDateTime(report.gerado_em))}${report.gerado_por?.nome ? ` por ${escapePrintHtml(report.gerado_por.nome)}` : ''}</div>
+
+    <section class="grid no-break">
+      <div class="card"><div class="label">Valor da cobrança</div><div class="value">${escapePrintHtml(formatCurrency(report.resumo.valor_final_cobranca))}</div></div>
+      <div class="card"><div class="label">Valor bruto total</div><div class="value">${escapePrintHtml(formatCurrency(report.resumo.valor_bruto_total))}</div></div>
+      <div class="card"><div class="label">Pedidos de clientes</div><div class="value">${escapePrintHtml(report.resumo.quantidade_pedidos_clientes || 0)}</div></div>
+      <div class="card"><div class="label">Pedidos manuais</div><div class="value">${escapePrintHtml(report.resumo.quantidade_pedidos_manuais || 0)}</div></div>
+      <div class="card"><div class="label">Pedidos fiado</div><div class="value">${escapePrintHtml(report.resumo.quantidade_pedidos_fiados || 0)}</div></div>
+      <div class="card"><div class="label">Pedidos salão</div><div class="value">${escapePrintHtml(report.resumo.quantidade_pedidos_salao || 0)}</div></div>
+    </section>
+
+    <h2>Resumo diário</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th class="num">Clientes</th>
+          <th class="num">Manuais</th>
+          <th class="num">Fiados</th>
+          <th class="num">Salão</th>
+          <th class="num">Valor bruto</th>
+          <th class="num">A receber</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${report.dias.map((day) => `
+          <tr>
+            <td>${escapePrintHtml(formatDate(day.data))}</td>
+            <td class="num">${escapePrintHtml(day.quantidade_pedidos_clientes || 0)}</td>
+            <td class="num">${escapePrintHtml(day.quantidade_pedidos_manuais || 0)}</td>
+            <td class="num">${escapePrintHtml(day.quantidade_pedidos_fiados || 0)}</td>
+            <td class="num">${escapePrintHtml(day.quantidade_pedidos_salao || 0)}</td>
+            <td class="num">${escapePrintHtml(formatCurrency(day.valor_bruto_total))}</td>
+            <td class="num">${escapePrintHtml(formatCurrency(day.valor_a_receber))}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+
+    <h2>Pedidos do relatório</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Pedido</th>
+          <th>Data</th>
+          <th>Origem</th>
+          <th>Categoria</th>
+          <th>Status</th>
+          <th class="num">Total</th>
+          <th class="num">Cobrança</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${report.pedidos.map((pedido) => `
+          <tr>
+            <td>${escapePrintHtml(pedido.numero_pedido || pedido.id)}</td>
+            <td>${escapePrintHtml(formatDate(pedido.data))}</td>
+            <td>${escapePrintHtml(reportOriginLabel(pedido.origem_relatorio))}</td>
+            <td>${escapePrintHtml(pedido.categoria_cobranca_label || pedido.categoria_cobranca || '-')}</td>
+            <td>${escapePrintHtml(pedido.status)}</td>
+            <td class="num">${escapePrintHtml(formatCurrency(pedido.total))}</td>
+            <td class="num">${escapePrintHtml(formatCurrency(pedido.valor_cobranca))}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+
+  return openPrintDocument(title, body);
 };
 
 const getSalesPointDate = (point: any) => {
@@ -293,6 +417,80 @@ export function ReportsScreen() {
     ? fiados.recebimentos_por_forma_pagamento
     : [];
 
+  const printOperationalReport = () => {
+    const periodLabel = startDate === endDate
+      ? formatDate(startDate)
+      : `${formatDate(startDate)} até ${formatDate(endDate)}`;
+    const body = `
+      <h1>Relatórios e análises</h1>
+      <div class="muted">Desempenho operacional</div>
+      <div class="muted">Período: ${escapePrintHtml(periodLabel)}</div>
+      <div class="muted">Impresso em ${escapePrintHtml(formatDateTime(new Date().toISOString()))}</div>
+
+      <section class="grid no-break">
+        <div class="card"><div class="label">Faturamento</div><div class="value">${escapePrintHtml(formatCurrency(faturamentoTotal))}</div></div>
+        <div class="card"><div class="label">Pedidos</div><div class="value">${escapePrintHtml(pedidosTotal)}</div></div>
+        <div class="card"><div class="label">Ticket médio</div><div class="value">${escapePrintHtml(formatCurrency(ticketMedio))}</div></div>
+        <div class="card"><div class="label">Novos clientes</div><div class="value">${escapePrintHtml(metrics?.novosClientes || 0)}</div></div>
+        <div class="card"><div class="label">Cancelamentos</div><div class="value">${escapePrintHtml(taxaCancelamento)}%</div></div>
+        <div class="card"><div class="label">Receita líquida estimada</div><div class="value">${escapePrintHtml(formatCurrency(faturamentoTotal * 0.95))}</div></div>
+      </section>
+
+      ${fiados ? `
+        <h2>Recebimentos fiado</h2>
+        <section class="grid no-break">
+          <div class="card"><div class="label">Recebido no período</div><div class="value">${escapePrintHtml(formatCurrency(fiadoResumo.recebido_periodo))}</div></div>
+          <div class="card"><div class="label">Saldo aberto total</div><div class="value">${escapePrintHtml(formatCurrency(fiadoResumo.saldo_aberto_total))}</div></div>
+          <div class="card"><div class="label">Fiado criado</div><div class="value">${escapePrintHtml(formatCurrency(fiadoResumo.valor_fiado_periodo))}</div></div>
+          <div class="card"><div class="label">Pessoas com saldo</div><div class="value">${escapePrintHtml(fiadoResumo.pessoas_com_saldo || 0)}</div></div>
+        </section>
+        ${fiadoPorForma.length > 0 ? `
+          <table>
+            <thead><tr><th>Forma de pagamento</th><th class="num">Quantidade</th><th class="num">Valor recebido</th></tr></thead>
+            <tbody>
+              ${fiadoPorForma.map((item: any) => `
+                <tr>
+                  <td>${escapePrintHtml(item.forma_pagamento)}</td>
+                  <td class="num">${escapePrintHtml(item.quantidade)}</td>
+                  <td class="num">${escapePrintHtml(formatCurrency(item.valor_recebido))}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        ` : ''}
+      ` : ''}
+
+      <h2>Faturamento por dia</h2>
+      <table>
+        <thead><tr><th>Período</th><th class="num">Faturamento</th></tr></thead>
+        <tbody>
+          ${salesData.map((item) => `
+            <tr>
+              <td>${escapePrintHtml(item.day)}</td>
+              <td class="num">${escapePrintHtml(formatCurrency(item.vendas))}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+
+      <h2>Produtos mais vendidos</h2>
+      <table>
+        <thead><tr><th>Produto</th><th class="num">Quantidade</th><th class="num">Receita</th></tr></thead>
+        <tbody>
+          ${topProducts.length > 0 ? topProducts.map((product: any) => `
+            <tr>
+              <td>${escapePrintHtml(product.name)}</td>
+              <td class="num">${escapePrintHtml(product.qty)}</td>
+              <td class="num">${escapePrintHtml(formatCurrency(product.revenue))}</td>
+            </tr>
+          `).join('') : '<tr><td colspan="3">Nenhum produto vendido no período.</td></tr>'}
+        </tbody>
+      </table>
+    `;
+
+    openPrintDocument('Relatórios e análises', body);
+  };
+
   return (
     <div className="p-5 space-y-5 overflow-y-auto flex-1 h-full">
       {/* Header */}
@@ -302,6 +500,16 @@ export function ReportsScreen() {
           <p className="text-gray-500 text-sm mt-0.5">Desempenho operacional</p>
         </div>
         <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+          {!showGeneratedReports && (
+            <button
+              type="button"
+              onClick={printOperationalReport}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+            >
+              <Printer className="h-4 w-4" />
+              Imprimir
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setShowGeneratedReports((value) => !value)}
@@ -413,6 +621,14 @@ export function ReportsScreen() {
                           {selectedGeneratedReport.gerado_por?.nome ? ` por ${selectedGeneratedReport.gerado_por.nome}` : ''}
                         </p>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => printDeliveryPaymentReport(selectedGeneratedReport)}
+                        className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                      >
+                        <Printer className="h-4 w-4" />
+                        Imprimir relatório
+                      </button>
                       <button
                         type="button"
                         onClick={() => downloadDeliveryPaymentReportCsv(selectedGeneratedReport)}

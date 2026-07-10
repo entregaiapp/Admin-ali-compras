@@ -8,6 +8,7 @@ import {
   CreditCard,
   Minus,
   Plus,
+  Printer,
   RefreshCw,
   Wallet,
   X,
@@ -72,6 +73,14 @@ const parseMoney = (value: string) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const escapePrintHtml = (value: unknown) =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
 const paymentLabel: Record<string, string> = {
   dinheiro: 'dinheiro',
   pix: 'pix',
@@ -130,6 +139,85 @@ const paymentDetailRows = (summary: CashRegister['resumo']) => [
     esperado: summary?.saldo_cartao_credito_esperado || 0,
   },
 ];
+
+const printCashClosingReceipt = (cash: CashRegister, movements: CashMovement[] = []) => {
+  const resolvedSummary = buildCashSummary(cash, movements);
+  const printWindow = window.open('', '_blank', 'width=420,height=650');
+
+  if (!printWindow) {
+    showSystemNotice('Não foi possível abrir a janela de impressão. Verifique se o navegador bloqueou pop-ups.');
+    return false;
+  }
+
+  const period = [
+    cash.aberto_em ? formatBrasiliaDate(cash.aberto_em) : null,
+    cash.fechado_em ? formatBrasiliaDate(cash.fechado_em) : null,
+  ].filter(Boolean).join(' até ');
+
+  const totalMovements = (resolvedSummary.suprimentos_total || 0)
+    - (resolvedSummary.sangrias_total || 0)
+    - (resolvedSummary.despesas_total || 0);
+  const cardSales = (resolvedSummary.vendas_cartao_debito || 0) + (resolvedSummary.vendas_cartao_credito || 0);
+  const cardExpected = (resolvedSummary.saldo_cartao_debito_esperado || 0) + (resolvedSummary.saldo_cartao_credito_esperado || 0);
+  const cardInformed = Number(cash.informado_cartao_debito || 0) + Number(cash.informado_cartao_credito || 0);
+
+  printWindow.document.write(`<!doctype html>
+    <html lang="pt-BR">
+      <head>
+        <meta charset="UTF-8" />
+        <title>Fechamento de caixa</title>
+        <style>
+          *{box-sizing:border-box}
+          body{font-family:'Courier New',Courier,monospace;margin:0;background:#fff;color:#000}
+          main{width:80mm;margin:0 auto;padding:4mm}
+          h1{font-size:16px;margin:0 0 4px;text-align:center;text-transform:uppercase}
+          .center{text-align:center}
+          .muted{font-size:10px;margin-bottom:2px}
+          .divider{border-top:1px dashed #000;margin:8px 0}
+          .row{display:flex;justify-content:space-between;gap:8px;font-size:12px;line-height:1.25;margin:3px 0}
+          .row span:first-child{flex:1}
+          .row strong{font-weight:700;white-space:nowrap}
+          .total{font-size:14px;font-weight:700}
+          .note{font-size:11px;margin-top:8px;white-space:pre-wrap}
+          @page{size:80mm auto;margin:0}
+          @media print{body{margin:0}main{padding:3mm}}
+        </style>
+      </head>
+      <body>
+        <main>
+          <h1>Fechamento de caixa</h1>
+          <div class="center muted">${escapePrintHtml(cash.operador_nome || cash.fechado_por_nome || 'Operador')} - Matriz</div>
+          ${period ? `<div class="center muted">${escapePrintHtml(period)}</div>` : ''}
+          <div class="divider"></div>
+          <div class="row"><span>Pedidos</span><strong>${escapePrintHtml(resolvedSummary.pedidos_rastreados || 0)}</strong></div>
+          <div class="row"><span>Dinheiro esperado</span><strong>${escapePrintHtml(currency(resolvedSummary.saldo_dinheiro_esperado))}</strong></div>
+          <div class="row"><span>PIX esperado</span><strong>${escapePrintHtml(currency(resolvedSummary.saldo_pix_esperado))}</strong></div>
+          <div class="row"><span>Cartao esperado</span><strong>${escapePrintHtml(currency(cardExpected))}</strong></div>
+          <div class="row"><span>Vendas dinheiro</span><strong>${escapePrintHtml(currency(resolvedSummary.vendas_dinheiro))}</strong></div>
+          <div class="row"><span>Vendas PIX</span><strong>${escapePrintHtml(currency(resolvedSummary.vendas_pix))}</strong></div>
+          <div class="row"><span>Vendas cartao</span><strong>${escapePrintHtml(currency(cardSales))}</strong></div>
+          <div class="divider"></div>
+          <div class="row"><span>Suprimentos</span><strong>${escapePrintHtml(currency(resolvedSummary.suprimentos_total))}</strong></div>
+          <div class="row"><span>Sangrias</span><strong>-${escapePrintHtml(currency(resolvedSummary.sangrias_total))}</strong></div>
+          <div class="row"><span>Despesas</span><strong>-${escapePrintHtml(currency(resolvedSummary.despesas_total))}</strong></div>
+          <div class="row"><span>Mov. liquida</span><strong>${escapePrintHtml(currency(totalMovements))}</strong></div>
+          <div class="divider"></div>
+          <div class="row"><span>Dinheiro informado</span><strong>${escapePrintHtml(currency(cash.informado_dinheiro))}</strong></div>
+          <div class="row"><span>PIX informado</span><strong>${escapePrintHtml(currency(cash.informado_pix))}</strong></div>
+          <div class="row"><span>Cartao informado</span><strong>${escapePrintHtml(currency(cardInformed))}</strong></div>
+          <div class="row total"><span>Total esperado</span><strong>${escapePrintHtml(currency(resolvedSummary.total_esperado))}</strong></div>
+          <div class="row"><span>Total informado</span><strong>${escapePrintHtml(currency(cash.total_informado))}</strong></div>
+          <div class="row total"><span>Diferenca</span><strong>${escapePrintHtml(currency(cash.diferenca_total))}</strong></div>
+          ${cash.fechamento_observacao ? `<div class="note"><strong>Observação:</strong> ${escapePrintHtml(cash.fechamento_observacao)}</div>` : ''}
+          <div class="divider"></div>
+          <div class="center muted">Impresso em ${escapePrintHtml(formatBrasiliaDate(new Date().toISOString()))}</div>
+        </main>
+        <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};};</script>
+      </body>
+    </html>`);
+  printWindow.document.close();
+  return true;
+};
 
 const buildCashSummary = (cash: CashRegister, movements: CashMovement[] = []): CashSummary => {
   const summary: CashSummary = {
@@ -465,11 +553,13 @@ function CashDetailsModal({
   movements = [],
   loadingMovements = false,
   onClose,
+  onPrint,
 }: {
   cash: CashRegister;
   movements?: CashMovement[];
   loadingMovements?: boolean;
   onClose: () => void;
+  onPrint?: () => void;
 }) {
   const resolvedSummary = useMemo(() => buildCashSummary(cash, movements), [cash, movements]);
   const rows = paymentDetailRows(resolvedSummary);
@@ -481,6 +571,16 @@ function CashDetailsModal({
   return (
     <Modal title="Dashboard rápido do caixa" onClose={onClose}>
       <div className="space-y-4">
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={onPrint || (() => printCashClosingReceipt(cash, movements))}
+            className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+          >
+            <Printer className="h-3.5 w-3.5" />
+            Imprimir fechamento
+          </button>
+        </div>
         {period && (
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
             Fluxo: {period}
@@ -608,16 +708,19 @@ function CloseCashModal({
   const difference = Object.values(counted).reduce((sum, value) => sum + value, 0)
     - Object.values(expected).reduce((sum, value) => sum + value, 0);
 
-  const submit = async () => {
+  const submit = async (printAfterClose = false) => {
     try {
       setSaving(true);
-      await cashService.close(cash.id, {
+      const closedCash = await cashService.close(cash.id, {
         dinheiro: counted.dinheiro,
         pix: counted.pix,
         cartao_debito: counted.cartao_debito,
         cartao_credito: counted.cartao_credito,
         observacao: note || null,
       });
+      if (printAfterClose) {
+        printCashClosingReceipt(closedCash, movements);
+      }
       onDone();
       onClose();
     } catch (error: any) {
@@ -647,10 +750,19 @@ function CloseCashModal({
           </div>
         )}
         <TextField label="Observação" value={note} onChange={setNote} placeholder="Obrigatória para divergências" multiline />
-        <div className="grid grid-cols-2 gap-3 pt-2">
+        <div className="grid gap-3 pt-2 sm:grid-cols-3">
           <button onClick={onClose} className="h-12 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700">Cancelar</button>
-          <button onClick={submit} disabled={saving} className="h-12 rounded-xl bg-pink-600 text-sm font-semibold text-white disabled:opacity-60">
+          <button onClick={() => submit(false)} disabled={saving} className="h-12 rounded-xl bg-pink-600 text-sm font-semibold text-white disabled:opacity-60">
             {saving ? 'Fechando...' : 'Confirmar fechamento'}
+          </button>
+          <button
+            type="button"
+            onClick={() => submit(true)}
+            disabled={saving}
+            className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-pink-200 bg-white text-sm font-semibold text-pink-700 disabled:opacity-60"
+          >
+            <Printer className="h-4 w-4" />
+            Fechar e imprimir
           </button>
         </div>
       </div>
@@ -908,7 +1020,7 @@ export function CashScreen() {
             <th className="px-4 py-3">Informado</th>
             <th className="px-4 py-3">Diferença</th>
             <th className="px-4 py-3">Status</th>
-            <th className="px-4 py-3 text-right">Dashboard</th>
+            <th className="px-4 py-3 text-right">Ações</th>
           </tr>
         </thead>
         <tbody>
@@ -926,6 +1038,16 @@ export function CashScreen() {
                 </span>
               </td>
               <td className="px-4 py-4 text-right">
+                <div className="inline-flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    title="Imprimir fechamento"
+                    aria-label="Imprimir fechamento"
+                    onClick={() => printCashClosingReceipt(item)}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                  >
+                    <Printer className="h-4 w-4" />
+                  </button>
                 <button
                   type="button"
                   title="Ver dashboard do caixa"
@@ -935,6 +1057,7 @@ export function CashScreen() {
                 >
                   <BarChart3 className="h-4 w-4" />
                 </button>
+                </div>
               </td>
             </tr>
           ))}
@@ -970,6 +1093,15 @@ export function CashScreen() {
             className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-red-100 bg-white text-gray-600 hover:bg-red-50"
           >
             <BarChart3 className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            title="Imprimir fechamento"
+            aria-label="Imprimir fechamento"
+            onClick={() => printCashClosingReceipt(item)}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-red-100 bg-white text-gray-600 hover:bg-red-50"
+          >
+            <Printer className="h-4 w-4" />
           </button>
         </div>
       ))}
@@ -1042,6 +1174,7 @@ export function CashScreen() {
           cash={detailsCash}
           movements={detailsMovements}
           loadingMovements={detailsLoading}
+          onPrint={() => printCashClosingReceipt(detailsCash, detailsMovements)}
           onClose={() => setDetailsCash(null)}
         />
       )}
