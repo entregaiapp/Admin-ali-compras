@@ -409,6 +409,16 @@ const salaoPrintItemName = (item: any) =>
     .filter(Boolean)
     .join(" - ");
 
+const salaoPrintSelectionLine = (selection: any) => {
+  const quantity = Number(selection?.quantidade || 1);
+  const fraction = Number(selection?.fracao || 0);
+  const suffix = [
+    quantity > 1 ? `x${quantity}` : "",
+    fraction > 0 ? `${Math.round(fraction * 100)}%` : "",
+  ].filter(Boolean).join(", ");
+  return `${selection?.nome_grupo || "Opção"}: ${selection?.nome_opcao || "Opção"}${suffix ? ` (${suffix})` : ""}`;
+};
+
 const toCents = (value: unknown) => Math.round(Number(value || 0) * 100);
 const parseCurrencyInputCents = (value: string) => {
   const digits = String(value || "").replace(/\D/g, "");
@@ -1770,7 +1780,7 @@ export function SalaoPage() {
           ${arrayOrEmpty<any>(item.selecoes)
             .map(
               (selection) =>
-                `<p class="option">${escapePrintHtml(selection.nome_grupo)}: ${escapePrintHtml(selection.nome_opcao)}</p>`,
+                `<p class="option">${escapePrintHtml(salaoPrintSelectionLine(selection))}</p>`,
             )
             .join("")}
           ${item.observacoes ? `<p class="obs">Obs: ${escapePrintHtml(item.observacoes)}</p>` : ""}
@@ -1800,7 +1810,7 @@ export function SalaoPage() {
             ${arrayOrEmpty<any>(item.selecoes)
               .map(
                 (selection) =>
-                  `<p class="option">${escapePrintHtml(selection.nome_grupo)}: ${escapePrintHtml(selection.nome_opcao)}</p>`,
+                  `<p class="option">${escapePrintHtml(salaoPrintSelectionLine(selection))}</p>`,
               )
               .join("")}
             ${item.observacoes ? `<p class="obs">Obs: ${escapePrintHtml(item.observacoes)}</p>` : ""}
@@ -1812,14 +1822,17 @@ export function SalaoPage() {
       printWindow.document.write(`<!DOCTYPE html>
       <html lang="pt-BR"><head><meta charset="UTF-8"><title>Comanda da Cozinha ${escapePrintHtml(comanda.numero_comanda)}</title>
       <style>
-        *{margin:0;padding:0;box-sizing:border-box}html,body{width:80mm;min-height:30mm}body{font-family:'Courier New',Courier,monospace;width:80mm;min-height:30mm;max-width:80mm;margin:0 auto;padding:3mm;font-size:18px;font-weight:900;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}body *{color:#000!important;font-weight:900}.center{text-align:center}.bold{font-weight:900}.large{font-size:22px}.divider-solid{border-top:2px solid #000;margin:9px 0}.divider{border-top:1px dashed #000;margin:9px 0}.tag{display:inline-block;border:2px solid #000;padding:2px 8px;font-size:18px;margin:3px 0}.ticket-number{border:2px solid #000;padding:8px 4px;margin:8px 0;text-align:center}.ticket-label{font-size:16px;font-weight:900;letter-spacing:0}.ticket-value{display:block;font-size:44px;line-height:1;font-weight:900;margin-top:3px}.product-block{margin-bottom:10px}.product-row{display:flex;justify-content:space-between;gap:8px;font-size:27px;line-height:1.12;margin-bottom:6px}.product-row span:first-child{flex:1}.option{font-size:20px;line-height:1.12;margin:0 0 5px 16px}.obs{font-size:24px;line-height:1.12;margin:0 0 7px 16px;font-style:italic}p{margin-bottom:4px}@page{size:80mm 200mm;margin:0}@media print{html,body{width:80mm;min-height:30mm}body{margin:0;padding:3mm}}
+        *{margin:0;padding:0;box-sizing:border-box}html,body{width:80mm;min-height:30mm}body{font-family:'Courier New',Courier,monospace;width:80mm;min-height:30mm;max-width:80mm;margin:0 auto;padding:3mm;font-size:19px;font-weight:900;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}body *{color:#000!important;font-weight:900}.center{text-align:center}.bold{font-weight:900}.large{font-size:22px}.divider-solid{border-top:2px solid #000;margin:10px 0}.divider{border-top:1px dashed #000;margin:9px 0}.tag{display:inline-block;border:2px solid #000;padding:2px 8px;font-size:18px;margin:3px 0}.kitchen-meta{border:2px solid #000;padding:6px;margin:8px 0;text-align:left}.kitchen-meta p{font-size:18px;line-height:1.16}.ticket-number{border:3px solid #000;padding:9px 4px;margin:8px 0;text-align:center}.ticket-label{font-size:17px;font-weight:900;letter-spacing:0}.ticket-value{display:block;font-size:54px;line-height:.95;font-weight:900;margin-top:3px}.product-block{border-bottom:2px solid #000;padding-bottom:9px;margin-bottom:10px}.product-row{display:flex;justify-content:space-between;gap:8px;font-size:29px;line-height:1.08;margin-bottom:7px}.product-row span:first-child{flex:1;min-width:0}.option{font-size:22px;line-height:1.1;margin:0 0 5px 12px;padding-left:8px;border-left:3px solid #000}.obs{border:2px solid #000;padding:5px;font-size:24px;line-height:1.1;margin:6px 0 7px 0;font-style:italic}p,.option,.obs,.product-row span{max-width:100%;overflow-wrap:anywhere;word-break:break-word;white-space:normal}p{margin-bottom:4px}@page{size:80mm 200mm;margin:0}@media print{html,body{width:80mm;min-height:30mm}body{margin:0;padding:3mm}}
       </style></head><body>
         <div class="center">
           <p class="bold large">COMANDA DA COZINHA</p>
           ${dailyTicketNumber ? `<div class="ticket-number"><span class="ticket-label">COMANDA DO DIA</span><span class="ticket-value">${escapePrintHtml(dailyTicketNumber)}</span></div>` : ""}
-          <p>Comanda: <span class="bold">${escapePrintHtml(comanda.numero_comanda)}</span></p>
-          <p>Data: ${new Date().toLocaleString("pt-BR")}</p>
           <span class="tag">MESA ${escapePrintHtml(comanda.mesa?.numero || "-")}</span>
+        </div>
+        <div class="kitchen-meta">
+          <p>Comanda: <span class="bold">${escapePrintHtml(comanda.numero_comanda)}</span></p>
+          <p>Mesa: <span class="bold">${escapePrintHtml(comanda.mesa?.numero || "-")}</span></p>
+          <p>Data: ${new Date().toLocaleString("pt-BR")}</p>
         </div>
         <div class="divider-solid"></div>
         <p class="bold">PRODUTOS:</p>
@@ -1833,7 +1846,7 @@ export function SalaoPage() {
     printWindow.document.write(`<!DOCTYPE html>
       <html lang="pt-BR"><head><meta charset="UTF-8"><title>Comanda ${escapePrintHtml(comanda.numero_comanda)}</title>
       <style>
-        *{margin:0;padding:0;box-sizing:border-box}html,body{width:80mm;min-height:30mm}body{font-family:'Courier New',Courier,monospace;width:80mm;min-height:30mm;max-width:80mm;margin:0 auto;padding:3mm;font-size:16px;font-weight:700;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}body *{color:#000!important;font-weight:700}.center{text-align:center}.bold{font-weight:800}.large{font-size:19px}.divider-solid{border-top:1px solid #000;margin:8px 0}.divider{border-top:1px dashed #000;margin:8px 0}.row{display:flex;justify-content:space-between;gap:8px;margin-bottom:3px}.row-total{display:flex;justify-content:space-between;gap:8px;font-size:18px;font-weight:800;margin-bottom:3px}.person{padding:8px 0}.person-title{font-weight:800;margin-bottom:6px}.subtotal{margin-top:6px;font-weight:800}.option{font-size:14px;margin:0 0 2px 16px}.obs{font-size:22px;line-height:1.12;margin:0 0 7px 16px;font-style:italic}.tag{display:inline-block;border:1px solid #000;padding:1px 6px;font-size:15px;margin:2px 0}.ticket-number{border:2px solid #000;padding:8px 4px;margin:8px 0;text-align:center}.ticket-label{font-size:15px;font-weight:800;letter-spacing:0}.ticket-value{display:block;font-size:42px;line-height:1;font-weight:900;margin-top:3px}.product-row{font-size:26px;line-height:1.12;margin-bottom:7px}.product-row span:first-child{flex:1}.product-row span:last-child{white-space:nowrap}p{margin-bottom:4px}@page{size:80mm 200mm;margin:0}@media print{html,body{width:80mm;min-height:30mm}body{margin:0;padding:3mm}}${mode === "cliente" ? "body{font-size:13px;font-weight:400}body *{font-weight:400}.bold,.person-title,.subtotal,.row-total{font-weight:800}.large{font-size:16px}.ticket-number{border-width:1px;padding:5px 4px}.ticket-label{font-size:12px}.ticket-value{font-size:24px}.product-row{font-size:14px;line-height:1.2;margin-bottom:4px}.option{font-size:12px;line-height:1.2;margin-bottom:3px}.obs{font-size:13px;line-height:1.2;margin-bottom:5px}.row-total{font-size:15px}" : ""}
+        *{margin:0;padding:0;box-sizing:border-box}html,body{width:80mm;min-height:30mm}body{font-family:'Courier New',Courier,monospace;width:80mm;min-height:30mm;max-width:80mm;margin:0 auto;padding:3mm;font-size:16px;font-weight:700;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact}body *{color:#000!important;font-weight:700}.center{text-align:center}.bold{font-weight:800}.large{font-size:19px}.divider-solid{border-top:1px solid #000;margin:8px 0}.divider{border-top:1px dashed #000;margin:8px 0}.row{display:flex;justify-content:space-between;gap:8px;margin-bottom:3px}.row-total{display:flex;justify-content:space-between;gap:8px;font-size:18px;font-weight:800;margin-bottom:3px}.row span:first-child,.row-total span:first-child{min-width:0;overflow-wrap:anywhere;word-break:break-word}.person{padding:8px 0}.person-title{font-weight:800;margin-bottom:6px}.subtotal{margin-top:6px;font-weight:800}.option{font-size:14px;margin:0 0 2px 16px}.obs{font-size:22px;line-height:1.12;margin:0 0 7px 16px;font-style:italic}.tag{display:inline-block;border:1px solid #000;padding:1px 6px;font-size:15px;margin:2px 0}.ticket-number{border:2px solid #000;padding:8px 4px;margin:8px 0;text-align:center}.ticket-label{font-size:15px;font-weight:800;letter-spacing:0}.ticket-value{display:block;font-size:42px;line-height:1;font-weight:900;margin-top:3px}.product-row{font-size:26px;line-height:1.12;margin-bottom:7px}.product-row span:first-child{flex:1;min-width:0}.product-row span:last-child{white-space:nowrap}p,.option,.obs,.product-row span{max-width:100%;overflow-wrap:anywhere;word-break:break-word;white-space:normal}p{margin-bottom:4px}@page{size:80mm 200mm;margin:0}@media print{html,body{width:80mm;min-height:30mm}body{margin:0;padding:3mm}}${mode === "cliente" ? "body{font-size:13px;font-weight:400}body *{font-weight:400}.bold,.person-title,.subtotal,.row-total{font-weight:800}.large{font-size:16px}.ticket-number{border-width:1px;padding:5px 4px}.ticket-label{font-size:12px}.ticket-value{font-size:24px}.product-row{font-size:14px;line-height:1.2;margin-bottom:4px}.option{font-size:12px;line-height:1.2;margin-bottom:3px}.obs{font-size:13px;line-height:1.2;margin-bottom:5px}.row-total{font-size:15px}" : ""}
       </style></head><body>
         <div class="center">
           <p class="bold large">COMANDA DO SALÃO</p>

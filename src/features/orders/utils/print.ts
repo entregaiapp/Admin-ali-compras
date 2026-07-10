@@ -8,6 +8,7 @@ import {
   getOrderAddress,
   getOrderNeighborhood,
   getOrderPaymentMethod,
+  getOrderPaymentStatus,
   getOrderStreetAddress,
   isDeliveryOrder,
 } from '@/features/orders/utils/orderUtils';
@@ -44,6 +45,26 @@ const getDailyTicketNumber = (order: any) => {
     ? String(numeric).padStart(5, "0")
     : "";
 };
+
+const getOrderPhone = (order: any) =>
+  printableText(
+    firstPresent(
+      order?.cliente?.telefone,
+      order?.cliente?.phone,
+      order?.telefone,
+      order?.phone,
+    ),
+  ) || "Não informado";
+
+const getOrderCustomerDocument = (order: any) =>
+  printableText(
+    firstPresent(
+      order?.cliente?.cpf,
+      order?.cliente?.documento,
+      order?.cpf,
+      order?.cpf_na_nota_cpf,
+    ),
+  );
 
 const getOrderTypeLabelForPrint = (order: any) => {
   const type = normalizeText(
@@ -109,7 +130,9 @@ const getCashChangeLines = (order: any, payment: any, total: unknown) => {
     order?.pagamento?.troco_para,
     order?.troco_para,
   );
-  if (changeFor === undefined) return "";
+  if (changeFor === undefined) {
+    return '<p class="cash-change"><span class="bold">Troco:</span> Não informado</p>';
+  }
 
   const explicitChangeAmount = firstPresent(
     activePayment?.troco_valor,
@@ -130,6 +153,19 @@ const getCashChangeLines = (order: any, payment: any, total: unknown) => {
     <p class="cash-change"><span class="bold">Troco para:</span> R$ ${formatMoney(changeFor)}</p>
     <p class="cash-change"><span class="bold">Troco a levar:</span> R$ ${formatMoney(safeChangeAmount)}</p>
   `;
+};
+
+const isPaidPayment = (order: any, payment: any) => {
+  const status = normalizeText(
+    firstPresent(
+      payment?.status,
+      order?.pagamento?.status,
+      order?.payment_status,
+    ),
+  );
+
+  return Boolean(payment?.pago_em || order?.pagamento?.pago_em) ||
+    ["aprovado", "confirmado", "pago", "paid"].includes(status);
 };
 
 const renderStoreHeader = (store: any) => {
@@ -179,8 +215,10 @@ const thermalReceiptStyles = `
     .divider { border-top: 1px dashed #000; margin: 8px 0; }
     .row { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
     .row-total { display: flex; justify-content: space-between; gap: 8px; font-size: 18px; font-weight: 800; margin-bottom: 3px; }
+    .row span:first-child, .row-total span:first-child { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
     .obs { font-size: 22px; line-height: 1.12; margin: 0 0 7px 16px; font-style: italic; }
     .option { font-size: 19px; line-height: 1.12; margin: 0 0 5px 16px; }
+    p, .option, .obs, .address-line, .cash-change, .product-row span { max-width: 100%; overflow-wrap: anywhere; word-break: break-word; white-space: normal; }
     p { margin-bottom: 4px; }
     .tag { display: inline-block; border: 1px solid #000; padding: 1px 6px; font-size: 15px; margin: 2px 0; }
     .ticket-number { border: 2px solid #000; padding: 8px 4px; margin: 8px 0; text-align: center; }
@@ -188,9 +226,16 @@ const thermalReceiptStyles = `
     .ticket-value { display: block; font-size: 42px; line-height: 1; font-weight: 900; margin-top: 3px; }
     .order-block { border: 1px dashed #000; padding: 8px; margin-bottom: 8px; }
     .num { display: inline-block; width: 22px; height: 22px; border: 1px solid #000; text-align: center; line-height: 22px; margin-right: 4px; font-size: 14px; }
+    .info-box { border: 1px solid #000; padding: 7px; margin: 8px 0; }
+    .info-title { font-size: 15px; font-weight: 900; text-align: center; margin-bottom: 5px; }
+    .address-box { border: 2px solid #000; padding: 8px; margin: 9px 0; }
+    .address-title { font-size: 17px; font-weight: 900; text-align: center; margin-bottom: 6px; }
     .address-line { font-size: 19px; line-height: 1.15; margin-bottom: 5px; }
+    .payment-box { border: 2px solid #000; padding: 8px; margin: 9px 0; }
+    .payment-title { font-size: 17px; font-weight: 900; text-align: center; margin-bottom: 6px; }
+    .payment-status { border: 1px solid #000; padding: 5px; text-align: center; font-size: 18px; font-weight: 900; margin: 5px 0; }
     .product-row { font-size: 26px; line-height: 1.12; margin-bottom: 7px; }
-    .product-row span:first-child { flex: 1; }
+    .product-row span:first-child { flex: 1; min-width: 0; }
     .product-row span:last-child { white-space: nowrap; }
     .cash-change { font-size: 19px; line-height: 1.15; margin-bottom: 4px; }
     @page { size: 80mm 200mm; margin: 0; }
@@ -224,16 +269,25 @@ const clientReceiptStyles = `
     .divider { border-top: 1px dashed #000; margin: 7px 0; }
     .row { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
     .row-total { display: flex; justify-content: space-between; gap: 8px; font-size: 15px; font-weight: 800; margin-bottom: 3px; }
+    .row span:first-child, .row-total span:first-child { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
     .obs { font-size: 13px; line-height: 1.2; margin: 0 0 5px 12px; font-style: italic; }
     .option { font-size: 12px; line-height: 1.2; margin: 0 0 3px 12px; }
+    p, .option, .obs, .address-line, .cash-change, .product-row span { max-width: 100%; overflow-wrap: anywhere; word-break: break-word; white-space: normal; }
     p { margin-bottom: 4px; }
     .tag { display: inline-block; border: 1px solid #000; padding: 1px 6px; font-size: 12px; margin: 2px 0; }
     .ticket-number { border: 1px solid #000; padding: 5px 4px; margin: 7px 0; text-align: center; }
     .ticket-label { font-size: 12px; font-weight: 800; letter-spacing: 0; }
     .ticket-value { display: block; font-size: 24px; line-height: 1; font-weight: 900; margin-top: 3px; }
-    .address-line { font-size: 13px; line-height: 1.2; margin-bottom: 4px; }
+    .info-box { border: 1px solid #000; padding: 6px; margin: 7px 0; }
+    .info-title { font-size: 12px; font-weight: 900; text-align: center; margin-bottom: 5px; }
+    .address-box { border: 2px solid #000; padding: 7px; margin: 8px 0; }
+    .address-title { font-size: 13px; font-weight: 900; text-align: center; margin-bottom: 5px; }
+    .address-line { font-size: 14px; line-height: 1.2; margin-bottom: 4px; }
+    .payment-box { border: 2px solid #000; padding: 7px; margin: 8px 0; }
+    .payment-title { font-size: 13px; font-weight: 900; text-align: center; margin-bottom: 5px; }
+    .payment-status { border: 1px solid #000; padding: 4px; text-align: center; font-size: 14px; font-weight: 900; margin: 5px 0; }
     .product-row { font-size: 14px; line-height: 1.2; margin-bottom: 4px; }
-    .product-row span:first-child { flex: 1; }
+    .product-row span:first-child { flex: 1; min-width: 0; }
     .product-row span:last-child { white-space: nowrap; }
     .cash-change { font-size: 13px; line-height: 1.2; margin-bottom: 4px; }
     @page { size: 80mm 200mm; margin: 0; }
@@ -253,7 +307,7 @@ const kitchenReceiptStyles = `
       max-width: 80mm;
       margin: 0 auto;
       padding: 3mm;
-      font-size: 18px;
+      font-size: 19px;
       font-weight: 900;
       color: #000;
       -webkit-print-color-adjust: exact;
@@ -263,17 +317,20 @@ const kitchenReceiptStyles = `
     .center { text-align: center; }
     .bold { font-weight: 900; }
     .large { font-size: 22px; }
-    .divider-solid { border-top: 2px solid #000; margin: 9px 0; }
+    .divider-solid { border-top: 2px solid #000; margin: 10px 0; }
     .divider { border-top: 1px dashed #000; margin: 9px 0; }
     .tag { display: inline-block; border: 2px solid #000; padding: 2px 8px; font-size: 18px; margin: 3px 0; }
-    .ticket-number { border: 2px solid #000; padding: 8px 4px; margin: 8px 0; text-align: center; }
-    .ticket-label { font-size: 16px; font-weight: 900; letter-spacing: 0; }
-    .ticket-value { display: block; font-size: 44px; line-height: 1; font-weight: 900; margin-top: 3px; }
-    .product-block { margin-bottom: 10px; }
-    .product-row { display: flex; justify-content: space-between; gap: 8px; font-size: 27px; line-height: 1.12; margin-bottom: 6px; }
-    .product-row span:first-child { flex: 1; }
-    .option { font-size: 20px; line-height: 1.12; margin: 0 0 5px 16px; }
-    .obs { font-size: 24px; line-height: 1.12; margin: 0 0 7px 16px; font-style: italic; }
+    .kitchen-meta { border: 2px solid #000; padding: 6px; margin: 8px 0; text-align: left; }
+    .kitchen-meta p { font-size: 18px; line-height: 1.16; }
+    .ticket-number { border: 3px solid #000; padding: 9px 4px; margin: 8px 0; text-align: center; }
+    .ticket-label { font-size: 17px; font-weight: 900; letter-spacing: 0; }
+    .ticket-value { display: block; font-size: 54px; line-height: .95; font-weight: 900; margin-top: 3px; }
+    .product-block { border-bottom: 2px solid #000; padding-bottom: 9px; margin-bottom: 10px; }
+    .product-row { display: flex; justify-content: space-between; gap: 8px; font-size: 29px; line-height: 1.08; margin-bottom: 7px; }
+    .product-row span:first-child { flex: 1; min-width: 0; }
+    .option { font-size: 22px; line-height: 1.1; margin: 0 0 5px 12px; padding-left: 8px; border-left: 3px solid #000; }
+    .obs { border: 2px solid #000; padding: 5px; font-size: 24px; line-height: 1.1; margin: 6px 0 7px 0; font-style: italic; }
+    p, .option, .obs, .product-row span { max-width: 100%; overflow-wrap: anywhere; word-break: break-word; white-space: normal; }
     p { margin-bottom: 4px; }
     @page { size: 80mm 200mm; margin: 0; }
     @media print {
@@ -305,9 +362,14 @@ export const printComanda = (
   const dailyTicketNumber = getDailyTicketNumber(order);
   const isDelivery = isDeliveryOrder(order);
   const customerName = printableText(order.cliente?.nome || order.customer) || "Não informado";
+  const customerDocument = getOrderCustomerDocument(order);
   const orderTypeLabel = getOrderTypeLabelForPrint(order);
   const storeHeader = renderStoreHeader(store);
   const storeName = printableText(store?.nome);
+  const activePayment = order?.pagamento || {};
+  const paymentMethod = getOrderPaymentMethod(order, activePayment);
+  const paymentStatus = getOrderPaymentStatus(order, activePayment);
+  const paidLabel = isPaidPayment(order, activePayment) ? "PAGO" : "PAGAMENTO PENDENTE";
   const salaoComanda = order?.salao_comanda || order?.comanda || {};
   const tableNumber = printableText(
     salaoComanda?.mesa?.numero ||
@@ -330,10 +392,13 @@ ${kitchenReceiptStyles}
   <div class="center">
     <p class="bold large">COMANDA DA COZINHA</p>
     ${dailyTicketNumber ? `<div class="ticket-number"><span class="ticket-label">COMANDA DO DIA</span><span class="ticket-value">${escapeHtml(dailyTicketNumber)}</span></div>` : ""}
+    <span class="tag">${escapeHtml(orderTypeLabel)}</span>
+    ${tableNumber ? `<span class="tag">MESA ${escapeHtml(tableNumber)}</span>` : ""}
+  </div>
+  <div class="kitchen-meta">
     <p>Pedido: <span class="bold">${orderNumber}</span></p>
     <p>Cliente: <span class="bold">${escapeHtml(customerName)}</span></p>
-    <p>Tipo: <span class="bold">${escapeHtml(orderTypeLabel)}</span></p>
-    ${tableNumber ? `<span class="tag">MESA ${escapeHtml(tableNumber)}</span>` : ""}
+    <p>Telefone: <span class="bold">${escapeHtml(getOrderPhone(order))}</span></p>
     <p>Data: ${escapeHtml(formatBrasiliaDate(new Date(), { dateStyle: "short", timeStyle: "medium" }))}</p>
   </div>
   <div class="divider-solid"></div>
@@ -386,10 +451,22 @@ ${receiptStyles}
     <span class="tag">${escapeHtml(orderTypeLabel)}</span>
   </div>
   <div class="divider"></div>
-  <p><span class="bold">Cliente:</span> ${escapeHtml(customerName)}</p>
-  <p><span class="bold">Telefone:</span> ${escapeHtml(order.cliente?.telefone || order.phone || "Não informado")}</p>
+  <div class="info-box">
+    <p class="info-title">DADOS DO CLIENTE</p>
+    <p><span class="bold">Nome:</span> ${escapeHtml(customerName)}</p>
+    <p><span class="bold">Telefone:</span> ${escapeHtml(getOrderPhone(order))}</p>
+    ${customerDocument ? `<p><span class="bold">Documento:</span> ${escapeHtml(customerDocument)}</p>` : ""}
+  </div>
   ${order.cpf_na_nota ? `<p><span class="bold">CPF na nota:</span> ${escapeHtml(order.cpf_na_nota_cpf || "Informado")}</p>` : ""}
-  ${isDelivery ? `<p class="address-line"><span class="bold">Endereço:</span> ${escapeHtml(getOrderAddress(order))}</p><p class="address-line"><span class="bold">Bairro:</span> ${escapeHtml(getOrderNeighborhood(order))}</p>` : ""}
+  ${isDelivery ? `
+  <div class="address-box">
+    <p class="address-title">ENDEREÇO DE ENTREGA</p>
+    <p class="address-line"><span class="bold">Endereço:</span> ${escapeHtml(getOrderStreetAddress(order))}</p>
+    <p class="address-line"><span class="bold">Bairro:</span> ${escapeHtml(getOrderNeighborhood(order))}</p>
+    <p class="address-line"><span class="bold">Completo:</span> ${escapeHtml(getOrderAddress(order))}</p>
+    ${printableText(order.endereco_cliente?.ponto_referencia) ? `<p class="address-line"><span class="bold">Referência:</span> ${escapeHtml(order.endereco_cliente.ponto_referencia)}</p>` : ""}
+  </div>
+  ` : '<div class="address-box"><p class="address-title">RETIRADA NO BALCÃO</p><p class="address-line">Cliente retira o pedido na loja.</p></div>'}
   <div class="divider"></div>
   <p class="bold" style="margin-bottom:6px">ITENS DO PEDIDO:</p>
   ${itemsForPrint
@@ -410,9 +487,13 @@ ${receiptStyles}
   <div class="row"><span>Desconto</span><span>R$ ${formatMoney(order.desconto)}</span></div>
   <div class="divider-solid"></div>
   <div class="row-total"><span>TOTAL A PAGAR</span><span>R$ ${formatMoney(total)}</span></div>
-  <div class="divider"></div>
-  <p><span class="bold">Pagamento:</span> ${escapeHtml(getOrderPaymentMethod(order, order.pagamento))}</p>
-  ${getCashChangeLines(order, order.pagamento, total)}
+  <div class="payment-box">
+    <p class="payment-title">PAGAMENTO</p>
+    <p><span class="bold">Forma:</span> ${escapeHtml(paymentMethod)}</p>
+    <p><span class="bold">Status:</span> ${escapeHtml(paymentStatus)}</p>
+    <p class="payment-status">${escapeHtml(paidLabel)}</p>
+    ${getCashChangeLines(order, activePayment, total)}
+  </div>
   <div class="divider-solid"></div>
   <div class="center" style="margin-top: 8px;">
     <p>Obrigado pela preferência!</p>
