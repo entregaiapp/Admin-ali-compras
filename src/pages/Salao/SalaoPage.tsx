@@ -53,6 +53,7 @@ import {
   readKitchenPrintedKeys,
   type KitchenPrintSelectionItem,
 } from "@/features/orders/utils/kitchenPrintTracking";
+import { printingService } from "@/features/printing/services/printingService";
 import {
   useAlertSoundPreference,
   usePersistentAttentionSound,
@@ -67,6 +68,13 @@ const KDS_CARD_SCALE_STORAGE_KEY = "admin_salao_kds_card_scale";
 const KDS_CARD_SCALE_MIN = 0.78;
 const KDS_CARD_SCALE_MAX = 1.32;
 const KDS_CARD_SCALE_STEP = 0.02;
+type StorePrintMode = "agent_silencioso" | "navegador_windows" | "agent_com_fallback";
+
+const getApiErrorMessage = (error: any, fallback: string) =>
+  error?.response?.data?.message ||
+  error?.response?.data?.error?.message ||
+  error?.message ||
+  fallback;
 
 const hexToRgba = (hex: string, alpha: number) => {
   const normalized = hex.replace("#", "");
@@ -469,6 +477,7 @@ export function SalaoPage() {
   const [fiadoSelectedContact, setFiadoSelectedContact] = useState<any | null>(null);
   const [fiadoQuickContact, setFiadoQuickContact] = useState({ nome: "", telefone: "" });
   const [printComandaTarget, setPrintComandaTarget] = useState<any | null>(null);
+  const [salaoPrintBusy, setSalaoPrintBusy] = useState(false);
   const [kitchenPrintSelection, setKitchenPrintSelection] = useState<{
     comanda: any;
     storageKey: string;
@@ -508,10 +517,27 @@ export function SalaoPage() {
     if (!user?.loja_id) return null;
     if (currentStore?.id === user.loja_id) return currentStore;
 
-    const response = await api.get(`/lojas/${user.loja_id}`);
-    const store = response.data?.data || response.data;
-    setCurrentStore(store);
-    return store;
+    const [storeResult, configResult] = await Promise.allSettled([
+      api.get(`/lojas/${user.loja_id}`),
+      api.get(`/lojas/${user.loja_id}/configuracoes`),
+    ]);
+    const store =
+      storeResult.status === "fulfilled"
+        ? storeResult.value.data?.data || storeResult.value.data || {}
+        : {};
+    const config =
+      configResult.status === "fulfilled"
+        ? configResult.value.data?.data || configResult.value.data || {}
+        : {};
+    const nextStore = {
+      ...store,
+      slogan: config.slogan,
+      whatsapp_suporte: config.whatsapp_suporte,
+      impressao_pedido_modo:
+        config.impressao_pedido_modo || "agent_com_fallback",
+    };
+    setCurrentStore(nextStore);
+    return nextStore;
   }, [currentStore, user?.loja_id]);
 
   useEffect(() => {
@@ -1635,7 +1661,7 @@ export function SalaoPage() {
       showSystemNotice(
         "Não foi possível abrir a janela de impressão. Verifique se o navegador bloqueou pop-ups.",
       );
-      return;
+      return false;
     }
 
     const printableItems = (selectedItems || arrayOrEmpty<any>(comanda.itens)).filter(
@@ -1739,7 +1765,7 @@ export function SalaoPage() {
         <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};};</script>
       </body></html>`);
       printWindow.document.close();
-      return;
+      return true;
     }
 
     printWindow.document.write(`<!DOCTYPE html>
@@ -1765,10 +1791,46 @@ export function SalaoPage() {
         <script>window.onload=function(){window.print();window.onafterprint=function(){window.close();};};</script>
       </body></html>`);
     printWindow.document.close();
+    return true;
   };
 
   const openSalaoPrintModal = (comanda: any) => {
     setPrintComandaTarget(comanda);
+  };
+
+  const getSalaoPrintMode = (): StorePrintMode =>
+    currentStore?.impressao_pedido_modo || "agent_com_fallback";
+
+  const printSalaoComandaInBrowser = (
+    comanda: any,
+    mode: ComandaPrintMode,
+    selectedItems?: any[],
+  ) => printSalaoComanda(comanda, mode, selectedItems);
+
+  const enqueueOrFallbackSalaoPrint = async (
+    comanda: any,
+    mode: ComandaPrintMode,
+    selectedItems?: any[],
+    itemIds?: string[],
+  ) => {
+    const printMode = getSalaoPrintMode();
+
+    if (printMode === "navegador_windows") {
+      return printSalaoComandaInBrowser(comanda, mode, selectedItems);
+    }
+
+    try {
+      await printingService.printSalaoComanda(comanda.id, {
+        mode,
+        item_ids: itemIds,
+        reprint: true,
+      });
+      return true;
+    } catch (error) {
+      if (printMode !== "agent_com_fallback") throw error;
+      showSystemNotice("Print Agent indisponÃ­vel. Abrindo impressÃ£o pelo Windows.");
+      return printSalaoComandaInBrowser(comanda, mode, selectedItems);
+    }
   };
 
   const getSalaoKitchenSelectionItems = (comanda: any, storageKey: string) =>
@@ -1786,8 +1848,8 @@ export function SalaoPage() {
       },
     );
 
-  const handleSalaoPrintModeSelected = (mode: ComandaPrintMode) => {
-    if (!printComandaTarget) return;
+  const handleSalaoPrintModeSelected = async (mode: ComandaPrintMode) => {
+    if (!printComandaTarget || salaoPrintBusy) return;
 
     if (mode === "cozinha") {
       const storageKey = getKitchenPrintStorageKey(
@@ -1810,38 +1872,77 @@ export function SalaoPage() {
         return;
       }
 
-      printSalaoComanda(
-        printComandaTarget,
-        "cozinha",
-        selectionItems.map((item) => item.item),
-      );
-      markKitchenItemsPrinted(
-        storageKey,
-        selectionItems.map((item) => item.key),
-      );
-      setPrintComandaTarget(null);
+      setSalaoPrintBusy(true);
+      try {
+        const selectedItems = selectionItems.map((item) => item.item);
+        const sent = await enqueueOrFallbackSalaoPrint(
+          printComandaTarget,
+          "cozinha",
+          selectedItems,
+          selectedItems.map((item) => String(item.id)),
+        );
+        if (sent) {
+          markKitchenItemsPrinted(
+            storageKey,
+            selectionItems.map((item) => item.key),
+          );
+          showSystemNotice("Comanda enviada para impressÃ£o.");
+          setPrintComandaTarget(null);
+        }
+      } catch (error) {
+        showSystemNotice(
+          getApiErrorMessage(error, "NÃ£o foi possÃ­vel enviar a comanda para impressÃ£o."),
+        );
+      } finally {
+        setSalaoPrintBusy(false);
+      }
       return;
     }
 
-    printSalaoComanda(printComandaTarget, mode);
-    setPrintComandaTarget(null);
+    setSalaoPrintBusy(true);
+    try {
+      const sent = await enqueueOrFallbackSalaoPrint(printComandaTarget, mode);
+      if (sent) {
+        showSystemNotice("Comanda enviada para impressÃ£o.");
+        setPrintComandaTarget(null);
+      }
+    } catch (error) {
+      showSystemNotice(
+        getApiErrorMessage(error, "NÃ£o foi possÃ­vel enviar a comanda para impressÃ£o."),
+      );
+    } finally {
+      setSalaoPrintBusy(false);
+    }
   };
 
-  const handlePrintSelectedSalaoKitchenItems = (itemKeys: string[]) => {
-    if (!kitchenPrintSelection) return;
+  const handlePrintSelectedSalaoKitchenItems = async (itemKeys: string[]) => {
+    if (!kitchenPrintSelection || salaoPrintBusy) return;
 
     const selectedKeys = new Set(itemKeys);
     const selectedItemsForPrint = kitchenPrintSelection.selectionItems
       .filter((item) => selectedKeys.has(item.key))
       .map((item) => item.item);
 
-    printSalaoComanda(
-      kitchenPrintSelection.comanda,
-      "cozinha",
-      selectedItemsForPrint,
-    );
-    markKitchenItemsPrinted(kitchenPrintSelection.storageKey, itemKeys);
-    setKitchenPrintSelection(null);
+    setSalaoPrintBusy(true);
+    try {
+      const sent = await enqueueOrFallbackSalaoPrint(
+        kitchenPrintSelection.comanda,
+        "cozinha",
+        selectedItemsForPrint,
+        selectedItemsForPrint.map((item) => String(item.id)),
+      );
+      if (sent) {
+        markKitchenItemsPrinted(kitchenPrintSelection.storageKey, itemKeys);
+        showSystemNotice("Comanda enviada para impressÃ£o.");
+        setKitchenPrintSelection(null);
+      }
+    } catch (error) {
+      showSystemNotice(
+        getApiErrorMessage(error, "NÃ£o foi possÃ­vel enviar os produtos para impressÃ£o."),
+      );
+    } finally {
+      setSalaoPrintBusy(false);
+    }
   };
 
   const productList = productSearch.trim()

@@ -54,4 +54,8 @@ export const printingService = {
   async printOrder(orderId: string, data: { mode: "cozinha" | "cliente" | "cliente_cozinha"; item_ids?: string[]; reprint?: boolean }) {
     return unwrap(await api.post(`/printing/orders/${orderId}/print`, data));
   },
+
+  async printSalaoComanda(comandaId: string, data: { mode: "cozinha" | "cliente" | "cliente_cozinha"; item_ids?: string[]; reprint?: boolean }) {
+    return unwrap(await api.post(`/printing/salao/comandas/${comandaId}/print`, data));
+  },
 };
