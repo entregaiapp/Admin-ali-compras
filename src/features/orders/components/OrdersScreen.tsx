@@ -815,7 +815,7 @@ export function OrdersScreen() {
   const getArchivedDayQueryParams = (dayKey: string, pageNum = 1) => ({
     ...getOrderQueryParams(pageNum),
     page: pageNum,
-    per_page: 100,
+    per_page: PER_PAGE,
     realizado_em_inicial: dayKey,
     realizado_em_final: dayKey,
   });
@@ -1033,41 +1033,36 @@ export function OrdersScreen() {
     await Promise.all([fetchOrders(1, true), fetchAuxiliaryData()]);
   };
 
-  const fetchArchivedDayOrders = async (dayKey: string) => {
+  const fetchArchivedDayOrders = async (
+    dayKey: string,
+    pageNum = 1,
+    reset = true,
+  ) => {
     if (!dayKey) return;
 
     try {
       setLoadingArchivedDayKey(dayKey);
 
-      const firstResponse = await api.get("/pedidos", {
-        params: getArchivedDayQueryParams(dayKey, 1),
+      const response = await api.get("/pedidos", {
+        params: getArchivedDayQueryParams(dayKey, pageNum),
       });
-      const firstPayload = firstResponse.data.data;
-      const firstData = Array.isArray(firstPayload)
-        ? firstPayload
-        : firstPayload?.data || [];
-      const totalPages = Math.max(1, Number(firstPayload?.total_pages || 1));
-      const allOrders = [...firstData];
+      const payload = response.data.data;
+      const data = Array.isArray(payload) ? payload : payload?.data || [];
+      const totalPages = Math.max(1, Number(payload?.total_pages || 1));
 
-      if (totalPages > 1) {
-        const responses = await Promise.all(
-          Array.from({ length: totalPages - 1 }, (_, index) =>
-            api.get("/pedidos", {
-              params: getArchivedDayQueryParams(dayKey, index + 2),
-            }),
-          ),
-        );
-        responses.forEach((response) => {
-          const payload = response.data.data;
-          allOrders.push(
-            ...(Array.isArray(payload) ? payload : payload?.data || []),
-          );
-        });
-      }
-
-      setOrders(allOrders);
-      setPage(1);
-      setHasMore(false);
+      setOrders((current) =>
+        reset
+          ? data
+          : [
+              ...current,
+              ...data.filter(
+                (order: any) =>
+                  !current.some((currentOrder) => currentOrder.id === order.id),
+              ),
+            ],
+      );
+      setPage(pageNum);
+      setHasMore(pageNum < totalPages);
       setActiveListGroupKey(dayKey);
     } catch (error) {
       console.error("Error fetching archived day orders:", error);
@@ -1104,6 +1099,11 @@ export function OrdersScreen() {
   };
 
   const handleLoadMore = () => {
+    if (viewMode === "arquivados" && activeListGroupKey) {
+      void fetchArchivedDayOrders(activeListGroupKey, page + 1, false);
+      return;
+    }
+
     fetchOrders(page + 1);
   };
 
@@ -4034,21 +4034,27 @@ export function OrdersScreen() {
                 </section>
               )}
 
-            {hasMore && viewMode !== "arquivados" && (
+            {hasMore && (
               <div className="p-4 flex justify-center">
                 <button
                   onClick={handleLoadMore}
-                  disabled={loading}
+                  disabled={
+                    loading ||
+                    (viewMode === "arquivados" && Boolean(loadingArchivedDayKey))
+                  }
                   className="px-6 py-2 rounded-full border text-sm font-medium transition-colors hover:bg-gray-50 flex items-center gap-2"
                   style={{ borderColor: PRIMARY, color: PRIMARY }}
                 >
-                  {loading ? (
+                  {loading ||
+                  (viewMode === "arquivados" && Boolean(loadingArchivedDayKey)) ? (
                     <div
                       className="w-4 h-4 border-2 border-gray-200 border-t-primary rounded-full animate-spin"
                       style={{ borderTopColor: PRIMARY }}
                     ></div>
                   ) : (
-                    "Carregar mais pedidos"
+                    viewMode === "arquivados"
+                      ? "Carregar mais arquivados"
+                      : "Carregar mais pedidos"
                   )}
                 </button>
               </div>
