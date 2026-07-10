@@ -2,12 +2,26 @@ import { useEffect, useMemo, useState } from "react";
 import { Laptop, Link, Printer, RefreshCw, TestTube2, Trash2 } from "lucide-react";
 import { showSystemNotice } from "@/shared/components/SystemNoticeModal";
 import { formatBrasiliaDate } from "@/shared/lib/dateTime";
+import api from "@/shared/lib/api";
 import { printingService } from "@/features/printing/services/printingService";
-import type { PairingCode, PrintAgent, Printer as PrinterType } from "@/features/printing/types/printing";
+import type { PairingCode, PrintAgent, PrintAutomationSetting, Printer as PrinterType, PrintSource, UserPrinterPreference } from "@/features/printing/types/printing";
 import { PrintStatusBadge } from "./PrintStatusBadge";
 
 const PRIMARY = "#122a4c";
 export type StorePrintMode = "agent_silencioso" | "navegador_windows" | "agent_com_fallback";
+
+const SOURCE_OPTIONS: Array<{ value: PrintSource; label: string; description: string }> = [
+  { value: "delivery", label: "Pedidos Delivery", description: "Pedidos de entrega criados pelo cliente." },
+  { value: "retirada", label: "Pedidos para Retirada", description: "Pedidos retirados no balcão." },
+  { value: "salao", label: "Pedidos do Salão", description: "Pedidos de consumo no salão." },
+  { value: "admin", label: "Pedidos criados pelo Admin", description: "Pedidos lançados manualmente no painel." },
+  { value: "mesa", label: "Impressões de Mesa", description: "Comandas e impressões vinculadas às mesas." },
+];
+
+const AUTOMATION_LABELS: Record<PrintAutomationSetting["source"], string> = {
+  delivery: "Delivery",
+  retirada: "Retirada",
+};
 
 type PrintingSettingsPanelProps = {
   printMode: StorePrintMode;
@@ -22,6 +36,9 @@ function safeDate(value?: string | null) {
 export function PrintingSettingsPanel({ printMode, onPrintModeChange }: PrintingSettingsPanelProps) {
   const [agents, setAgents] = useState<PrintAgent[]>([]);
   const [printers, setPrinters] = useState<PrinterType[]>([]);
+  const [automationSettings, setAutomationSettings] = useState<PrintAutomationSetting[]>([]);
+  const [preferences, setPreferences] = useState<UserPrinterPreference[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
   const [pairingCode, setPairingCode] = useState<PairingCode | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -31,12 +48,19 @@ export function PrintingSettingsPanel({ printMode, onPrintModeChange }: Printing
   const load = async () => {
     try {
       setLoading(true);
-      const [nextAgents, nextPrinters] = await Promise.all([
+      const [nextAgents, nextPrinters, nextAutomationSettings, nextPreferences, usersResponse] = await Promise.all([
         printingService.listAgents(),
         printingService.listPrinters(),
+        printingService.listAutomationSettings(),
+        printingService.listUserPrinterPreferences(),
+        api.get("/usuarios", { params: { per_page: 200 } }).catch(() => null),
       ]);
       setAgents(nextAgents);
       setPrinters(nextPrinters);
+      setAutomationSettings(nextAutomationSettings);
+      setPreferences(nextPreferences);
+      const rawUsers = usersResponse?.data?.data?.data || usersResponse?.data?.data || usersResponse?.data || [];
+      setUsers(Array.isArray(rawUsers) ? rawUsers : []);
     } catch {
       showSystemNotice("Não foi possível carregar as configurações de impressão.");
     } finally {
@@ -52,8 +76,8 @@ export function PrintingSettingsPanel({ printMode, onPrintModeChange }: Printing
     try {
       setBusy(true);
       setPairingCode(await printingService.generatePairingCode());
-    } catch {
-      showSystemNotice("Não foi possível gerar o código de vinculação.");
+    } catch (error: any) {
+      showSystemNotice(error?.response?.data?.message || error?.response?.data?.error?.message || "Não foi possível gerar o código de vinculação.");
     } finally {
       setBusy(false);
     }
@@ -65,6 +89,38 @@ export function PrintingSettingsPanel({ printMode, onPrintModeChange }: Printing
       await load();
     } catch {
       showSystemNotice("Não foi possível atualizar a impressora.");
+    }
+  };
+
+  const updateAutomation = async (source: PrintAutomationSetting["source"], patch: Partial<PrintAutomationSetting>) => {
+    try {
+      const nextSettings = ["delivery", "retirada"].map((candidate) => {
+        const current = automationSettings.find((item) => item.source === candidate) || {
+          source: candidate as PrintAutomationSetting["source"],
+          auto_print_paid: false,
+          move_to_preparation: false,
+        };
+        return current.source === source ? { ...current, ...patch } : current;
+      }) as PrintAutomationSetting[];
+      setAutomationSettings(await printingService.updateAutomationSettings(nextSettings));
+    } catch {
+      showSystemNotice("Não foi possível atualizar a automação de impressão.");
+    }
+  };
+
+  const togglePrinterChannel = async (printer: PrinterType, source: PrintSource, checked: boolean) => {
+    const current = new Set(printer.channels || []);
+    if (checked) current.add(source);
+    else current.delete(source);
+    await updatePrinter(printer, { channels: Array.from(current) as PrintSource[] } as any);
+  };
+
+  const updateUserPreference = async (usuarioId: string, printerId: string | null) => {
+    try {
+      await printingService.setUserPrinterPreference(usuarioId, printerId || null);
+      setPreferences(await printingService.listUserPrinterPreferences());
+    } catch (error: any) {
+      showSystemNotice(error?.response?.data?.message || error?.response?.data?.error?.message || "Não foi possível atualizar a impressora do usuário.");
     }
   };
 
@@ -195,6 +251,45 @@ export function PrintingSettingsPanel({ printMode, onPrintModeChange }: Printing
       </div>
 
       <div className="rounded-xl border border-gray-200 bg-white p-5">
+        <h3 className="font-semibold text-gray-900">Automação de pedidos</h3>
+        <p className="mt-1 text-sm text-gray-500">
+          A automação usa apenas pedidos com pagamento online confirmado pelo backend.
+        </p>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          {(["delivery", "retirada"] as PrintAutomationSetting["source"][]).map((source) => {
+            const setting = automationSettings.find((item) => item.source === source) || {
+              source,
+              auto_print_paid: false,
+              move_to_preparation: false,
+            };
+            return (
+              <div key={source} className="rounded-lg border border-gray-200 p-4">
+                <h4 className="text-sm font-bold text-gray-900">{AUTOMATION_LABELS[source]}</h4>
+                <label className="mt-3 flex items-start gap-2 text-sm font-semibold text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={setting.auto_print_paid}
+                    onChange={(event) => void updateAutomation(source, { auto_print_paid: event.target.checked })}
+                    className="mt-1"
+                  />
+                  <span>Imprimir automaticamente pedidos pagos</span>
+                </label>
+                <label className="mt-3 flex items-start gap-2 text-sm font-semibold text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={setting.move_to_preparation}
+                    onChange={(event) => void updateAutomation(source, { move_to_preparation: event.target.checked })}
+                    className="mt-1"
+                  />
+                  <span>Alterar automaticamente para “Em preparação”</span>
+                </label>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-gray-200 bg-white p-5">
         <h3 className="mb-4 font-semibold text-gray-900">Impressoras</h3>
         {printers.length === 0 ? (
           <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">Nenhuma impressora detectada.</div>
@@ -208,7 +303,7 @@ export function PrintingSettingsPanel({ printMode, onPrintModeChange }: Printing
                     <div>
                       <input
                         value={printer.display_name}
-                        onChange={(event) => updatePrinter(printer, { display_name: event.target.value })}
+                        onChange={(event) => void updatePrinter(printer, { display_name: event.target.value })}
                         className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-bold text-gray-900"
                       />
                       <p className="mt-1 text-xs text-gray-500">{printer.device_name}</p>
@@ -220,28 +315,90 @@ export function PrintingSettingsPanel({ printMode, onPrintModeChange }: Printing
                   </button>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-4">
-                  <select value={printer.sector} onChange={(event) => updatePrinter(printer, { sector: event.target.value as any })} className="rounded-lg border border-gray-200 px-3 py-2 text-sm">
-                    <option value="COZINHA">Cozinha</option>
-                    <option value="BAR">Bar</option>
-                    <option value="CAIXA">Caixa</option>
-                    <option value="EXPEDICAO">Expedição</option>
-                    <option value="GERAL">Geral</option>
-                  </select>
-                  <select value={printer.paper_width_mm} onChange={(event) => updatePrinter(printer, { paper_width_mm: Number(event.target.value) as 58 | 80 })} className="rounded-lg border border-gray-200 px-3 py-2 text-sm">
-                    <option value={58}>58 mm</option>
-                    <option value={80}>80 mm</option>
-                  </select>
-                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                    <input type="checkbox" checked={printer.is_default} onChange={(event) => updatePrinter(printer, { is_default: event.target.checked })} />
-                    Padrão
+                  <label className="text-xs font-bold uppercase text-gray-500">
+                    Setor operacional
+                    <select value={printer.sector} onChange={(event) => void updatePrinter(printer, { sector: event.target.value as any })} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium normal-case text-gray-700">
+                      <option value="COZINHA">Cozinha</option>
+                      <option value="BAR">Bar</option>
+                      <option value="CAIXA">Caixa</option>
+                      <option value="EXPEDICAO">Expedição</option>
+                      <option value="GERAL">Geral</option>
+                    </select>
+                  </label>
+                  <label className="text-xs font-bold uppercase text-gray-500">
+                    Papel
+                    <select value={printer.paper_width_mm} onChange={(event) => void updatePrinter(printer, { paper_width_mm: Number(event.target.value) as 58 | 80 })} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium normal-case text-gray-700">
+                      <option value={58}>58 mm</option>
+                      <option value={80}>80 mm</option>
+                    </select>
                   </label>
                   <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                    <input type="checkbox" checked={printer.active} onChange={(event) => updatePrinter(printer, { active: event.target.checked })} />
+                    <input type="checkbox" checked={printer.is_default} onChange={(event) => void updatePrinter(printer, { is_default: event.target.checked })} />
+                    Padrão de fallback
+                  </label>
+                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                    <input type="checkbox" checked={printer.active} onChange={(event) => void updatePrinter(printer, { active: event.target.checked })} />
                     Ativa
                   </label>
                 </div>
+
+                <div className="mt-4 rounded-lg border border-gray-100 bg-gray-50 p-4">
+                  <p className="text-sm font-bold text-gray-900">O que esta impressora imprime?</p>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    {SOURCE_OPTIONS.map((source) => (
+                      <label key={source.value} className="flex items-start gap-2 text-sm font-semibold text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={(printer.channels || []).includes(source.value)}
+                          onChange={(event) => void togglePrinterChannel(printer, source.value, event.target.checked)}
+                          className="mt-1"
+                        />
+                        <span>
+                          <span className="block">{source.label}</span>
+                          <span className="block text-xs font-medium text-gray-500">{source.description}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-gray-200 bg-white p-5">
+        <h3 className="font-semibold text-gray-900">Impressora específica por usuário</h3>
+        <p className="mt-1 text-sm text-gray-500">
+          A impressão manual usa esta preferência antes do roteamento por canal.
+        </p>
+        {users.length === 0 ? (
+          <div className="mt-4 rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
+            Nenhum usuário administrativo disponível para configurar.
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-3">
+            {users.map((user) => {
+              const preference = preferences.find((item) => item.usuario_id === user.id);
+              return (
+                <div key={user.id} className="grid gap-3 rounded-lg border border-gray-200 p-4 md:grid-cols-[1fr_280px] md:items-center">
+                  <div>
+                    <p className="text-sm font-bold text-gray-900">{user.nome}</p>
+                    <p className="text-xs text-gray-500">{user.email || "Sem e-mail"} • {user.perfil || "Perfil não informado"}</p>
+                  </div>
+                  <select
+                    value={preference?.printer_id || ""}
+                    onChange={(event) => void updateUserPreference(user.id, event.target.value || null)}
+                    className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                  >
+                    <option value="">Usar roteamento por canal</option>
+                    {printers.filter((printer) => printer.active).map((printer) => (
+                      <option key={printer.id} value={printer.id}>{printer.display_name}</option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

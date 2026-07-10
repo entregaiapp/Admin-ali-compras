@@ -1,5 +1,5 @@
 import api from "@/shared/lib/api";
-import type { PairingCode, PrintAgent, Printer } from "@/features/printing/types/printing";
+import type { PairingCode, PrintAgent, PrintAutomationSetting, Printer, UserPrinterPreference } from "@/features/printing/types/printing";
 
 const unwrap = <T,>(response: { data: any }): T => response.data?.data ?? response.data;
 
@@ -24,8 +24,27 @@ export const printingService = {
     return unwrap<Printer[]>(await api.get("/printing/printers"));
   },
 
-  async updatePrinter(id: string, data: Partial<Pick<Printer, "display_name" | "paper_width_mm" | "sector" | "is_default" | "active">>) {
+  async updatePrinter(id: string, data: Partial<Pick<Printer, "display_name" | "paper_width_mm" | "sector" | "channels" | "is_default" | "active">>) {
     return unwrap<Printer>(await api.patch(`/printing/printers/${id}`, data));
+  },
+
+  async listAutomationSettings() {
+    return unwrap<PrintAutomationSetting[]>(await api.get("/printing/automation-settings"));
+  },
+
+  async updateAutomationSettings(settings: PrintAutomationSetting[]) {
+    return unwrap<PrintAutomationSetting[]>(await api.put("/printing/automation-settings", { settings }));
+  },
+
+  async listUserPrinterPreferences() {
+    return unwrap<UserPrinterPreference[]>(await api.get("/printing/user-printer-preferences"));
+  },
+
+  async setUserPrinterPreference(usuarioId: string, printerId: string | null) {
+    return unwrap<UserPrinterPreference>(await api.put("/printing/user-printer-preferences", {
+      usuario_id: usuarioId,
+      printer_id: printerId,
+    }));
   },
 
   async testPrint(printerId?: string) {
