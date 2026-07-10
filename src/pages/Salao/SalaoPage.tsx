@@ -336,6 +336,68 @@ const normalizeMesaSearch = (value: unknown) =>
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
 
+const normalizeProductSearch = (value: unknown) =>
+  String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/Ã§/g, "c")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+
+const getProductCategoryText = (product: any) =>
+  [
+    product?.categoria_nome,
+    product?.categoria_caminho,
+    product?.categoria_loja_nome,
+    product?.categoria_global_nome,
+    product?.categoria?.nome,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+const includesEverySearchToken = (value: string, tokens: string[]) =>
+  tokens.length > 0 && tokens.every((token) => value.includes(token));
+
+const getProductSearchPriority = (product: any, query: string) => {
+  if (!query) return 0;
+
+  const tokens = query.split(" ").filter(Boolean);
+  const name = normalizeProductSearch(productName(product));
+  const brand = normalizeProductSearch(product?.marca || product?.produto?.marca);
+  const category = normalizeProductSearch(getProductCategoryText(product));
+  const description = normalizeProductSearch(product?.descricao || product?.produto?.descricao);
+
+  if (name.startsWith(query)) return 0;
+  if (name.includes(query) || includesEverySearchToken(name, tokens)) return 1;
+  if (
+    brand.includes(query) ||
+    category.includes(query) ||
+    includesEverySearchToken(brand, tokens) ||
+    includesEverySearchToken(category, tokens)
+  ) return 2;
+  if (description.includes(query) || includesEverySearchToken(description, tokens)) return 3;
+  return 4;
+};
+
+const sortProductsBySearchPriority = (items: any[], query: string) => {
+  const normalizedQuery = normalizeProductSearch(query);
+  if (!normalizedQuery) return items;
+
+  return [...items].sort((first, second) => {
+    const priority =
+      getProductSearchPriority(first, normalizedQuery) -
+      getProductSearchPriority(second, normalizedQuery);
+    if (priority !== 0) return priority;
+
+    return productName(first).localeCompare(productName(second), "pt-BR", {
+      numeric: true,
+      sensitivity: "base",
+    });
+  });
+};
+
 const formatMoney = (value: unknown) =>
   Number(value || 0)
     .toFixed(2)
@@ -1945,9 +2007,11 @@ export function SalaoPage() {
     }
   };
 
-  const productList = productSearch.trim()
-    ? productSearchResults || []
-    : products;
+  const productList = useMemo(() => {
+    const search = productSearch.trim();
+    if (!search) return products;
+    return sortProductsBySearchPriority(productSearchResults || [], search);
+  }, [productSearch, productSearchResults, products]);
   const productPool = useMemo(() => {
     const byId = new Map<string, any>();
     for (const product of products) byId.set(product.id, product);
