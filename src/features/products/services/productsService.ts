@@ -1,5 +1,5 @@
 import api from "@/shared/lib/api";
-import type { ProductConfiguration, ProductStorePayload } from "../types/product";
+import type { ProductConfiguration, ProductConfigurationPatch, ProductStorePayload } from "../types/product";
 
 const toList = (payload: any) => {
   const data = payload?.data;
@@ -184,6 +184,13 @@ export const productsService = {
 
   async updateProductConfiguration(productStoreId: string, configuration: ProductConfiguration) {
     const response = await api.put(`/produtos_loja/${productStoreId}/configuracao`, configuration, {
+      timeout: 60000,
+    });
+    return response.data.data;
+  },
+
+  async patchProductConfiguration(productStoreId: string, configurationPatch: ProductConfigurationPatch) {
+    const response = await api.patch(`/produtos_loja/${productStoreId}/configuracao`, configurationPatch, {
       timeout: 60000,
     });
     return response.data.data;

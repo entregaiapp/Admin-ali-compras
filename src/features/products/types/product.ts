@@ -84,3 +84,9 @@ export type ProductConfiguration = {
   variacoes: ConfigurableVariation[];
   grupos: ConfigurableGroup[];
 };
+
+export type ProductConfigurationPatch = {
+  versao: number;
+  variacoes?: ConfigurableVariation[];
+  grupos?: ConfigurableGroup[];
+};

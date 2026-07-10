@@ -8,6 +8,7 @@ import type {
   ConfigurableOption,
   ConfigurableVariation,
   ProductConfiguration,
+  ProductConfigurationPatch,
 } from "../types/product";
 
 const PRIMARY = "#122a4c";
@@ -259,6 +260,115 @@ function stripConfiguration(configuration: ProductConfiguration): ProductConfigu
   };
 }
 
+const stableStringify = (value: unknown) => JSON.stringify(value ?? null);
+const variationKey = (variation: ConfigurableVariation) => variation.id ? `id:${variation.id}` : `client:${variation.chave_cliente || ""}`;
+const optionKey = (item: ConfigurableOption) => item.id ? `id:${item.id}` : "";
+const groupWithoutOptions = (group: ConfigurableGroup) => {
+  const { opcoes, ...metadata } = group;
+  void opcoes;
+  return metadata;
+};
+
+function buildConfigurationPatch(
+  initialConfiguration: ProductConfiguration,
+  currentConfiguration: ProductConfiguration,
+): ProductConfigurationPatch | null {
+  const variations: ConfigurableVariation[] = [];
+  const initialVariationsByKey = new Map(initialConfiguration.variacoes.map((variation) => [variationKey(variation), variation]));
+  const currentVariationKeys = new Set(currentConfiguration.variacoes.map(variationKey));
+
+  for (const variation of currentConfiguration.variacoes) {
+    const initialVariation = initialVariationsByKey.get(variationKey(variation));
+    if (!variation.id || !initialVariation || stableStringify(variation) !== stableStringify(initialVariation)) {
+      variations.push(variation);
+    }
+  }
+
+  for (const variation of initialConfiguration.variacoes) {
+    if (variation.id && !currentVariationKeys.has(variationKey(variation))) {
+      variations.push({ ...variation, ativa: false });
+    }
+  }
+
+  const groups: ConfigurableGroup[] = [];
+  const initialGroupsById = new Map(
+    initialConfiguration.grupos
+      .filter((group) => group.id)
+      .map((group) => [group.id, group] as const),
+  );
+  const currentGroupIds = new Set(currentConfiguration.grupos.map((group) => group.id).filter(Boolean));
+
+  for (const group of currentConfiguration.grupos) {
+    const initialGroup = group.id ? initialGroupsById.get(group.id) : undefined;
+    if (!group.id || !initialGroup) {
+      groups.push(group);
+      continue;
+    }
+
+    const changedOptions: ConfigurableOption[] = [];
+    const initialOptionsByKey = new Map(initialGroup.opcoes.map((item) => [optionKey(item), item]));
+    const currentOptionKeys = new Set(group.opcoes.map(optionKey).filter(Boolean));
+
+    for (const item of group.opcoes) {
+      const key = optionKey(item);
+      const initialOption = key ? initialOptionsByKey.get(key) : undefined;
+      if (!item.id || !initialOption || stableStringify(item) !== stableStringify(initialOption)) {
+        changedOptions.push(item);
+      }
+    }
+
+    for (const item of initialGroup.opcoes) {
+      const key = optionKey(item);
+      if (item.id && key && !currentOptionKeys.has(key)) {
+        changedOptions.push({ ...item, ativa: false });
+      }
+    }
+
+    const groupChanged = stableStringify(groupWithoutOptions(group)) !== stableStringify(groupWithoutOptions(initialGroup));
+    if (groupChanged || changedOptions.length > 0) {
+      groups.push({ ...group, opcoes: changedOptions });
+    }
+  }
+
+  for (const group of initialConfiguration.grupos) {
+    if (group.id && !currentGroupIds.has(group.id)) {
+      groups.push({ ...group, ativo: false, opcoes: [] });
+    }
+  }
+
+  if (variations.length === 0 && groups.length === 0) return null;
+  return {
+    versao: initialConfiguration.versao,
+    variacoes: variations,
+    grupos: groups,
+  };
+}
+
+function buildStoreProductPatch(product: any, current: Record<string, any>) {
+  const original = {
+    nome: String(product?.nome || "").trim(),
+    descricao: String(product?.descricao || "").trim() || null,
+    marca: String(product?.marca || "").trim() || null,
+    preco: numberValue(product?.preco),
+    preco_promocional: nullableNumberValue(product?.preco_promocional),
+    promocao_ate: dateTimePayloadValue(dateTimeLocalValue(product?.promocao_ate)),
+    categoria_id: product?.categoria_id || product?.categoria_final_id || "",
+    ativo: product?.ativo_na_loja !== false,
+  };
+  const patch: Record<string, any> = {};
+
+  for (const [key, value] of Object.entries(current)) {
+    if (stableStringify(value) !== stableStringify(original[key as keyof typeof original])) {
+      patch[key] = value;
+    }
+  }
+
+  if (product?.modo_compra !== "configuravel") patch.modo_compra = "configuravel";
+  if (product?.modo_estoque !== "disponibilidade") patch.modo_estoque = "disponibilidade";
+
+  return patch;
+}
+
 type Props = {
   product?: any;
   duplicate?: boolean;
@@ -285,6 +395,7 @@ export function ConfigurableProductEditor({ product, duplicate = false, categori
     variacoes: [],
     grupos: defaultAddonGroups(),
   });
+  const [initialConfiguration, setInitialConfiguration] = useState<ProductConfiguration | null>(null);
   const [optionImageFiles, setOptionImageFiles] = useState<Map<string, File>>(new Map());
   const [loading, setLoading] = useState(Boolean(product && !duplicate));
   const [saving, setSaving] = useState(false);
@@ -302,7 +413,9 @@ export function ConfigurableProductEditor({ product, duplicate = false, categori
           variacoes: data.variacoes || [],
           grupos: data.grupos || [],
         };
-        setConfiguration(normalizeConfigurationRules(duplicate ? stripConfiguration(loaded) : loaded));
+        const normalized = normalizeConfigurationRules(duplicate ? stripConfiguration(loaded) : loaded);
+        setConfiguration(normalized);
+        setInitialConfiguration(duplicate ? null : normalized);
         setItemType(inferItemType(loaded));
       })
       .catch((error) => showSystemNotice(error?.response?.data?.message || "Não foi possível carregar o cardápio."))
@@ -469,7 +582,7 @@ export function ConfigurableProductEditor({ product, duplicate = false, categori
         productId = created.produto?.id;
         version = Number(created.configuracao_versao || 1);
       } else {
-        await productsService.updateStoreProduct(productStoreId, {
+        const productPatch = buildStoreProductPatch(product, {
           nome: name.trim(),
           descricao: description.trim() || null,
           marca: brand.trim() || null,
@@ -478,9 +591,10 @@ export function ConfigurableProductEditor({ product, duplicate = false, categori
           promocao_ate: dateTimePayloadValue(promotionUntil),
           categoria_id: categoryId,
           ativo: active,
-          modo_compra: "configuravel",
-          modo_estoque: "disponibilidade",
         });
+        if (Object.keys(productPatch).length > 0) {
+          await productsService.updateStoreProduct(productStoreId, productPatch);
+        }
       }
       const normalizedConfiguration = normalizeConfigurationRules(configuration);
       const groupsWithUploadedImages = await Promise.all(normalizedConfiguration.grupos.map(async (group, groupIndex) => ({
@@ -492,11 +606,23 @@ export function ConfigurableProductEditor({ product, duplicate = false, categori
           return { ...item, imagem_url: uploaded.url };
         })),
       })));
-      await productsService.updateProductConfiguration(productStoreId, {
+      const configurationToSave = {
         ...normalizedConfiguration,
         versao: version,
         grupos: groupsWithUploadedImages,
-      });
+      };
+      if (editingExisting) {
+        if (!initialConfiguration) {
+          showSystemNotice("NÃ£o foi possÃ­vel identificar as alteraÃ§Ãµes do cardÃ¡pio. Reabra o editor antes de salvar.");
+          return;
+        }
+        const configurationPatch = buildConfigurationPatch(initialConfiguration, configurationToSave);
+        if (configurationPatch) {
+          await productsService.patchProductConfiguration(productStoreId, configurationPatch);
+        }
+      } else {
+        await productsService.updateProductConfiguration(productStoreId, configurationToSave);
+      }
       if (imageFile && productId) {
         await productsService.uploadProductImage(productId, imageFile, true);
       }
