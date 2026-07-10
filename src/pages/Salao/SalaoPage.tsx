@@ -1879,7 +1879,7 @@ export function SalaoPage() {
           printComandaTarget,
           "cozinha",
           selectedItems,
-          selectedItems.map((item) => String(item.id)),
+          selectedItems.map((item) => String(item.id || "")).filter(Boolean),
         );
         if (sent) {
           markKitchenItemsPrinted(
@@ -1929,7 +1929,7 @@ export function SalaoPage() {
         kitchenPrintSelection.comanda,
         "cozinha",
         selectedItemsForPrint,
-        selectedItemsForPrint.map((item) => String(item.id)),
+        selectedItemsForPrint.map((item) => String(item.id || "")).filter(Boolean),
       );
       if (sent) {
         markKitchenItemsPrinted(kitchenPrintSelection.storageKey, itemKeys);
@@ -3922,16 +3922,22 @@ export function SalaoPage() {
       {printComandaTarget && (
         <ComandaPrintModeModal
           subtitle={`Comanda ${printComandaTarget.numero_comanda || printComandaTarget.id}`}
-          onClose={() => setPrintComandaTarget(null)}
-          onSelect={handleSalaoPrintModeSelected}
+          busy={salaoPrintBusy}
+          onClose={() => {
+            if (!salaoPrintBusy) setPrintComandaTarget(null);
+          }}
+          onSelect={(mode) => void handleSalaoPrintModeSelected(mode)}
         />
       )}
       {kitchenPrintSelection && (
         <KitchenPrintSelectionModal
           subtitle="Novos produtos ficam marcados por padrão. Produtos já impressos ficam desmarcados."
           items={kitchenPrintSelection.selectionItems}
-          onClose={() => setKitchenPrintSelection(null)}
-          onPrint={handlePrintSelectedSalaoKitchenItems}
+          busy={salaoPrintBusy}
+          onClose={() => {
+            if (!salaoPrintBusy) setKitchenPrintSelection(null);
+          }}
+          onPrint={(itemKeys) => void handlePrintSelectedSalaoKitchenItems(itemKeys)}
         />
       )}
       {editingSimpleItem && (
