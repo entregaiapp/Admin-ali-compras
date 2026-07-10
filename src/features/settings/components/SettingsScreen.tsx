@@ -22,6 +22,7 @@ import LoadingModal from '@/shared/components/ui/LoadingModal';
 import { showSystemNotice } from '@/shared/components/SystemNoticeModal';
 import { getApiList } from '@/shared/utils/apiData';
 import { SecurityMfaPanel } from './SecurityMfaPanel';
+import { PrintingSettingsPanel, type StorePrintMode } from '@/features/printing/components/PrintingSettingsPanel';
 
 const PRIMARY = "#122a4c";
 const TENANT_ROOT_DOMAIN = import.meta.env.VITE_TENANT_ROOT_DOMAIN || "entregaiapp.com.br";
@@ -78,6 +79,7 @@ const sections = [
   "Entrega",
   "Áreas de Entrega",
   "Pagamentos",
+  "Impressão",
   "Notificações",
   "Segurança",
 ];
@@ -156,6 +158,7 @@ export function SettingsScreen() {
       "Entrega concluída",
     ],
     gateway_pagamento_padrao: "mercadopago",
+    impressao_pedido_modo: "agent_com_fallback",
   });
 
   const user = JSON.parse(localStorage.getItem("user") || "{}");
@@ -268,6 +271,8 @@ export function SettingsScreen() {
           config.permitir_cpf_na_nota_cliente ?? prev.permitir_cpf_na_nota_cliente ?? true,
         preferencias_notificacao:
           config.preferencias_notificacao || prev.preferencias_notificacao,
+        impressao_pedido_modo:
+          config.impressao_pedido_modo || prev.impressao_pedido_modo || "agent_com_fallback",
         horarios:
           horarios.length > 0
             ? horarios
@@ -343,6 +348,7 @@ export function SettingsScreen() {
         whatsapp_suporte: formData.whatsapp_suporte,
         formas_pagamento: formData.formas_pagamento,
         preferencias_notificacao: formData.preferencias_notificacao,
+        impressao_pedido_modo: formData.impressao_pedido_modo,
       };
 
       await api.put(`/lojas/${lojaId}`, storeData);
@@ -1544,6 +1550,15 @@ export function SettingsScreen() {
               </div>
             </div>
           )}
+          {activeSection === "Impressão" && (
+            <PrintingSettingsPanel
+              printMode={formData.impressao_pedido_modo || "agent_com_fallback"}
+              onPrintModeChange={(mode: StorePrintMode) =>
+                setFormData((prev: any) => ({ ...prev, impressao_pedido_modo: mode }))
+              }
+            />
+          )}
+
           {activeSection === "Segurança" && <SecurityMfaPanel />}
         </div>
       </div>

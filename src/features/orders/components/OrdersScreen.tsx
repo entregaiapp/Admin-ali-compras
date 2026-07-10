@@ -101,6 +101,7 @@ import {
   createOrdersAdminRealtime,
   ordersTenantTopic,
 } from "@/features/orders/services/ordersRealtime";
+import { printingService } from "@/features/printing/services/printingService";
 import {
   useAlertSoundPreference,
   usePersistentAttentionSound,
@@ -725,6 +726,7 @@ export function OrdersScreen() {
         ...store,
         slogan: config.slogan,
         whatsapp_suporte: config.whatsapp_suporte,
+        impressao_pedido_modo: config.impressao_pedido_modo || "agent_com_fallback",
       });
     });
 
@@ -1490,18 +1492,66 @@ export function OrdersScreen() {
     return { ...order, ...updatedOrder };
   };
 
+  const getStorePrintMode = () =>
+    storePrintData?.impressao_pedido_modo || "agent_com_fallback";
+
+  const printOrderInBrowser = (
+    order: any,
+    items: any[],
+    mode: ComandaPrintMode,
+    orderPayment?: any,
+  ) => {
+    const printWindow = openComandaPrintWindow();
+    if (!printWindow) return false;
+
+    printComanda(
+      { ...order, pagamento: orderPayment },
+      items,
+      storePrintData,
+      printWindow,
+      { mode },
+    );
+    return true;
+  };
+
+  const enqueueOrFallbackPrint = async (
+    order: any,
+    items: any[],
+    mode: ComandaPrintMode,
+    itemIds?: string[],
+    orderPayment?: any,
+    reprint = false,
+  ) => {
+    const printMode = getStorePrintMode();
+
+    if (printMode === "navegador_windows") {
+      if (!printOrderInBrowser(order, items, mode, orderPayment)) return false;
+      return true;
+    }
+
+    try {
+      await printingService.printOrder(order.id, {
+        mode,
+        item_ids: itemIds,
+        reprint,
+      });
+      return true;
+    } catch (error) {
+      if (printMode !== "agent_com_fallback") throw error;
+      showSystemNotice("Print Agent indisponível. Abrindo impressão pelo Windows.");
+      if (!printOrderInBrowser(order, items, mode, orderPayment)) return false;
+      return true;
+    }
+  };
+
   const handlePrintModeSelected = async (mode: ComandaPrintMode) => {
     if (!printOrder || printBusy) return;
-
-    const printWindow = openComandaPrintWindow();
-    if (!printWindow) return;
 
     setPrintBusy(true);
     let printableOrder = printOrder;
     try {
       printableOrder = await moveOrderToSeparationForPrint(printOrder);
     } catch (error) {
-      printWindow.close();
       setPrintBusy(false);
       showSystemNotice(
         getApiErrorMessage(
@@ -1524,7 +1574,6 @@ export function OrdersScreen() {
         const hasPrintedHistory = readKitchenPrintedKeys(storageKey).size > 0;
 
         if (hasPrintedHistory) {
-          printWindow.close();
           setKitchenPrintSelection({
             order: printableOrder,
             items,
@@ -1538,28 +1587,18 @@ export function OrdersScreen() {
         }
 
         const itemKeys = selectionItems.map((item) => item.key);
-        printComanda(
-          { ...printableOrder, pagamento: orderPayment },
-          items,
-          storePrintData,
-          printWindow,
-          { mode },
-        );
+        const sent = await enqueueOrFallbackPrint(printableOrder, items, mode, itemKeys, orderPayment);
+        if (!sent) return;
         markKitchenItemsPrinted(storageKey, itemKeys);
       } else {
-        printComanda(
-          { ...printableOrder, pagamento: orderPayment },
-          items,
-          storePrintData,
-          printWindow,
-          { mode },
-        );
+        const sent = await enqueueOrFallbackPrint(printableOrder, items, mode, undefined, orderPayment);
+        if (!sent) return;
       }
       await markOrderComandaPrinted(printableOrder, mode);
+      showSystemNotice("Pedido enviado para impressão.");
       setPrintOrder(null);
       void fetchOrders(1, true, { silent: true });
     } catch {
-      printWindow.close();
       showSystemNotice(
         "Não foi possível carregar os produtos deste pedido para impressão.",
       );
@@ -1568,28 +1607,38 @@ export function OrdersScreen() {
     }
   };
 
-  const handlePrintSelectedKitchenItems = (itemKeys: string[]) => {
+  const handlePrintSelectedKitchenItems = async (itemKeys: string[]) => {
     if (!kitchenPrintSelection) return;
 
-    const printWindow = openComandaPrintWindow();
-    if (!printWindow) return;
+    try {
+      const selectedKeys = new Set(itemKeys);
+      const selectedItemsForPrint = kitchenPrintSelection.selectionItems
+        .filter((item) => selectedKeys.has(item.key))
+        .map((item) => item.item);
+      const sent = await enqueueOrFallbackPrint(
+        kitchenPrintSelection.order,
+        selectedItemsForPrint,
+        "cozinha",
+        itemKeys,
+        kitchenPrintSelection.orderPayment,
+        true,
+      );
+      if (!sent) return;
+      markKitchenItemsPrinted(kitchenPrintSelection.storageKey, itemKeys);
+      await markOrderComandaPrinted(kitchenPrintSelection.order, "cozinha");
+      showSystemNotice("Pedido enviado para impressão.");
+      void fetchOrders(1, true, { silent: true });
+      setKitchenPrintSelection(null);
+    } catch (error) {
+      showSystemNotice(
+        getApiErrorMessage(error, "Não foi possível enviar os produtos para impressão."),
+      );
+    }
+    return;
+  };
 
-    const selectedKeys = new Set(itemKeys);
-    const selectedItemsForPrint = kitchenPrintSelection.selectionItems
-      .filter((item) => selectedKeys.has(item.key))
-      .map((item) => item.item);
-
-    printComanda(
-      { ...kitchenPrintSelection.order, pagamento: kitchenPrintSelection.orderPayment },
-      selectedItemsForPrint,
-      storePrintData,
-      printWindow,
-      { mode: "cozinha" },
-    );
-    markKitchenItemsPrinted(kitchenPrintSelection.storageKey, itemKeys);
-    void markOrderComandaPrinted(kitchenPrintSelection.order, "cozinha")
-      .then(() => fetchOrders(1, true, { silent: true }))
-      .catch((error) => {
+  /*
+  const handleLegacyKitchenPrintError = (error: unknown) => {
         showSystemNotice(
           getApiErrorMessage(error, "NÃ£o foi possÃ­vel registrar a impressÃ£o da comanda."),
         );
@@ -1597,6 +1646,7 @@ export function OrdersScreen() {
     setKitchenPrintSelection(null);
   };
 
+  */
   const openItemsChecklist = async (order: any) => {
     setChecklistOrder(order);
     setChecklistItems([]);
