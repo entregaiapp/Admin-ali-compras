@@ -38,6 +38,49 @@ const apiError = (error: any) =>
 const money = (value: any) => Number(value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const normalizeSearchText = (value: string) =>
   value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR");
+const getSearchMatchRank = (
+  item: any,
+  search: string,
+  secondaryFields: string[] = ["descricao"],
+) => {
+  const name = normalizeSearchText(String(item?.nome || ""));
+  if (!search) return 0;
+  if (name === search) return 0;
+  if (name.startsWith(search)) return 1;
+  if (name.includes(search)) return 2;
+
+  const secondaryText = normalizeSearchText(
+    secondaryFields.map((field) => item?.[field] || "").join(" "),
+  );
+  if (secondaryText.startsWith(search)) return 3;
+  if (secondaryText.includes(search)) return 4;
+  return Number.POSITIVE_INFINITY;
+};
+const sortSearchMatches = (
+  items: any[],
+  searchText: string,
+  secondaryFields?: string[],
+) => {
+  const search = normalizeSearchText(searchText.trim());
+  if (!search) return items;
+  return items
+    .map((item, index) => ({
+      item,
+      index,
+      rank: getSearchMatchRank(item, search, secondaryFields),
+    }))
+    .filter((entry) => Number.isFinite(entry.rank))
+    .sort((a, b) => {
+      if (a.rank !== b.rank) return a.rank - b.rank;
+      const nameCompare = String(a.item?.nome || "").localeCompare(
+        String(b.item?.nome || ""),
+        "pt-BR",
+        { sensitivity: "base" },
+      );
+      return nameCompare || a.index - b.index;
+    })
+    .map((entry) => entry.item);
+};
 const toFinitePrice = (value: any) => {
   if (value === null || value === undefined || value === "") return null;
   const numeric = Number(value);
@@ -290,7 +333,14 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
       .then((response) => {
         if (cancelled) return;
         const payload = paginatedList(response);
-        setProducts(payload.products);
+        setProducts(
+          sortSearchMatches(payload.products, debouncedProductSearch, [
+            "categoria_nome",
+            "descricao",
+            "codigo_barras",
+            "codigo_interno",
+          ]),
+        );
         setCatalogPage(payload.page);
         setCatalogTotal(payload.total);
         setCatalogTotalPages(payload.totalPages);
@@ -417,7 +467,13 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
         },
       });
       const payload = paginatedList(response);
-      setProducts((current) => mergeUniqueProducts(current, payload.products));
+      setProducts((current) =>
+        sortSearchMatches(
+          mergeUniqueProducts(current, payload.products),
+          debouncedProductSearch,
+          ["categoria_nome", "descricao", "codigo_barras", "codigo_interno"],
+        ),
+      );
       setCatalogPage(payload.page);
       setCatalogTotal(payload.total);
       setCatalogTotalPages(payload.totalPages);
@@ -562,9 +618,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
     const search = normalizeSearchText(optionSearches[group.id] || "");
     const options = (group.opcoes || []).filter(isOptionAvailable);
     if (!search) return options;
-    return options.filter((option: any) =>
-      normalizeSearchText(`${option.nome || ""} ${option.descricao || ""}`).includes(search)
-    );
+    return sortSearchMatches(options, search, ["descricao"]);
   };
   const getGroupLimits = (group: any) => {
     const rule = (group.regras_variacao || []).find(

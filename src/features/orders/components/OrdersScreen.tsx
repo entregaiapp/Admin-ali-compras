@@ -23,6 +23,7 @@ import {
   CalendarDays,
   Map as MapIcon,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   TruckIcon,
   Navigation,
@@ -384,6 +385,19 @@ type ArchivedDailySummary = {
   count: number;
   total: number;
 };
+const getPreferredArchivedDayKey = (
+  summary: Array<{ date: string }>,
+  currentKey = "",
+) => {
+  const todayKey = getDateKey(new Date());
+  const currentKeyExists = summary.some((item) => item.date === currentKey);
+  return (
+    summary.find((item) => item.date === todayKey)?.date ||
+    (currentKeyExists ? currentKey : "") ||
+    summary[0]?.date ||
+    currentKey
+  );
+};
 type OrderType = "entrega" | "retirada" | "salao";
 type OrderCounterKey = OrderType;
 const getOrderType = (order: any): OrderType => {
@@ -609,6 +623,7 @@ export function OrdersScreen() {
     }
   })();
   const realtimeRefreshTimeoutRef = useRef<number | null>(null);
+  const archivedDaysCarouselRef = useRef<HTMLDivElement | null>(null);
   const { enabled: deliverySoundEnabled, setEnabled: setDeliverySoundEnabled } =
     useAlertSoundPreference(user?.loja_id, "entrega");
   const { enabled: pickupSoundEnabled, setEnabled: setPickupSoundEnabled } =
@@ -885,9 +900,7 @@ export function OrdersScreen() {
       if (reset && viewMode === "arquivados") {
         setArchivedDailySummary(nextDailySummary);
         setActiveListGroupKey((currentKey) =>
-          nextDailySummary.some((item) => item.date === currentKey)
-            ? currentKey
-            : nextDailySummary[0]?.date || currentKey,
+          getPreferredArchivedDayKey(nextDailySummary, currentKey),
         );
       }
       setOrders((prev) =>
@@ -2980,6 +2993,33 @@ export function OrdersScreen() {
     listGroups.find((group) => group.key === activeListGroupKey) ||
     listGroups[0] ||
     null;
+  const activeArchivedGroupIndex =
+    viewMode === "arquivados" && activeListGroup
+      ? listGroups.findIndex((group) => group.key === activeListGroup.key)
+      : -1;
+  const canGoToPreviousArchivedDay = activeArchivedGroupIndex > 0;
+  const canGoToNextArchivedDay =
+    activeArchivedGroupIndex >= 0 &&
+    activeArchivedGroupIndex < listGroups.length - 1;
+  const handleArchivedDayStep = (step: -1 | 1) => {
+    const nextGroup = listGroups[activeArchivedGroupIndex + step];
+    if (!nextGroup) return;
+    void fetchArchivedDayOrders(nextGroup.key);
+  };
+
+  useEffect(() => {
+    if (viewMode !== "arquivados" || !activeListGroup?.key) return;
+    const activeDayButton =
+      archivedDaysCarouselRef.current?.querySelector<HTMLElement>(
+        `[data-archive-day="${activeListGroup.key}"]`,
+      );
+    activeDayButton?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+      inline: "center",
+    });
+  }, [activeListGroup?.key, listGroups.length, viewMode]);
+
   const bairroGroups: Record<
     string,
     { orders: any[]; total: number; colorIdx: number }
@@ -3587,69 +3627,95 @@ export function OrdersScreen() {
           <>
             {listGroups.length > 0 && viewMode === "arquivados" && (
               <div className="border-b border-gray-200 bg-white px-4 py-3">
-                <div
-                  className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-6"
-                  role="tablist"
-                  aria-label="Dias arquivados"
-                >
-                  {listGroups.map((group) => {
-                    const active = activeListGroup?.key === group.key;
-                    const loadingDay = loadingArchivedDayKey === group.key;
-                    return (
-                      <button
-                        key={group.key}
-                        type="button"
-                        role="tab"
-                        aria-selected={active}
-                        title={group.description}
-                        onClick={() => void fetchArchivedDayOrders(group.key)}
-                        disabled={loadingDay}
-                        className={`min-h-24 rounded-lg border p-3 text-left transition-all ${
-                          active
-                            ? "bg-white shadow-sm"
-                            : "bg-gray-50 hover:bg-white hover:shadow-sm"
-                        }`}
-                        style={
-                          active
-                            ? {
-                                borderColor: primaryColor,
-                                boxShadow: `0 0 0 1px ${hexToRgba(primaryColor, 0.22)}`,
-                              }
-                            : { borderColor: "#e5e7eb" }
-                        }
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span
-                            className="text-base font-black"
-                            style={{ color: active ? primaryColor : "#111827" }}
-                          >
-                            {group.title}
-                          </span>
-                          <CalendarDays
-                            className="h-4 w-4"
-                            style={{ color: active ? primaryColor : "#94a3b8" }}
-                          />
-                          {loadingDay && (
-                            <Loader2
-                              className="h-4 w-4 animate-spin"
-                              style={{ color: primaryColor }}
-                            />
-                          )}
-                        </div>
-                        <div className="mt-1 text-xs capitalize text-gray-500">
-                          {group.description}
-                        </div>
-                        <div className="mt-3 flex items-center justify-between gap-2">
-                          <span className="rounded-md bg-gray-100 px-2 py-1 text-[11px] font-semibold text-gray-600">
-                            {group.count} pedido{group.count !== 1 ? "s" : ""}
-                          </span>
-                          <span className="text-xs font-bold text-gray-800">
-                            R$ {group.total.toFixed(2).replace(".", ",")}
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })}
+                <div className="flex items-stretch gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleArchivedDayStep(-1)}
+                    disabled={!canGoToPreviousArchivedDay}
+                    className="flex w-10 flex-none items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-35"
+                    aria-label="Retroceder dia arquivado"
+                    title="Retroceder"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+                  <div
+                    ref={archivedDaysCarouselRef}
+                    className="flex min-w-0 flex-1 gap-2 overflow-x-auto scroll-smooth pb-1"
+                    role="tablist"
+                    aria-label="Dias arquivados"
+                  >
+                    {listGroups.map((group) => {
+                      const active = activeListGroup?.key === group.key;
+                      const loadingDay = loadingArchivedDayKey === group.key;
+                      return (
+                        <button
+                          key={group.key}
+                          type="button"
+                          role="tab"
+                          aria-selected={active}
+                          data-archive-day={group.key}
+                          title={group.description}
+                          onClick={() => void fetchArchivedDayOrders(group.key)}
+                          disabled={loadingDay}
+                          className={`min-h-24 w-[210px] flex-none rounded-lg border p-3 text-left transition-all sm:w-[230px] ${
+                            active
+                              ? "bg-white shadow-sm"
+                              : "bg-gray-50 hover:bg-white hover:shadow-sm"
+                          }`}
+                          style={
+                            active
+                              ? {
+                                  borderColor: primaryColor,
+                                  boxShadow: `0 0 0 1px ${hexToRgba(primaryColor, 0.22)}`,
+                                }
+                              : { borderColor: "#e5e7eb" }
+                          }
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span
+                              className="text-base font-black"
+                              style={{ color: active ? primaryColor : "#111827" }}
+                            >
+                              {group.title}
+                            </span>
+                            <span className="flex items-center gap-1.5">
+                              <CalendarDays
+                                className="h-4 w-4"
+                                style={{ color: active ? primaryColor : "#94a3b8" }}
+                              />
+                              {loadingDay && (
+                                <Loader2
+                                  className="h-4 w-4 animate-spin"
+                                  style={{ color: primaryColor }}
+                                />
+                              )}
+                            </span>
+                          </div>
+                          <div className="mt-1 line-clamp-2 text-xs capitalize text-gray-500">
+                            {group.description}
+                          </div>
+                          <div className="mt-3 flex items-center justify-between gap-2">
+                            <span className="rounded-md bg-gray-100 px-2 py-1 text-[11px] font-semibold text-gray-600">
+                              {group.count} pedido{group.count !== 1 ? "s" : ""}
+                            </span>
+                            <span className="text-xs font-bold text-gray-800">
+                              R$ {group.total.toFixed(2).replace(".", ",")}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleArchivedDayStep(1)}
+                    disabled={!canGoToNextArchivedDay}
+                    className="flex w-10 flex-none items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-35"
+                    aria-label="Avançar dia arquivado"
+                    title="Avançar"
+                  >
+                    <ChevronRight className="h-5 w-5" />
+                  </button>
                 </div>
               </div>
             )}
