@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Clock, Loader2, MapPin, Navigation, Package, RefreshCw, Route, Truck, User } from 'lucide-react';
+import { AlertTriangle, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Clock, Loader2, MapPin, Package, RefreshCw, Route, Truck, User } from 'lucide-react';
 import api from '@/shared/lib/api';
-import { formatBrasiliaDate } from '@/shared/lib/dateTime';
+import { dateInputInBrasilia, formatBrasiliaDate } from '@/shared/lib/dateTime';
 import { showSystemNotice } from '@/shared/components/SystemNoticeModal';
 
 const PRIMARY = '#122a4c';
+const API_ROUTES_PER_PAGE = 100;
 
 const tabs = ['Todos', 'Aguardando rota', 'Rota gerada', 'Em andamento', 'Concluída'];
+const periodTabs = [
+  { value: 'today', label: 'Entregas de hoje' },
+  { value: 'other', label: 'Outras entregas' },
+] as const;
+
+type PeriodTab = typeof periodTabs[number]['value'];
 
 const getApiList = (payload: any): any[] => {
   const data = payload?.data;
@@ -14,6 +21,12 @@ const getApiList = (payload: any): any[] => {
   if (Array.isArray(data?.data)) return data.data;
   if (Array.isArray(payload)) return payload;
   return [];
+};
+
+const getApiTotalPages = (payload: any) => {
+  const totalPages = payload?.total_pages ?? payload?.totalPages ?? payload?.data?.total_pages ?? payload?.data?.totalPages;
+  const parsed = Number(totalPages || 1);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 };
 
 const getRouteLabel = (route: any) => {
@@ -60,6 +73,23 @@ const getRouteDate = (route: any) => (
   route.createdAt || route.created_at || route.startedAt || route.started_at || null
 );
 
+const getRouteDateInput = (route: any) => {
+  const routeDate = getRouteDate(route);
+  if (!routeDate) return '';
+
+  try {
+    return dateInputInBrasilia(routeDate);
+  } catch (error) {
+    return '';
+  }
+};
+
+const getRelativeDateInput = (days: number) => {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return dateInputInBrasilia(date);
+};
+
 const getStops = (route: any) => (
   Array.isArray(route.stops) ? route.stops : []
 );
@@ -89,7 +119,10 @@ const hexToRgba = (hex: string, alpha: number) => {
 
 export function DeliveriesScreen() {
   const [routes, setRoutes] = useState<any[]>([]);
+  const [periodTab, setPeriodTab] = useState<PeriodTab>('today');
   const [tab, setTab] = useState('Todos');
+  const [startDate, setStartDate] = useState(() => getRelativeDateInput(-7));
+  const [endDate, setEndDate] = useState(() => getRelativeDateInput(-1));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updatingRouteId, setUpdatingRouteId] = useState<string | null>(null);
@@ -110,10 +143,24 @@ export function DeliveriesScreen() {
     try {
       setLoading(true);
       setError(null);
-      const response = await api.get('/delivery-routes', {
-        params: { perPage: 100 },
+      const firstResponse = await api.get('/delivery-routes', {
+        params: { page: 1, perPage: API_ROUTES_PER_PAGE },
       });
-      setRoutes(getApiList(response.data));
+      const totalPages = getApiTotalPages(firstResponse.data);
+      const remainingResponses = totalPages > 1
+        ? await Promise.all(
+          Array.from({ length: totalPages - 1 }, (_, index) => (
+            api.get('/delivery-routes', {
+              params: { page: index + 2, perPage: API_ROUTES_PER_PAGE },
+            })
+          ))
+        )
+        : [];
+
+      setRoutes([
+        ...getApiList(firstResponse.data),
+        ...remainingResponses.flatMap(response => getApiList(response.data)),
+      ]);
     } catch (err) {
       console.error('Error fetching delivery routes:', err);
       setError('Não foi possível carregar as entregas.');
@@ -137,14 +184,33 @@ export function DeliveriesScreen() {
       .catch(() => setPrimaryColor(PRIMARY));
   }, [user?.loja_id]);
 
-  const filtered = tab === 'Todos' ? routes : routes.filter(route => getRouteLabel(route) === tab);
+  const todayInput = dateInputInBrasilia();
+  const todayRoutes = useMemo(() => routes.filter((route) => (
+    getRouteDateInput(route) === todayInput
+  )), [routes, todayInput]);
+
+  const otherRoutes = useMemo(() => routes.filter((route) => {
+    const routeDateInput = getRouteDateInput(route);
+    if (!routeDateInput) return false;
+
+    const isOutsideToday = routeDateInput !== todayInput;
+    const isAfterStart = !startDate || routeDateInput >= startDate;
+    const isBeforeEnd = !endDate || routeDateInput <= endDate;
+    return isOutsideToday && isAfterStart && isBeforeEnd;
+  }), [routes, todayInput, startDate, endDate]);
+
+  const periodFilteredRoutes = periodTab === 'today' ? todayRoutes : otherRoutes;
+
+  const filtered = tab === 'Todos'
+    ? periodFilteredRoutes
+    : periodFilteredRoutes.filter(route => getRouteLabel(route) === tab);
 
   const stats = useMemo(() => ({
-    waiting: routes.filter(route => getRouteLabel(route) === 'Aguardando rota').length,
-    planned: routes.filter(route => getRouteLabel(route) === 'Rota gerada').length,
-    running: routes.filter(route => getRouteLabel(route) === 'Em andamento').length,
-    done: routes.filter(route => getRouteLabel(route) === 'Concluída').length,
-  }), [routes]);
+    waiting: periodFilteredRoutes.filter(route => getRouteLabel(route) === 'Aguardando rota').length,
+    planned: periodFilteredRoutes.filter(route => getRouteLabel(route) === 'Rota gerada').length,
+    running: periodFilteredRoutes.filter(route => getRouteLabel(route) === 'Em andamento').length,
+    done: periodFilteredRoutes.filter(route => getRouteLabel(route) === 'Concluída').length,
+  }), [periodFilteredRoutes]);
 
   const generateRoute = async (routeId: string) => {
     try {
@@ -214,6 +280,58 @@ export function DeliveriesScreen() {
         </div>
       )}
 
+      <div className="-mx-5 -mt-5 border-b border-gray-200 bg-white px-5">
+        <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Período das entregas">
+          {periodTabs.map((period) => {
+            const active = periodTab === period.value;
+            const count = period.value === 'today'
+              ? todayRoutes.length
+              : otherRoutes.length;
+
+            return (
+              <button
+                key={period.value}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => {
+                  setPeriodTab(period.value);
+                  setTab('Todos');
+                }}
+                className={`relative isolate inline-flex min-w-36 items-center justify-center gap-2 overflow-hidden border-b-2 px-4 py-3 text-sm font-semibold transition-all duration-200 ${active ? 'text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
+                style={active ? { borderBottomColor: primaryColor, color: primaryColor } : undefined}
+              >
+                {active && (
+                  <>
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-x-0 bottom-0 h-7"
+                      style={{
+                        background: `linear-gradient(to top, ${hexToRgba(primaryColor, 0.13)} 0%, ${hexToRgba(primaryColor, 0.055)} 38%, ${hexToRgba(primaryColor, 0)} 100%)`,
+                      }}
+                    />
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-x-3 bottom-0 h-1 blur-md"
+                      style={{ backgroundColor: hexToRgba(primaryColor, 0.22) }}
+                    />
+                  </>
+                )}
+                <span className="relative z-10">{period.label}</span>
+                {count > 0 && (
+                  <span
+                    className="relative z-10 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white"
+                    style={{ backgroundColor: primaryColor }}
+                  >
+                    {count > 99 ? '99+' : count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="flex items-center justify-between gap-3">
         <div>
           <h2 className="text-gray-900 font-semibold">Entregas</h2>
@@ -226,6 +344,40 @@ export function DeliveriesScreen() {
           <RefreshCw className="w-4 h-4" /> Atualizar
         </button>
       </div>
+
+      {periodTab === 'other' && (
+        <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-gray-800">
+              <CalendarDays className="w-4 h-4" style={{ color: primaryColor }} />
+              Período das outras entregas
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Selecione o intervalo de datas que deseja consultar.</p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <label className="text-xs font-medium text-gray-500">
+              Data inicial
+              <input
+                type="date"
+                value={startDate}
+                max={endDate || undefined}
+                onChange={(event) => setStartDate(event.target.value)}
+                className="mt-1 block h-9 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-1"
+              />
+            </label>
+            <label className="text-xs font-medium text-gray-500">
+              Data final
+              <input
+                type="date"
+                value={endDate}
+                min={startDate || undefined}
+                onChange={(event) => setEndDate(event.target.value)}
+                className="mt-1 block h-9 rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 focus:outline-none focus:ring-1"
+              />
+            </label>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-center gap-2">
@@ -423,7 +575,9 @@ export function DeliveriesScreen() {
         {!loading && filtered.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16 text-gray-400">
             <Truck className="w-10 h-10 mb-3 opacity-40" />
-            <p className="text-sm">Nenhuma entrega neste status</p>
+            <p className="text-sm">
+              {periodTab === 'today' ? 'Nenhuma entrega de hoje neste status' : 'Nenhuma entrega neste período e status'}
+            </p>
           </div>
         )}
       </div>

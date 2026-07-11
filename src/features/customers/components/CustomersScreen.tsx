@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Search, Eye, X, Phone, Mail, MapPin, ShoppingBag, ArrowLeft, MessageCircle } from 'lucide-react';
+import { Search, Eye, X, Phone, Mail, MapPin, ShoppingBag, ArrowLeft, MessageCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '@/shared/lib/api';
 import { formatBrasiliaDate } from '@/shared/lib/dateTime';
 
 const PRIMARY = '#122a4c';
+const CUSTOMERS_PER_PAGE = 20;
+const API_CUSTOMERS_PER_PAGE = 100;
 
 const toNumber = (value: any) => {
   if (value === null || value === undefined || value === '') return 0;
@@ -39,6 +41,14 @@ const getWhatsappPhone = (phone: any) => {
   const digits = String(phone || '').replace(/\D/g, '');
   if (digits.length < 10) return null;
   return digits.startsWith('55') ? digits : `55${digits}`;
+};
+
+const getPaginationPages = (page: number, totalPages: number) => {
+  const pages = new Set<number>([1, totalPages]);
+  for (let current = page - 1; current <= page + 1; current += 1) {
+    if (current >= 1 && current <= totalPages) pages.add(current);
+  }
+  return Array.from(pages).sort((a, b) => a - b);
 };
 
 function CustomerDetail({ customer, onClose }: { customer: any; onClose: () => void }) {
@@ -173,17 +183,41 @@ export function CustomersScreen() {
   const [selected, setSelected] = useState<any | null>(null);
   const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     let active = true;
 
     const loadCustomers = async () => {
       try {
-        const response = await api.get('/clientes');
-        const data = response.data.data;
-        if (active) setCustomers(Array.isArray(data) ? data : data?.data || []);
+        setLoading(true);
+
+        const firstResponse = await api.get('/clientes', {
+          params: { page: 1, per_page: API_CUSTOMERS_PER_PAGE },
+        });
+        const firstPayload = firstResponse.data?.data;
+        const firstCustomers = Array.isArray(firstPayload) ? firstPayload : firstPayload?.data || [];
+        const totalApiPages = Array.isArray(firstPayload) ? 1 : Number(firstPayload?.total_pages || 1);
+
+        const remainingResponses = totalApiPages > 1
+          ? await Promise.all(
+            Array.from({ length: totalApiPages - 1 }, (_, index) => (
+              api.get('/clientes', {
+                params: { page: index + 2, per_page: API_CUSTOMERS_PER_PAGE },
+              })
+            ))
+          )
+          : [];
+
+        const remainingCustomers = remainingResponses.flatMap(response => {
+          const payload = response.data?.data;
+          return Array.isArray(payload) ? payload : payload?.data || [];
+        });
+
+        if (active) setCustomers([...firstCustomers, ...remainingCustomers]);
       } catch (err) {
         console.error('Error fetching customers', err);
+        if (active) setCustomers([]);
       } finally {
         if (active) setLoading(false);
       }
@@ -192,6 +226,10 @@ export function CustomersScreen() {
     void loadCustomers();
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, filter]);
 
   const filtered = customers.filter(c => {
     const matchSearch = (c.nome || '').toLowerCase().includes(search.toLowerCase()) || 
@@ -208,6 +246,18 @@ export function CustomersScreen() {
     
     return matchSearch;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / CUSTOMERS_PER_PAGE));
+  const safePage = Math.min(currentPage, totalPages);
+  const pageStartIndex = (safePage - 1) * CUSTOMERS_PER_PAGE;
+  const paginatedCustomers = filtered.slice(pageStartIndex, pageStartIndex + CUSTOMERS_PER_PAGE);
+  const paginationPages = getPaginationPages(safePage, totalPages);
+  const visibleStart = filtered.length === 0 ? 0 : pageStartIndex + 1;
+  const visibleEnd = Math.min(pageStartIndex + CUSTOMERS_PER_PAGE, filtered.length);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   return (
     <div className="flex h-full">
@@ -239,6 +289,11 @@ export function CustomersScreen() {
 
         <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
           <span className="text-xs text-gray-500">{filtered.length} clientes</span>
+          {!loading && filtered.length > 0 && (
+            <span className="text-xs text-gray-400">
+              Exibindo {visibleStart}-{visibleEnd}
+            </span>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto relative">
@@ -258,7 +313,7 @@ export function CustomersScreen() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-100">
-                {filtered.map(customer => {
+                {paginatedCustomers.map(customer => {
                   const isActive = customer.status === 'ativo';
                   const ordersCount = getCustomerOrdersCount(customer);
                   const totalSpent = getCustomerTotal(customer);
@@ -319,6 +374,56 @@ export function CustomersScreen() {
             </div>
           )}
         </div>
+
+        {!loading && filtered.length > CUSTOMERS_PER_PAGE && (
+          <div className="border-t border-gray-200 bg-white px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <span className="text-xs text-gray-500">
+              Página {safePage} de {totalPages}
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setCurrentPage(page => Math.max(1, page - 1))}
+                disabled={safePage === 1}
+                className="h-8 px-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 text-xs"
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Anterior
+              </button>
+
+              {paginationPages.map((page, index) => {
+                const previousPage = paginationPages[index - 1];
+                const showGap = previousPage && page - previousPage > 1;
+
+                return (
+                  <div key={page} className="flex items-center gap-1">
+                    {showGap && <span className="px-1 text-xs text-gray-400">...</span>}
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage(page)}
+                      className="h-8 min-w-8 px-2 rounded-lg border text-xs font-medium transition-colors"
+                      style={safePage === page
+                        ? { borderColor: PRIMARY, backgroundColor: PRIMARY, color: 'white' }
+                        : { borderColor: '#e5e7eb', color: '#4b5563' }}
+                    >
+                      {page}
+                    </button>
+                  </div>
+                );
+              })}
+
+              <button
+                type="button"
+                onClick={() => setCurrentPage(page => Math.min(totalPages, page + 1))}
+                disabled={safePage === totalPages}
+                className="h-8 px-2 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 text-xs"
+              >
+                Próxima
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {selected && <CustomerDetail customer={selected} onClose={() => setSelected(null)} />}

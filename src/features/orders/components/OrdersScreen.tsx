@@ -33,6 +33,7 @@ import {
   RotateCcw,
   Plus,
   Pencil,
+  Trash2,
 } from "lucide-react";
 import api from "@/shared/lib/api";
 import { formatBrasiliaDate } from "@/shared/lib/dateTime";
@@ -578,6 +579,7 @@ export function OrdersScreen() {
   const [manualOrderOpen, setManualOrderOpen] = useState(false);
   const [adminAddItemsOrder, setAdminAddItemsOrder] = useState<any | null>(null);
   const [adminEditItemTarget, setAdminEditItemTarget] = useState<{ order: any; item: any } | null>(null);
+  const [adminRemovingItemId, setAdminRemovingItemId] = useState("");
   const [pendingPaymentMethodOrder, setPendingPaymentMethodOrder] = useState<any | null>(null);
   const [addressEditOrder, setAddressEditOrder] = useState<any | null>(null);
   const [addressEditForm, setAddressEditForm] = useState<any>({ ...EMPTY_ADMIN_ORDER_ADDRESS });
@@ -1270,6 +1272,29 @@ export function OrdersScreen() {
     setAdminEditItemTarget(null);
     setPendingPaymentMethodOrder(null);
     showSystemNotice(message);
+  };
+
+  const removeOrderItemFromSelectedOrder = async (item: any) => {
+    if (!selected?.id || !item?.id) return;
+    const itemName = getOrderItemName(item);
+    const confirmed = window.confirm(`Deseja excluir "${itemName}" deste pedido?\n\nO total do pedido será atualizado. Se houver pagamento pendente, ele também será ajustado.`);
+
+    if (!confirmed) return;
+
+    try {
+      setAdminRemovingItemId(item.id);
+      const response = await api.delete(`/pedidos/${selected.id}/itens/${item.id}/admin-remove`);
+      await refreshSelectedOrderAfterAdminAdjustment(
+        response.data?.data || response.data,
+        "Produto removido do pedido.",
+      );
+    } catch (error) {
+      showSystemNotice(
+        getApiErrorMessage(error, "Não foi possível remover o produto do pedido."),
+      );
+    } finally {
+      setAdminRemovingItemId((currentId) => currentId === item.id ? "" : currentId);
+    }
   };
 
   const fetchOrderDelivery = async (orderId: string) => {
@@ -5128,16 +5153,32 @@ export function OrdersScreen() {
                             R${" "}
                             {getOrderItemTotal(item).toFixed(2).replace(".", ",")}
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => setAdminEditItemTarget({ order: selected, item })}
-                            disabled={!selectedCanAdminAddItems || selectedOrderUpdating || !item.id || !item.produto_loja_id}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-blue-100 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
-                            title="Editar produto"
-                            aria-label={`Editar ${getOrderItemName(item)}`}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setAdminEditItemTarget({ order: selected, item })}
+                              disabled={!selectedCanAdminAddItems || selectedOrderUpdating || !item.id || !item.produto_loja_id || adminRemovingItemId === item.id}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-blue-100 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              title="Editar produto"
+                              aria-label={`Editar ${getOrderItemName(item)}`}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void removeOrderItemFromSelectedOrder(item)}
+                              disabled={!selectedCanAdminAddItems || selectedOrderUpdating || !item.id || adminRemovingItemId === item.id}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              title="Excluir produto"
+                              aria-label={`Excluir ${getOrderItemName(item)}`}
+                            >
+                              {adminRemovingItemId === item.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-3.5 w-3.5" />
+                              )}
+                            </button>
+                          </div>
                         </div>
                       </div>
                     );
