@@ -28,9 +28,76 @@ type PrintingSettingsPanelProps = {
   onPrintModeChange: (mode: StorePrintMode) => void;
 };
 
+type PrintSettingsTab = "printers" | "user-printers";
+type PrinterStatusTab = "active" | "inactive";
+
 function safeDate(value?: string | null) {
   if (!value) return "Nunca";
   return formatBrasiliaDate(value, { dateStyle: "short", timeStyle: "short" });
+}
+
+function hexToRgba(hex: string, alpha: number) {
+  const normalized = hex.replace("#", "");
+  const fullHex = normalized.length === 3
+    ? normalized.split("").map((char) => char + char).join("")
+    : normalized;
+  const value = Number.parseInt(fullHex, 16);
+  if (Number.isNaN(value)) return `rgba(18, 42, 76, ${alpha})`;
+  const red = (value >> 16) & 255;
+  const green = (value >> 8) & 255;
+  const blue = value & 255;
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+}
+
+function PrintTabButton({
+  active,
+  label,
+  count,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  count?: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={`relative isolate inline-flex min-w-max items-center justify-center gap-2 overflow-hidden border-b-2 px-4 py-3 text-sm font-semibold transition-all duration-200 ${
+        active ? "text-gray-900" : "border-transparent text-gray-500 hover:text-gray-800"
+      }`}
+      style={active ? { borderBottomColor: PRIMARY, color: PRIMARY } : undefined}
+    >
+      {active && (
+        <>
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-7"
+            style={{
+              background: `linear-gradient(to top, ${hexToRgba(PRIMARY, 0.13)} 0%, ${hexToRgba(PRIMARY, 0.055)} 38%, ${hexToRgba(PRIMARY, 0)} 100%)`,
+            }}
+          />
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-3 bottom-0 h-1 blur-md"
+            style={{ backgroundColor: hexToRgba(PRIMARY, 0.22) }}
+          />
+        </>
+      )}
+      <span className="relative z-10">{label}</span>
+      {typeof count === "number" && (
+        <span
+          className="relative z-10 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white"
+          style={{ backgroundColor: active ? PRIMARY : "#94a3b8" }}
+        >
+          {count > 99 ? "99+" : count}
+        </span>
+      )}
+    </button>
+  );
 }
 
 export function PrintingSettingsPanel({ printMode, onPrintModeChange }: PrintingSettingsPanelProps) {
@@ -42,8 +109,13 @@ export function PrintingSettingsPanel({ printMode, onPrintModeChange }: Printing
   const [pairingCode, setPairingCode] = useState<PairingCode | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [activeTab, setActiveTab] = useState<PrintSettingsTab>("printers");
+  const [printerStatusTab, setPrinterStatusTab] = useState<PrinterStatusTab>("active");
 
   const hasOnlineAgent = useMemo(() => agents.some((agent) => agent.online), [agents]);
+  const activePrinters = useMemo(() => printers.filter((printer) => printer.active), [printers]);
+  const inactivePrinters = useMemo(() => printers.filter((printer) => !printer.active), [printers]);
+  const visiblePrinters = printerStatusTab === "active" ? activePrinters : inactivePrinters;
 
   const load = async () => {
     try {
@@ -289,116 +361,163 @@ export function PrintingSettingsPanel({ printMode, onPrintModeChange }: Printing
         </div>
       </div>
 
-      <div className="rounded-xl border border-gray-200 bg-white p-5">
-        <h3 className="mb-4 font-semibold text-gray-900">Impressoras</h3>
-        {printers.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">Nenhuma impressora detectada.</div>
-        ) : (
-          <div className="grid gap-3">
-            {printers.map((printer) => (
-              <div key={printer.id} className="rounded-lg border border-gray-200 p-4">
-                <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <Printer className="h-5 w-5 text-gray-500" />
-                    <div>
-                      <input
-                        value={printer.display_name}
-                        onChange={(event) => void updatePrinter(printer, { display_name: event.target.value })}
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-bold text-gray-900"
-                      />
-                      <p className="mt-1 text-xs text-gray-500">{printer.device_name}</p>
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+        <div className="border-b border-gray-200 px-4">
+          <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Configurações de impressoras">
+            <PrintTabButton
+              active={activeTab === "printers"}
+              label="Impressoras"
+              count={printers.length}
+              onClick={() => setActiveTab("printers")}
+            />
+            <PrintTabButton
+              active={activeTab === "user-printers"}
+              label="Impressoras por usuário"
+              count={users.length}
+              onClick={() => setActiveTab("user-printers")}
+            />
+          </div>
+        </div>
+
+        {activeTab === "printers" && (
+          <div className="p-5">
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="font-semibold text-gray-900">Impressoras conectadas</h3>
+                <p className="text-sm text-gray-500">Gerencie as impressoras detectadas pelo Print Agent.</p>
+              </div>
+              <div className="flex gap-2 overflow-x-auto" role="tablist" aria-label="Status das impressoras">
+                <PrintTabButton
+                  active={printerStatusTab === "active"}
+                  label="Ativas"
+                  count={activePrinters.length}
+                  onClick={() => setPrinterStatusTab("active")}
+                />
+                <PrintTabButton
+                  active={printerStatusTab === "inactive"}
+                  label="Inativas"
+                  count={inactivePrinters.length}
+                  onClick={() => setPrinterStatusTab("inactive")}
+                />
+              </div>
+            </div>
+
+            {printers.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">Nenhuma impressora detectada.</div>
+            ) : visiblePrinters.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
+                {printerStatusTab === "active" ? "Nenhuma impressora ativa." : "Nenhuma impressora inativa."}
+              </div>
+            ) : (
+              <div className="grid gap-3">
+                {visiblePrinters.map((printer) => (
+                  <div key={printer.id} className="rounded-lg border border-gray-200 p-4">
+                    <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <Printer className="h-5 w-5 text-gray-500" />
+                        <div>
+                          <input
+                            value={printer.display_name}
+                            onChange={(event) => void updatePrinter(printer, { display_name: event.target.value })}
+                            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-bold text-gray-900"
+                          />
+                          <p className="mt-1 text-xs text-gray-500">{printer.device_name}</p>
+                        </div>
+                      </div>
+                      <button type="button" onClick={() => void testPrint(printer.id)} className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700">
+                        <TestTube2 className="h-4 w-4" />
+                        Imprimir teste
+                      </button>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-4">
+                      <label className="text-xs font-bold uppercase text-gray-500">
+                        Setor operacional
+                        <select value={printer.sector} onChange={(event) => void updatePrinter(printer, { sector: event.target.value as any })} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium normal-case text-gray-700">
+                          <option value="COZINHA">Cozinha</option>
+                          <option value="BAR">Bar</option>
+                          <option value="CAIXA">Caixa</option>
+                          <option value="EXPEDICAO">Expedição</option>
+                          <option value="GERAL">Geral</option>
+                        </select>
+                      </label>
+                      <label className="text-xs font-bold uppercase text-gray-500">
+                        Papel
+                        <select value={printer.paper_width_mm} onChange={(event) => void updatePrinter(printer, { paper_width_mm: Number(event.target.value) as 58 | 80 })} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium normal-case text-gray-700">
+                          <option value={58}>58 mm</option>
+                          <option value={80}>80 mm</option>
+                        </select>
+                      </label>
+                      <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                        <input type="checkbox" checked={printer.is_default} onChange={(event) => void updatePrinter(printer, { is_default: event.target.checked })} />
+                        Padrão de fallback
+                      </label>
+                      <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+                        <input type="checkbox" checked={printer.active} onChange={(event) => void updatePrinter(printer, { active: event.target.checked })} />
+                        Ativa
+                      </label>
+                    </div>
+
+                    <div className="mt-4 rounded-lg border border-gray-100 bg-gray-50 p-4">
+                      <p className="text-sm font-bold text-gray-900">O que esta impressora imprime?</p>
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        {SOURCE_OPTIONS.map((source) => (
+                          <label key={source.value} className="flex items-start gap-2 text-sm font-semibold text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={(printer.channels || []).includes(source.value)}
+                              onChange={(event) => void togglePrinterChannel(printer, source.value, event.target.checked)}
+                              className="mt-1"
+                            />
+                            <span>
+                              <span className="block">{source.label}</span>
+                              <span className="block text-xs font-medium text-gray-500">{source.description}</span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                  <button type="button" onClick={() => void testPrint(printer.id)} className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700">
-                    <TestTube2 className="h-4 w-4" />
-                    Imprimir teste
-                  </button>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-4">
-                  <label className="text-xs font-bold uppercase text-gray-500">
-                    Setor operacional
-                    <select value={printer.sector} onChange={(event) => void updatePrinter(printer, { sector: event.target.value as any })} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium normal-case text-gray-700">
-                      <option value="COZINHA">Cozinha</option>
-                      <option value="BAR">Bar</option>
-                      <option value="CAIXA">Caixa</option>
-                      <option value="EXPEDICAO">Expedição</option>
-                      <option value="GERAL">Geral</option>
-                    </select>
-                  </label>
-                  <label className="text-xs font-bold uppercase text-gray-500">
-                    Papel
-                    <select value={printer.paper_width_mm} onChange={(event) => void updatePrinter(printer, { paper_width_mm: Number(event.target.value) as 58 | 80 })} className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium normal-case text-gray-700">
-                      <option value={58}>58 mm</option>
-                      <option value={80}>80 mm</option>
-                    </select>
-                  </label>
-                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                    <input type="checkbox" checked={printer.is_default} onChange={(event) => void updatePrinter(printer, { is_default: event.target.checked })} />
-                    Padrão de fallback
-                  </label>
-                  <label className="flex items-center gap-2 text-sm font-semibold text-gray-700">
-                    <input type="checkbox" checked={printer.active} onChange={(event) => void updatePrinter(printer, { active: event.target.checked })} />
-                    Ativa
-                  </label>
-                </div>
-
-                <div className="mt-4 rounded-lg border border-gray-100 bg-gray-50 p-4">
-                  <p className="text-sm font-bold text-gray-900">O que esta impressora imprime?</p>
-                  <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    {SOURCE_OPTIONS.map((source) => (
-                      <label key={source.value} className="flex items-start gap-2 text-sm font-semibold text-gray-700">
-                        <input
-                          type="checkbox"
-                          checked={(printer.channels || []).includes(source.value)}
-                          onChange={(event) => void togglePrinterChannel(printer, source.value, event.target.checked)}
-                          className="mt-1"
-                        />
-                        <span>
-                          <span className="block">{source.label}</span>
-                          <span className="block text-xs font-medium text-gray-500">{source.description}</span>
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
         )}
-      </div>
 
-      <div className="rounded-xl border border-gray-200 bg-white p-5">
-        <h3 className="font-semibold text-gray-900">Impressora específica por usuário</h3>
-        <p className="mt-1 text-sm text-gray-500">
-          A impressão manual usa esta preferência antes do roteamento por canal.
-        </p>
-        {users.length === 0 ? (
-          <div className="mt-4 rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
-            Nenhum usuário administrativo disponível para configurar.
-          </div>
-        ) : (
-          <div className="mt-4 grid gap-3">
-            {users.map((user) => {
-              const preference = preferences.find((item) => item.usuario_id === user.id);
-              return (
-                <div key={user.id} className="grid gap-3 rounded-lg border border-gray-200 p-4 md:grid-cols-[1fr_280px] md:items-center">
-                  <div>
-                    <p className="text-sm font-bold text-gray-900">{user.nome}</p>
-                    <p className="text-xs text-gray-500">{user.email || "Sem e-mail"} • {user.perfil || "Perfil não informado"}</p>
-                  </div>
-                  <select
-                    value={preference?.printer_id || ""}
-                    onChange={(event) => void updateUserPreference(user.id, event.target.value || null)}
-                    className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
-                  >
-                    <option value="">Usar roteamento por canal</option>
-                    {printers.filter((printer) => printer.active).map((printer) => (
-                      <option key={printer.id} value={printer.id}>{printer.display_name}</option>
-                    ))}
-                  </select>
-                </div>
-              );
-            })}
+        {activeTab === "user-printers" && (
+          <div className="p-5">
+            <h3 className="font-semibold text-gray-900">Impressora específica por usuário</h3>
+            <p className="mt-1 text-sm text-gray-500">
+              A impressão manual usa esta preferência antes do roteamento por canal.
+            </p>
+            {users.length === 0 ? (
+              <div className="mt-4 rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
+                Nenhum usuário administrativo disponível para configurar.
+              </div>
+            ) : (
+              <div className="mt-4 grid gap-3">
+                {users.map((user) => {
+                  const preference = preferences.find((item) => item.usuario_id === user.id);
+                  return (
+                    <div key={user.id} className="grid gap-3 rounded-lg border border-gray-200 p-4 md:grid-cols-[1fr_280px] md:items-center">
+                      <div>
+                        <p className="text-sm font-bold text-gray-900">{user.nome}</p>
+                        <p className="text-xs text-gray-500">{user.email || "Sem e-mail"} • {user.perfil || "Perfil não informado"}</p>
+                      </div>
+                      <select
+                        value={preference?.printer_id || ""}
+                        onChange={(event) => void updateUserPreference(user.id, event.target.value || null)}
+                        className="rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                      >
+                        <option value="">Usar roteamento por canal</option>
+                        {activePrinters.map((printer) => (
+                          <option key={printer.id} value={printer.id}>{printer.display_name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>
