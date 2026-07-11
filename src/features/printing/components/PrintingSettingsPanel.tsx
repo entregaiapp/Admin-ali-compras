@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Laptop, Link, Printer, RefreshCw, TestTube2, Trash2 } from "lucide-react";
+import { Archive, Laptop, Link, Printer, RefreshCw, TestTube2, Trash2 } from "lucide-react";
 import { showSystemNotice } from "@/shared/components/SystemNoticeModal";
 import { formatBrasiliaDate } from "@/shared/lib/dateTime";
 import api from "@/shared/lib/api";
@@ -111,8 +111,11 @@ export function PrintingSettingsPanel({ printMode, onPrintModeChange }: Printing
   const [busy, setBusy] = useState(false);
   const [activeTab, setActiveTab] = useState<PrintSettingsTab>("printers");
   const [printerStatusTab, setPrinterStatusTab] = useState<PrinterStatusTab>("active");
+  const [showArchivedAgents, setShowArchivedAgents] = useState(false);
 
-  const hasOnlineAgent = useMemo(() => agents.some((agent) => agent.online), [agents]);
+  const activeAgents = useMemo(() => agents.filter((agent) => !agent.revoked_at), [agents]);
+  const archivedAgents = useMemo(() => agents.filter((agent) => agent.revoked_at), [agents]);
+  const hasOnlineAgent = useMemo(() => activeAgents.some((agent) => agent.online), [activeAgents]);
   const activePrinters = useMemo(() => printers.filter((printer) => printer.active), [printers]);
   const inactivePrinters = useMemo(() => printers.filter((printer) => !printer.active), [printers]);
   const visiblePrinters = printerStatusTab === "active" ? activePrinters : inactivePrinters;
@@ -291,11 +294,11 @@ export function PrintingSettingsPanel({ printMode, onPrintModeChange }: Printing
 
         {loading ? (
           <div className="py-8 text-center text-sm text-gray-500">Carregando...</div>
-        ) : agents.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">Nenhum computador vinculado.</div>
+        ) : activeAgents.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">Nenhum computador ativo vinculado.</div>
         ) : (
           <div className="grid gap-3">
-            {agents.map((agent) => (
+            {activeAgents.map((agent) => (
               <div key={agent.id} className="flex flex-col gap-3 rounded-lg border border-gray-200 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex min-w-0 items-start gap-3">
                   <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100 text-gray-700">
@@ -318,6 +321,43 @@ export function PrintingSettingsPanel({ printMode, onPrintModeChange }: Printing
                 )}
               </div>
             ))}
+          </div>
+        )}
+
+        {!loading && archivedAgents.length > 0 && (
+          <div className="mt-4 border-t border-gray-100 pt-4">
+            <button
+              type="button"
+              onClick={() => setShowArchivedAgents((current) => !current)}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              aria-expanded={showArchivedAgents}
+            >
+              <Archive className="h-4 w-4" />
+              Agentes arquivados ({archivedAgents.length})
+            </button>
+
+            {showArchivedAgents && (
+              <div className="mt-3 grid gap-3">
+                {archivedAgents.map((agent) => (
+                  <div key={agent.id} className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-gray-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-white text-gray-500">
+                        <Laptop className="h-5 w-5" />
+                      </span>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="font-bold text-gray-700">{agent.nome}</h4>
+                          <PrintStatusBadge online={agent.online} revoked={Boolean(agent.revoked_at)} />
+                        </div>
+                        <p className="mt-1 text-xs text-gray-500">Última conexão: {safeDate(agent.last_seen_at)}</p>
+                        <p className="text-xs text-gray-500">Versão: {agent.app_version || "Não informada"}</p>
+                        <p className="text-xs text-gray-500">Revogado em: {safeDate(agent.revoked_at)}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
