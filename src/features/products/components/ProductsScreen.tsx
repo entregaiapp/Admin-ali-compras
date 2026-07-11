@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { 
   AlertCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Copy, Edit2,
-  Eye, FileUp, Filter, Grid2X2, List, Package, Plus, Power, Search, Star, Tag,
+  Eye, FileUp, Filter, Grid2X2, List, Package, PackagePlus, Plus, Power, Search, Star, Tag,
   ImagePlus, Trash2, UtensilsCrossed, X, Zap
 } from 'lucide-react';
 import { showSystemNotice } from '@/shared/components/SystemNoticeModal';
@@ -763,9 +763,411 @@ function ProductForm({ product, isNew, categories, canManageImages, onClose, onS
   );
 }
 
+function SimpleLocalProductForm({ categories, canManageImages, onClose, onSuccess }: { categories: any[]; canManageImages: boolean; onClose: () => void; onSuccess: () => void }) {
+  const [form, setForm] = useState({
+    nome: '',
+    descricao: '',
+    marca: '',
+    unidade_medida: 'un',
+    imagem_url: '',
+    preco: '',
+    preco_promocional: '',
+    ativo: true,
+    destaque: false,
+    consumo_imediato: false,
+    codigo_interno: '',
+    tipo_venda: 'unidade' as 'unidade' | 'peso',
+    quantidade_minima_compra: '1',
+    incremento_quantidade: '1',
+  });
+  const [departmentId, setDepartmentId] = useState('');
+  const [categoryId, setCategoryId] = useState('');
+  const [subcategoryId, setSubcategoryId] = useState('');
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
+  const departments = getRootCategories(categories);
+  const childCategories = sortCategories(categories.filter((cat: any) => cat.categoria_pai_id === departmentId));
+  const subcategories = sortCategories(categories.filter((cat: any) => cat.categoria_pai_id === categoryId));
+  const selectedCategoryId = subcategoryId || categoryId || departmentId || '';
+  const selectedCategoryPath = getCategoryPath(categories, selectedCategoryId).map((cat: any) => cat.nome).join(' > ');
+  const regularPrice = parseMoney(form.preco);
+  const promotionalPrice = parseMoney(form.preco_promocional);
+  const hasPromotionalPrice = regularPrice !== null &&
+    promotionalPrice !== null &&
+    promotionalPrice > 0 &&
+    promotionalPrice < regularPrice;
+  const isWeightSale = form.tipo_venda === 'peso';
+
+  const setSaleType = (saleType: 'unidade' | 'peso') => {
+    setForm(prev => ({
+      ...prev,
+      tipo_venda: saleType,
+      unidade_medida: saleType === 'peso' ? 'kg' : (prev.unidade_medida === 'kg' ? 'un' : prev.unidade_medida),
+      quantidade_minima_compra: saleType === 'peso' ? '0,100' : '1',
+      incremento_quantidade: saleType === 'peso' ? '0,100' : '1',
+    }));
+  };
+
+  const handleSubmit = async () => {
+    const name = form.nome.trim();
+    const price = parseMoney(form.preco);
+    const promotional = parseMoney(form.preco_promocional);
+    const quantityMin = parseQuantity(form.quantidade_minima_compra) ?? (isWeightSale ? 0.1 : 1);
+    const quantityStep = parseQuantity(form.incremento_quantidade) ?? (isWeightSale ? 0.1 : 1);
+
+    if (!name || !selectedCategoryId || price === null) {
+      showSystemNotice('Informe nome, categoria e preço normal.');
+      return;
+    }
+
+    if (promotional !== null && promotional > price) {
+      showSystemNotice('O preço promocional não pode ser maior que o preço normal.');
+      return;
+    }
+
+    if (form.consumo_imediato && !hasPromotionalPrice) {
+      showSystemNotice('Produtos para consumo imediato precisam de preço promocional menor que o preço normal.');
+      return;
+    }
+
+    if (form.tipo_venda === 'unidade' && (!Number.isInteger(quantityMin) || !Number.isInteger(quantityStep))) {
+      showSystemNotice('Produtos por unidade precisam de mínimo e incremento inteiros.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const created = await productsService.createLocalProduct({
+        categoria_id: selectedCategoryId,
+        categoria_loja_id: selectedCategoryId,
+        nome: name,
+        descricao: form.descricao.trim() || null,
+        marca: form.marca.trim() || null,
+        unidade_medida: form.unidade_medida.trim() || (isWeightSale ? 'kg' : 'un'),
+        imagem_url: form.imagem_url.trim() || null,
+        preco: price,
+        preco_promocional: promotional,
+        codigo_interno: form.codigo_interno.trim() || null,
+        ativo: form.ativo,
+        destaque: form.destaque,
+        modo_compra: 'simples',
+        modo_estoque: 'quantidade',
+      });
+
+      await productsService.updateStoreProduct(created.id, {
+        preco: price,
+        preco_promocional: promotional,
+        categoria_id: selectedCategoryId,
+        ativo: form.ativo,
+        destaque: form.destaque,
+        consumo_imediato: form.consumo_imediato,
+        codigo_interno: form.codigo_interno.trim() || null,
+        tipo_venda: form.tipo_venda,
+        quantidade_minima_compra: quantityMin,
+        incremento_quantidade: quantityStep,
+        modo_compra: 'simples',
+        modo_estoque: 'quantidade',
+      });
+
+      const productId = created?.produto?.id || created?.produto_id;
+      if (imageFile && productId) {
+        await productsService.uploadProductImage(productId, imageFile, true);
+      }
+
+      onSuccess();
+      onClose();
+    } catch (error: any) {
+      console.error('Error creating local product', error);
+      showSystemNotice(error?.response?.data?.error?.message || error?.response?.data?.message || 'Não foi possível criar o produto simples.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-start justify-end">
+      <div className="w-full max-w-xl h-full bg-white shadow-2xl flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
+          <div>
+            <h2 className="font-semibold text-gray-900">Criar produto simples</h2>
+            <p className="text-xs text-gray-500">Produto criado pela loja e vinculado automaticamente.</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-5">
+          <div>
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Informações do produto</div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm text-gray-600 mb-1 font-medium">Nome do produto *</label>
+                <input
+                  autoFocus
+                  value={form.nome}
+                  onChange={e => setForm(p => ({ ...p, nome: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all"
+                  placeholder="Ex: Arroz branco 5kg"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1 font-medium">Marca</label>
+                  <input
+                    value={form.marca}
+                    onChange={e => setForm(p => ({ ...p, marca: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none"
+                    placeholder="Opcional"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1 font-medium">Unidade</label>
+                  <input
+                    value={form.unidade_medida}
+                    onChange={e => setForm(p => ({ ...p, unidade_medida: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none"
+                    placeholder={isWeightSale ? 'kg' : 'un'}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 mb-1 font-medium">Descrição</label>
+                <textarea
+                  value={form.descricao}
+                  onChange={e => setForm(p => ({ ...p, descricao: e.target.value }))}
+                  className="w-full min-h-20 resize-y px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none"
+                  placeholder="Descrição curta para o cliente"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Categoria</div>
+            <div className="space-y-2">
+              <select
+                value={departmentId}
+                onChange={e => {
+                  setDepartmentId(e.target.value);
+                  setCategoryId('');
+                  setSubcategoryId('');
+                }}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all"
+              >
+                <option value="">Selecione o departamento</option>
+                {departments.map((cat: any) => (
+                  <option key={cat.id} value={cat.id}>{cat.emoji || '📁'} {cat.nome}</option>
+                ))}
+              </select>
+
+              {departmentId && childCategories.length > 0 && (
+                <select
+                  value={categoryId}
+                  onChange={e => {
+                    setCategoryId(e.target.value);
+                    setSubcategoryId('');
+                  }}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all"
+                >
+                  <option value="">Selecionar categoria</option>
+                  {childCategories.map((cat: any) => (
+                    <option key={cat.id} value={cat.id}>{cat.emoji || '📁'} {cat.nome}</option>
+                  ))}
+                </select>
+              )}
+
+              {categoryId && subcategories.length > 0 && (
+                <select
+                  value={subcategoryId}
+                  onChange={e => setSubcategoryId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary/10 transition-all"
+                >
+                  <option value="">Selecionar subcategoria</option>
+                  {subcategories.map((cat: any) => (
+                    <option key={cat.id} value={cat.id}>{cat.emoji || '📁'} {cat.nome}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <p className="text-[10px] text-gray-400 mt-1">
+              Categoria final: {selectedCategoryPath || 'nenhuma categoria selecionada'}.
+            </p>
+          </div>
+
+          <div>
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Preço</div>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">{isWeightSale ? 'Preço por kg (R$) *' : 'Preço normal (R$) *'}</label>
+                  <input
+                    value={form.preco}
+                    onChange={e => setForm(p => ({ ...p, preco: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none"
+                    placeholder="0,00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">{isWeightSale ? 'Promoção por kg (R$)' : 'Preço promocional (R$)'}</label>
+                  <input
+                    value={form.preco_promocional}
+                    onChange={e => setForm(p => ({ ...p, preco_promocional: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none"
+                    placeholder="Opcional"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Modo de venda</div>
+            <div className="rounded-xl border border-gray-200 p-3">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSaleType('unidade')}
+                  className="rounded-lg px-3 py-2 text-xs font-semibold transition-colors"
+                  style={form.tipo_venda === 'unidade' ? { backgroundColor: PRIMARY, color: 'white' } : { backgroundColor: '#f3f4f6', color: '#4b5563' }}
+                >
+                  Unidade
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSaleType('peso')}
+                  className="rounded-lg px-3 py-2 text-xs font-semibold transition-colors"
+                  style={form.tipo_venda === 'peso' ? { backgroundColor: PRIMARY, color: 'white' } : { backgroundColor: '#f3f4f6', color: '#4b5563' }}
+                >
+                  Peso (kg)
+                </button>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">{isWeightSale ? 'Peso mínimo (kg)' : 'Quantidade mínima'}</label>
+                  <input
+                    value={form.quantidade_minima_compra}
+                    onChange={e => setForm(p => ({ ...p, quantidade_minima_compra: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none"
+                    placeholder={isWeightSale ? '0,100' : '1'}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">{isWeightSale ? 'Incremento (kg)' : 'Incremento'}</label>
+                  <input
+                    value={form.incremento_quantidade}
+                    onChange={e => setForm(p => ({ ...p, incremento_quantidade: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none"
+                    placeholder={isWeightSale ? '0,100' : '1'}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Imagem</div>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm text-gray-600 mb-1 font-medium">URL da imagem</label>
+                <input
+                  value={form.imagem_url}
+                  onChange={e => setForm(p => ({ ...p, imagem_url: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none"
+                  placeholder="https://..."
+                />
+              </div>
+              {canManageImages && (
+                <label className="block rounded-xl border border-dashed border-gray-300 bg-gray-50 p-3">
+                  <span className="flex items-center gap-2 text-xs font-bold text-gray-700">
+                    <ImagePlus className="w-4 h-4" /> Enviar imagem deste produto
+                  </span>
+                  <span className="mt-1 block text-[11px] text-gray-500">JPEG, PNG, WebP ou GIF (até 8 MB).</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    className="mt-2 block w-full text-xs text-gray-600"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] || null;
+                      if (file && file.size > 8 * 1024 * 1024) {
+                        showSystemNotice('A imagem deve ter no máximo 8 MB.');
+                        event.target.value = '';
+                        return;
+                      }
+                      setImageFile(file);
+                    }}
+                  />
+                  {imageFile && <span className="mt-1 block truncate text-[11px] text-gray-600">Selecionada: {imageFile.name}</span>}
+                </label>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Configurações</div>
+            <div className="space-y-2.5">
+              {[
+                { key: 'ativo', label: 'Produto ativo na loja', desc: 'Visível no app dos clientes' },
+                { key: 'destaque', label: 'Produto em destaque', desc: 'Aparece em seção especial na loja' },
+                {
+                  key: 'consumo_imediato',
+                  label: 'Consumo imediato',
+                  desc: hasPromotionalPrice
+                    ? 'Aparece na seção de consumo imediato'
+                    : 'Exige preço promocional menor que o preço normal',
+                },
+              ].map(opt => (
+                <div key={opt.key} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                  <div>
+                    <div className="text-sm font-medium text-gray-700">{opt.label}</div>
+                    <div className="text-xs text-gray-400">{opt.desc}</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (opt.key === 'consumo_imediato' && !form.consumo_imediato && !hasPromotionalPrice) {
+                        showSystemNotice('Informe um preço promocional menor que o preço normal antes de marcar consumo imediato.');
+                        return;
+                      }
+
+                      setForm(p => ({ ...p, [opt.key]: !p[opt.key as keyof typeof form] }));
+                    }}
+                    className={`relative inline-flex h-5 w-9 rounded-full transition-colors ${opt.key === 'consumo_imediato' && !hasPromotionalPrice && !form.consumo_imediato ? 'opacity-60' : ''}`}
+                    style={{ backgroundColor: form[opt.key as keyof typeof form] ? PRIMARY : '#d1d5db' }}
+                  >
+                    <span
+                      className="inline-block w-4 h-4 bg-white rounded-full shadow transition-transform mt-0.5"
+                      style={{ transform: `translateX(${form[opt.key as keyof typeof form] ? 18 : 2}px)` }}
+                    />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="px-5 py-4 border-t border-gray-200 flex gap-3">
+          <button onClick={onClose} className="flex-1 py-2.5 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+            Cancelar
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={loading}
+            className="flex-1 py-2.5 rounded-lg text-white text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
+            style={{ backgroundColor: PRIMARY }}
+          >
+            {loading ? 'Criando...' : 'Criar produto'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ProductsScreen() {
   const navigate = useNavigate();
   const [isSearchingGlobal, setIsSearchingGlobal] = useState(false);
+  const [isCreatingSimpleProduct, setIsCreatingSimpleProduct] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
   const [configurableEditor, setConfigurableEditor] = useState<{ product?: any; duplicate?: boolean } | null>(null);
   const [canManageImages, setCanManageImages] = useState(false);
@@ -883,6 +1285,18 @@ export function ProductsScreen() {
         />
       )}
 
+      {isCreatingSimpleProduct && (
+        <SimpleLocalProductForm
+          categories={dbCategories}
+          canManageImages={canManageImages}
+          onClose={() => setIsCreatingSimpleProduct(false)}
+          onSuccess={() => {
+            fetchProducts({ forceRefresh: true });
+            fetchCategories({ forceRefresh: true });
+          }}
+        />
+      )}
+
       {configurableEditor && (
         <ConfigurableProductEditor
           product={configurableEditor.product}
@@ -916,6 +1330,14 @@ export function ProductsScreen() {
           >
             <Plus className="w-4 h-4" />
             <span className="hidden sm:inline">Vincular produto global</span>
+          </button>
+          <button
+            onClick={() => setIsCreatingSimpleProduct(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 text-sm font-medium transition-all hover:bg-gray-50 active:scale-95 flex-shrink-0"
+          >
+            <PackagePlus className="w-4 h-4" />
+            <span className="hidden sm:inline">Criar produto simples</span>
+            <span className="sm:hidden">Simples</span>
           </button>
           <button
             onClick={() => setConfigurableEditor({})}
