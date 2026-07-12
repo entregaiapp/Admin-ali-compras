@@ -783,9 +783,6 @@ export function OrdersScreen() {
         delete operationalAvailabilityCacheRef.current[key];
       }
     });
-    if (isOperationalOrdersView && operationalType === normalizedType) {
-      setOrders((current) => current.filter((order) => order.id !== orderId));
-    }
   };
 
   const fetchOperationalOrders = async (
@@ -848,17 +845,48 @@ export function OrdersScreen() {
         payload = response.data?.data || {};
         incoming = Array.isArray(payload.pedidos) ? payload.pedidos : [];
       }
-      const availability = payload.abas || EMPTY_OPERATIONAL_AVAILABILITY;
+      let availability = payload.abas || EMPTY_OPERATIONAL_AVAILABILITY;
+      let resolvedTabKey = operationalTabKey;
+      if (mode !== "append" && !availability[operationalTabKey]?.disponivel) {
+        const firstAvailable = OPERATIONAL_TAB_DEFINITIONS.find(
+          ({ key }) => availability[key]?.disponivel,
+        );
+        if (firstAvailable && firstAvailable.key !== operationalTabKey) {
+          response = await api.post(
+            "/pedidos/operacionais/consulta",
+            {
+              tipo_pedido: operationalType,
+              aba: firstAvailable.key,
+              limite: PER_PAGE,
+              busca: search.trim() || undefined,
+              status: frontendToBackendStatus[statusFilter],
+              bairro: bairroFilter === "Todos" ? undefined : bairroFilter,
+              ids_em_cache: [],
+            },
+            { signal: controller.signal },
+          );
+          if (requestVersion !== operationalRequestVersionRef.current) return;
+          payload = response.data?.data || {};
+          incoming = Array.isArray(payload.pedidos) ? payload.pedidos : [];
+          availability = payload.abas || availability;
+          resolvedTabKey = firstAvailable.key;
+        }
+      }
+      const resolvedCacheKey = `${filtersKey}:${resolvedTabKey}`;
+      const workingCache =
+        resolvedTabKey === operationalTabKey
+          ? cached
+          : operationalCacheRef.current[resolvedCacheKey];
       const validIds = new Set<string>(payload.ids_em_cache_validos || []);
       let mergedOrders: any[];
 
       if (mode === "append") {
-        const byId = new Map((cached?.orders || []).map((order) => [order.id, order]));
+        const byId = new Map((workingCache?.orders || []).map((order) => [order.id, order]));
         incoming.forEach((order: any) => byId.set(order.id, order));
         mergedOrders = Array.from(byId.values());
       } else {
         const incomingIds = new Set(incoming.map((order: any) => order.id));
-        const preserved = (cached?.orders || []).filter(
+        const preserved = (workingCache?.orders || []).filter(
           (order) => validIds.has(order.id) && !incomingIds.has(order.id),
         );
         mergedOrders = [...incoming, ...preserved];
@@ -870,10 +898,10 @@ export function OrdersScreen() {
         hasMore: payload.paginacao?.tem_mais === true,
         firstPageIds:
           mode === "append"
-            ? cached?.firstPageIds || []
+            ? workingCache?.firstPageIds || []
             : incoming.map((order: any) => order.id),
       };
-      operationalCacheRef.current[cacheKey] = nextCache;
+      operationalCacheRef.current[resolvedCacheKey] = nextCache;
       operationalAvailabilityCacheRef.current[filtersKey] = availability;
       setOperationalAvailability(availability);
       setPendingPrintAlerts((current) => ({
@@ -881,6 +909,9 @@ export function OrdersScreen() {
         [operationalType]: Number(availability.falta_imprimir?.total || 0) > 0,
       }));
       setOrders(mergedOrders);
+      if (resolvedTabKey !== operationalTabKey) {
+        setActiveListGroupKey(resolvedTabKey);
+      }
       setHasMore(nextCache.hasMore);
       setPage((current) => (mode === "append" ? current + 1 : 1));
       setLastOrdersLoadedAt((current) => ({
