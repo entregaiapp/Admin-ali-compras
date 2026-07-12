@@ -75,6 +75,9 @@ const paymentMethodLabel = (value: unknown) => {
     pix: 'PIX',
     cartao_credito: 'Cartão de crédito',
     cartao_debito: 'Cartão de débito',
+    card: 'Cartão',
+    cash: 'Dinheiro',
+    credit_tab: 'Fiado',
     outros: 'Outros',
   };
   return labels[String(value || '').toLowerCase()] || String(value || 'Indefinido');
@@ -84,6 +87,9 @@ const paymentChannelLabel = (value: unknown) => {
   if (value === 'entrega') return 'Na entrega';
   if (value === 'app') return 'No app';
   if (value === 'salao') return 'Salão';
+  if (value === 'ONLINE_GATEWAY') return 'Gateway online';
+  if (value === 'EXTERNAL_OR_OFFLINE') return 'Externo ou offline';
+  if (value === 'CREDIT_TAB') return 'Fiado';
   return String(value || 'Indefinido');
 };
 
@@ -216,6 +222,7 @@ const todayDateInput = () => {
 export function DashboardScreen() {
   const navigate = useNavigate();
   const [metrics, setMetrics] = useState<any>(null);
+  const [cashFinance, setCashFinance] = useState<any>(null);
   const [storeConfig, setStoreConfig] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -236,9 +243,11 @@ export function DashboardScreen() {
 
     const fetchDashboardData = async () => {
       setLoading(true);
+      if (active) setCashFinance(null);
       try {
-        const [metricsRes, configRes] = await Promise.allSettled([
+        const [metricsRes, financeRes, configRes] = await Promise.allSettled([
           api.get(`/metricas?dataInicio=${selectedDate}&dataFim=${selectedDate}`),
+          api.get('/financeiro/admin/caixa-atual'),
           user?.loja_id ? api.get(`/lojas/${user.loja_id}/configuracoes`) : Promise.resolve(null)
         ]);
 
@@ -249,13 +258,22 @@ export function DashboardScreen() {
           throw metricsRes.reason;
         }
 
+        if (financeRes.status === 'fulfilled') {
+          const nextFinance = financeRes.value.data?.data || null;
+          if (active) setCashFinance(nextFinance);
+        } else if (active) {
+          setCashFinance({
+            status: 'erro_financeiro',
+            mensagem: 'Não foi possível carregar o resumo financeiro canônico.',
+          });
+        }
+
         if (configRes.status === 'fulfilled' && configRes.value) {
           const nextConfig = configRes.value.data?.data || configRes.value.data || null;
           if (active) setStoreConfig(nextConfig);
         }
       } catch (error) {
-        console.error('Error fetching metrics', error);
-        // Navigate to login if unauthorized
+        console.error('Error fetching dashboard data', error);
         if ((error as any).response?.status === 401) {
           navigate('/login');
         }
@@ -279,12 +297,73 @@ export function DashboardScreen() {
     );
   }
 
-  const paymentDetails = metrics?.financeiro?.pagamentos_detalhados || {};
+  const canonicalFinance = cashFinance?.financeiro || cashFinance?.caixa?.financeiro || null;
+  const cashIsOpen = cashFinance?.status === 'aberto';
+  const financeUnavailable = cashFinance?.status === 'erro_financeiro';
+  const hasCashFinanceResponse = cashFinance !== null && cashFinance !== undefined;
+  const canonicalPaymentDetails = canonicalFinance
+    ? {
+        resumo: {
+          pagamentos_recebidos: canonicalFinance.pagamentos?.por_metodo?.reduce((sum: number, item: any) => sum + Number(item.quantidade_transacoes || 0), 0) || 0,
+          pagamentos_previstos: 0,
+          valor_recebido: canonicalFinance.resumo_vendas?.valor_recebido_pedidos || 0,
+          valor_previsto_receber: canonicalFinance.conciliacao?.valores_pendentes || 0,
+        },
+        por_forma_pagamento: (canonicalFinance.pagamentos?.por_metodo || []).map((item: any) => ({
+          metodo_pagamento: item.key || item.label,
+          quantidade: item.quantidade_transacoes,
+          valor_recebido: item.valor_recebido,
+          valor_previsto_receber: item.valor_pendente,
+        })),
+        por_canal_pagamento: (canonicalFinance.pagamentos?.por_canal || []).map((item: any) => ({
+          canal_pagamento: item.key || item.label,
+          quantidade: item.quantidade_transacoes,
+          valor_recebido: item.valor_recebido,
+          valor_previsto_receber: item.valor_pendente,
+          valor_total: Number(item.valor_recebido || 0) + Number(item.valor_pendente || 0),
+        })),
+        por_forma_e_canal: [],
+      }
+    : null;
+  const paymentDetails = canonicalPaymentDetails || metrics?.financeiro?.pagamentos_detalhados || {};
   const paymentSummary = paymentDetails.resumo || {};
-  const fiados = metrics?.financeiro?.fiados || {};
+  const fiados = canonicalFinance
+    ? { resumo: {}, recebimentos_por_forma_pagamento: [] }
+    : metrics?.financeiro?.fiados || {};
   const fiadoResumo = fiados.resumo || {};
-  const salaoResumo = metrics?.financeiro?.salao || {};
-  const financeSummary = metrics?.financeiro?.consolidado || {
+  const salaoOrigem = canonicalFinance?.por_origem?.find((item: any) => item.key === 'SALON');
+  const salaoResumo = canonicalFinance
+    ? { mesas_fechadas: salaoOrigem?.quantidade_pedidos || 0, valor_mesas_fechadas: salaoOrigem?.valor_liquido || 0 }
+    : metrics?.financeiro?.salao || {};
+  const financeSummary = canonicalFinance
+    ? {
+        recebido_pedidos: canonicalFinance.resumo_vendas?.valor_recebido_pedidos || 0,
+        recebido_fiado: canonicalFinance.resumo_vendas?.fiado_recebido || 0,
+        recebido_total: canonicalFinance.resumo_vendas?.valor_efetivamente_recebido || 0,
+        a_receber_pedidos: canonicalFinance.conciliacao?.valores_pendentes || 0,
+        a_receber_fiado: canonicalFinance.resumo_vendas?.fiado_criado || 0,
+        a_receber_total: canonicalFinance.resumo_vendas?.valor_a_receber || 0,
+        fiado_criado_periodo: canonicalFinance.resumo_vendas?.fiado_criado || 0,
+        fiado_taxa_aplicada_periodo: 0,
+        fiado_pedidos_com_taxa_periodo: 0,
+        fiado_pessoas_com_saldo: 0,
+        fiado_pedidos_abertos: 0,
+      }
+    : hasCashFinanceResponse
+      ? {
+          recebido_pedidos: 0,
+          recebido_fiado: 0,
+          recebido_total: 0,
+          a_receber_pedidos: 0,
+          a_receber_fiado: 0,
+          a_receber_total: 0,
+          fiado_criado_periodo: 0,
+          fiado_taxa_aplicada_periodo: 0,
+          fiado_pedidos_com_taxa_periodo: 0,
+          fiado_pessoas_com_saldo: 0,
+          fiado_pedidos_abertos: 0,
+        }
+    : metrics?.financeiro?.consolidado || {
     recebido_pedidos: toNumber(paymentSummary.valor_recebido),
     recebido_fiado: toNumber(fiadoResumo.recebido_periodo),
     recebido_total: toNumber(paymentSummary.valor_recebido) + toNumber(fiadoResumo.recebido_periodo),
@@ -383,6 +462,22 @@ export function DashboardScreen() {
           </div>
         </div>
       </div>
+
+      {!cashIsOpen && hasCashFinanceResponse && (
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <div className="font-semibold">{financeUnavailable ? 'Resumo financeiro indisponível' : 'Nenhum caixa aberto'}</div>
+              <div className="mt-1 text-amber-800">
+                {financeUnavailable
+                  ? 'Os cards financeiros abaixo não usam somas antigas do dashboard. Verifique o endpoint financeiro canônico antes de auditar valores.'
+                  : 'Os cards financeiros abaixo não usam pedidos do dia. Abra um caixa ou consulte um fechamento histórico para ver valores financeiros conciliados.'}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stats grid */}
       <TooltipProvider delayDuration={150}>
