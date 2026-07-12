@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import type { MouseEvent } from "react";
 import { useSearchParams } from "react-router";
 import {
@@ -637,6 +637,10 @@ export function OrdersScreen() {
   });
   const [newOrderCursorsReady, setNewOrderCursorsReady] = useState(false);
   const [checkingNewOrders, setCheckingNewOrders] = useState(false);
+  const [pendingPrintAlerts, setPendingPrintAlerts] = useState({
+    entrega: false,
+    retirada: false,
+  });
   const [archivedStartDate, setArchivedStartDate] = useState("");
   const [archivedEndDate, setArchivedEndDate] = useState("");
   const [archivedDailySummary, setArchivedDailySummary] = useState<
@@ -664,6 +668,7 @@ export function OrdersScreen() {
     }
   })();
   const realtimeRefreshTimeoutRef = useRef<number | null>(null);
+  const pendingPrintAlertRequestRef = useRef(false);
   const operationalCacheRef = useRef<Record<string, OperationalTabCache>>({});
   const operationalAvailabilityCacheRef = useRef<
     Record<string, OperationalTabAvailability>
@@ -681,13 +686,52 @@ export function OrdersScreen() {
     () => orders.filter(isAppOrderAwaitingPrint),
     [orders],
   );
+  const refreshPendingPrintAlerts = useCallback(async () => {
+    if (!user?.loja_id || pendingPrintAlertRequestRef.current) return;
+
+    pendingPrintAlertRequestRef.current = true;
+    try {
+      const types = ["entrega", "retirada"] as const;
+      const responses = await Promise.allSettled(
+        types.map((type) =>
+          api.post("/pedidos/operacionais/consulta", {
+            tipo_pedido: type,
+            aba: "falta_imprimir",
+            limite: 1,
+            ids_em_cache: [],
+          }),
+        ),
+      );
+
+      setPendingPrintAlerts((current) => {
+        const next = { ...current };
+        responses.forEach((response, index) => {
+          if (response.status !== "fulfilled") return;
+          const payload = response.value.data?.data || {};
+          const total = Number(payload.abas?.falta_imprimir?.total);
+          next[types[index]] = Number.isFinite(total)
+            ? total > 0
+            : Array.isArray(payload.pedidos) && payload.pedidos.length > 0;
+        });
+        return next;
+      });
+    } catch (error) {
+      console.error("Error checking pending print alerts:", error);
+    } finally {
+      pendingPrintAlertRequestRef.current = false;
+    }
+  }, [user?.loja_id]);
   const hasPendingDeliveryPrint = useMemo(
-    () => pendingPrintOrders.some((order) => getOrderType(order) === "entrega"),
-    [pendingPrintOrders],
+    () =>
+      pendingPrintAlerts.entrega ||
+      pendingPrintOrders.some((order) => getOrderType(order) === "entrega"),
+    [pendingPrintAlerts.entrega, pendingPrintOrders],
   );
   const hasPendingPickupPrint = useMemo(
-    () => pendingPrintOrders.some((order) => getOrderType(order) === "retirada"),
-    [pendingPrintOrders],
+    () =>
+      pendingPrintAlerts.retirada ||
+      pendingPrintOrders.some((order) => getOrderType(order) === "retirada"),
+    [pendingPrintAlerts.retirada, pendingPrintOrders],
   );
   const deliverySound = usePersistentAttentionSound(
     `pedidos:${user?.loja_id || "sem-loja"}:entrega`,
@@ -1169,6 +1213,31 @@ export function OrdersScreen() {
   ]);
 
   useEffect(() => {
+    if (!user?.loja_id) {
+      setPendingPrintAlerts({ entrega: false, retirada: false });
+      return;
+    }
+
+    const reconcileAlerts = () => {
+      if (document.visibilityState === "hidden") return;
+      void refreshPendingPrintAlerts();
+    };
+
+    void refreshPendingPrintAlerts();
+    const intervalId = window.setInterval(reconcileAlerts, 30000);
+    window.addEventListener("focus", reconcileAlerts);
+    window.addEventListener("online", reconcileAlerts);
+    document.addEventListener("visibilitychange", reconcileAlerts);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", reconcileAlerts);
+      window.removeEventListener("online", reconcileAlerts);
+      document.removeEventListener("visibilitychange", reconcileAlerts);
+    };
+  }, [user?.loja_id, refreshPendingPrintAlerts]);
+
+  useEffect(() => {
     if (!user?.loja_id) return;
 
     const reconcile = () => {
@@ -1205,6 +1274,7 @@ export function OrdersScreen() {
     const channel = realtime
       .channel(ordersTenantTopic(lojaId), { config: { private: true } })
       .on("broadcast", { event: "pedidos:update" }, ({ payload }: any) => {
+        void refreshPendingPrintAlerts();
         const tipoPedido = String(payload?.tipoPedido || "").toLowerCase();
         if (payload?.pedidoId && (tipoPedido === "entrega" || tipoPedido === "retirada")) {
           invalidateOperationalOrderCaches(payload.pedidoId, tipoPedido);
@@ -1229,7 +1299,7 @@ export function OrdersScreen() {
         window.clearTimeout(realtimeRefreshTimeoutRef.current);
       void realtime.removeChannel(channel);
     };
-  }, [user?.loja_id, statusFilter, typeFilter, bairroFilter, search, viewMode]);
+  }, [user?.loja_id, statusFilter, typeFilter, bairroFilter, search, viewMode, refreshPendingPrintAlerts]);
 
   const refreshCurrentOrderTab = async () => {
     setOrders([]);
@@ -1716,6 +1786,7 @@ export function OrdersScreen() {
     if (selected?.id === order.id) {
       setSelected((prev: any) => (prev ? { ...prev, ...updatedOrder } : prev));
     }
+    void refreshPendingPrintAlerts();
     return { ...order, ...updatedOrder };
   };
 
