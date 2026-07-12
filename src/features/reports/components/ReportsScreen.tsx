@@ -515,11 +515,6 @@ export function ReportsScreen() {
   const categoryRevenueData = metrics?.categoryRevenueData || [];
   const topProducts = metrics?.topProdutos || [];
   const hourlyData = metrics?.hourlyData || [];
-  const fiados = metrics?.financeiro?.fiados;
-  const fiadoResumo = fiados?.resumo || {};
-  const fiadoPorForma = Array.isArray(fiados?.recebimentos_por_forma_pagamento)
-    ? fiados.recebimentos_por_forma_pagamento
-    : [];
   const soldProductsStart = soldProductsPagination.total > 0
     ? (soldProductsPagination.page - 1) * soldProductsPagination.perPage + 1
     : 0;
@@ -532,47 +527,22 @@ export function ReportsScreen() {
       ? formatDate(startDate)
       : `${formatDate(startDate)} até ${formatDate(endDate)}`;
     const body = `
-      <h1>Relatórios e análises</h1>
-      <div class="muted">Desempenho operacional</div>
+      <h1>Relatórios operacionais</h1>
+      <div class="muted">Pedidos, produtos e movimento por período. Não substitui o caixa financeiro conciliado.</div>
       <div class="muted">Período: ${escapePrintHtml(periodLabel)}</div>
       <div class="muted">Impresso em ${escapePrintHtml(formatDateTime(new Date().toISOString()))}</div>
 
       <section class="grid no-break">
-        <div class="card"><div class="label">Faturamento</div><div class="value">${escapePrintHtml(formatCurrency(faturamentoTotal))}</div></div>
+        <div class="card"><div class="label">GMV operacional</div><div class="value">${escapePrintHtml(formatCurrency(faturamentoTotal))}</div></div>
         <div class="card"><div class="label">Pedidos</div><div class="value">${escapePrintHtml(pedidosTotal)}</div></div>
         <div class="card"><div class="label">Ticket médio</div><div class="value">${escapePrintHtml(formatCurrency(ticketMedio))}</div></div>
         <div class="card"><div class="label">Novos clientes</div><div class="value">${escapePrintHtml(metrics?.novosClientes || 0)}</div></div>
         <div class="card"><div class="label">Cancelamentos</div><div class="value">${escapePrintHtml(taxaCancelamento)}%</div></div>
-        <div class="card"><div class="label">Receita líquida estimada</div><div class="value">${escapePrintHtml(formatCurrency(faturamentoTotal * 0.95))}</div></div>
       </section>
 
-      ${fiados ? `
-        <h2>Recebimentos fiado</h2>
-        <section class="grid no-break">
-          <div class="card"><div class="label">Recebido no período</div><div class="value">${escapePrintHtml(formatCurrency(fiadoResumo.recebido_periodo))}</div></div>
-          <div class="card"><div class="label">Saldo aberto total</div><div class="value">${escapePrintHtml(formatCurrency(fiadoResumo.saldo_aberto_total))}</div></div>
-          <div class="card"><div class="label">Fiado criado</div><div class="value">${escapePrintHtml(formatCurrency(fiadoResumo.valor_fiado_periodo))}</div></div>
-          <div class="card"><div class="label">Pessoas com saldo</div><div class="value">${escapePrintHtml(fiadoResumo.pessoas_com_saldo || 0)}</div></div>
-        </section>
-        ${fiadoPorForma.length > 0 ? `
-          <table>
-            <thead><tr><th>Forma de pagamento</th><th class="num">Quantidade</th><th class="num">Valor recebido</th></tr></thead>
-            <tbody>
-              ${fiadoPorForma.map((item: any) => `
-                <tr>
-                  <td>${escapePrintHtml(item.forma_pagamento)}</td>
-                  <td class="num">${escapePrintHtml(item.quantidade)}</td>
-                  <td class="num">${escapePrintHtml(formatCurrency(item.valor_recebido))}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        ` : ''}
-      ` : ''}
-
-      <h2>Faturamento por dia</h2>
+      <h2>GMV operacional por dia</h2>
       <table>
-        <thead><tr><th>Período</th><th class="num">Faturamento</th></tr></thead>
+        <thead><tr><th>Período</th><th class="num">GMV operacional</th></tr></thead>
         <tbody>
           ${salesData.map((item) => `
             <tr>
@@ -606,8 +576,8 @@ export function ReportsScreen() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-gray-900 font-semibold text-xl">Relatórios e Análises</h2>
-          <p className="text-gray-500 text-sm mt-0.5">Desempenho operacional</p>
+          <h2 className="text-gray-900 font-semibold text-xl">Relatórios Operacionais</h2>
+          <p className="text-gray-500 text-sm mt-0.5">Pedidos, produtos e movimento por período. A conciliação financeira fica no caixa.</p>
         </div>
         <div className="flex flex-col sm:flex-row sm:items-center gap-2">
           {!showGeneratedReports && (
@@ -852,14 +822,13 @@ export function ReportsScreen() {
         <>
 
       {/* KPI cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {[
-          { label: 'Faturamento', value: `R$ ${faturamentoTotal.toFixed(2)}`, sub: 'No período', color: PRIMARY, icon: DollarSign },
+          { label: 'GMV operacional', value: formatCurrency(faturamentoTotal), sub: 'Pedidos do período', color: PRIMARY, icon: DollarSign },
           { label: 'Pedidos', value: pedidosTotal.toString(), sub: 'No período', color: '#2563eb', icon: ShoppingCart },
-          { label: 'Ticket Médio', value: `R$ ${ticketMedio.toFixed(2)}`, sub: 'Por pedido', color: '#7c3aed', icon: TrendingUp },
+          { label: 'Ticket médio', value: formatCurrency(ticketMedio), sub: 'Por pedido', color: '#7c3aed', icon: TrendingUp },
           { label: 'Novos Clientes', value: metrics?.novosClientes?.toString() || '0', sub: 'No período', color: '#16a34a', icon: Users },
           { label: 'Cancelamentos', value: `${taxaCancelamento}%`, sub: 'Taxa no período', color: '#d97706', icon: XCircle },
-          { label: 'Receita Líq.', value: `R$ ${(faturamentoTotal * 0.95).toFixed(2)}`, sub: 'Est. (-5%)', color: '#ea580c', icon: BarChart3 },
         ].map(kpi => (
           <div key={kpi.label} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
             <kpi.icon className="w-5 h-5 mb-3" style={{ color: kpi.color }} />
@@ -870,59 +839,9 @@ export function ReportsScreen() {
         ))}
       </div>
 
-      {fiados && (
-        <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
-          <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h3 className="font-semibold text-gray-800">Recebimentos fiado</h3>
-              <p className="text-xs text-gray-400 mt-0.5">Valores recebidos no período, separados da venda original.</p>
-            </div>
-            <div className="text-sm font-semibold text-gray-900">
-              Recebido: {formatCurrency(fiadoResumo.recebido_periodo)}
-            </div>
-          </div>
-          <div className="grid gap-3 md:grid-cols-4">
-            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">Saldo aberto total</div>
-              <div className="mt-1 text-lg font-semibold text-gray-900">{formatCurrency(fiadoResumo.saldo_aberto_total)}</div>
-            </div>
-            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">Fiado criado</div>
-              <div className="mt-1 text-lg font-semibold text-gray-900">{formatCurrency(fiadoResumo.valor_fiado_periodo)}</div>
-            </div>
-            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">Pessoas com saldo</div>
-              <div className="mt-1 text-lg font-semibold text-gray-900">{Number(fiadoResumo.pessoas_com_saldo || 0)}</div>
-            </div>
-            <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">Pedidos abertos</div>
-              <div className="mt-1 text-lg font-semibold text-gray-900">{Number(fiadoResumo.pedidos_abertos || 0)}</div>
-            </div>
-          </div>
-          {fiadoPorForma.length > 0 && (
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 text-xs uppercase text-gray-500">
-                  <tr>
-                    <th className="px-3 py-2 text-left">Forma de pagamento</th>
-                    <th className="px-3 py-2 text-right">Quantidade</th>
-                    <th className="px-3 py-2 text-right">Valor recebido</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {fiadoPorForma.map((item: any) => (
-                    <tr key={item.forma_pagamento} className="border-t border-gray-100">
-                      <td className="px-3 py-2">{item.forma_pagamento}</td>
-                      <td className="px-3 py-2 text-right">{item.quantidade}</td>
-                      <td className="px-3 py-2 text-right font-semibold">{formatCurrency(item.valor_recebido)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
+      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        Estes relatórios são operacionais e usam pedidos por período. Valores recebidos, fiado, estornos e divergências devem ser conferidos no caixa financeiro conciliado.
+      </div>
 
       {/* Charts row 1 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -930,7 +849,7 @@ export function ReportsScreen() {
         <div className="lg:col-span-2 bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="font-semibold text-gray-800">Faturamento por Dia</h3>
+              <h3 className="font-semibold text-gray-800">GMV operacional por dia</h3>
               <p className="text-xs text-gray-400 mt-0.5">Evolução no período selecionado</p>
             </div>
             <div className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-600 bg-white">
@@ -948,7 +867,7 @@ export function ReportsScreen() {
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
               <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} dy={10} />
               <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} tickFormatter={v => `R$${(v/1000).toFixed(0)}k`} />
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} formatter={(v: number) => [`R$ ${v.toLocaleString('pt-BR')}`, 'Faturamento']} />
+              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} formatter={(v: number) => [`R$ ${v.toLocaleString('pt-BR')}`, 'GMV operacional']} />
               <Area type="monotone" dataKey="vendas" stroke={PRIMARY} strokeWidth={3} fill="url(#repGrad)" activeDot={{ r: 6, fill: PRIMARY }} />
             </AreaChart>
           </ResponsiveContainer>
@@ -957,7 +876,7 @@ export function ReportsScreen() {
         {/* Categories pie */}
         <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
           <h3 className="font-semibold text-gray-800 mb-1">Vendas por Categoria</h3>
-          <p className="text-xs text-gray-400 mb-4">Participação no faturamento</p>
+          <p className="text-xs text-gray-400 mb-4">Participação no GMV operacional</p>
           <ResponsiveContainer width="100%" height={160}>
             <PieChart>
               <Pie data={categoryRevenueData.length ? categoryRevenueData : [{ name: 'Sem dados', value: 100 }]} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" stroke="none">
@@ -1039,7 +958,7 @@ export function ReportsScreen() {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h3 className="font-semibold text-gray-800">Produtos vendidos no período</h3>
-              <p className="text-xs text-gray-400 mt-0.5">Quantidade vendida e faturamento por produto no intervalo selecionado.</p>
+              <p className="text-xs text-gray-400 mt-0.5">Quantidade vendida e GMV operacional por produto no intervalo selecionado.</p>
             </div>
             <div className="relative w-full lg:w-80">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -1061,7 +980,7 @@ export function ReportsScreen() {
               <div className="mt-1 text-lg font-semibold text-gray-900">{soldProductsSummary.quantidade_total.toLocaleString('pt-BR')}</div>
             </div>
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">Faturamento filtrado</div>
+              <div className="text-xs text-gray-500">GMV operacional filtrado</div>
               <div className="mt-1 text-lg font-semibold text-gray-900">{formatCurrency(soldProductsSummary.faturamento_total)}</div>
             </div>
           </div>
@@ -1086,7 +1005,7 @@ export function ReportsScreen() {
                 <th className="px-5 py-3 text-right">Quantidade vendida</th>
                 <th className="px-5 py-3 text-right">Pedidos</th>
                 <th className="px-5 py-3 text-right">Preço médio</th>
-                <th className="px-5 py-3 text-right">Faturamento</th>
+                <th className="px-5 py-3 text-right">GMV operacional</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 bg-white">
