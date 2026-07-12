@@ -105,6 +105,35 @@ const financialStatusLabel = (value: unknown) => {
   return labels[String(value || '').toLowerCase()] || String(value || 'Indefinido');
 };
 
+const sourceLabel = (value: unknown) => {
+  const labels: Record<string, string> = {
+    CUSTOMER_APP: 'Cliente/app',
+    ADMIN: 'Admin',
+    SALON: 'Salão',
+    UNKNOWN: 'Desconhecido',
+  };
+  return labels[String(value || '')] || String(value || 'Indefinido');
+};
+
+const fulfillmentLabel = (value: unknown) => {
+  const labels: Record<string, string> = {
+    DELIVERY: 'Entrega',
+    PICKUP: 'Retirada',
+    DINE_IN: 'Salão',
+  };
+  return labels[String(value || '')] || String(value || 'Indefinido');
+};
+
+const auditStatusLabel = (value: unknown) => {
+  const labels: Record<string, string> = {
+    CONCILIATED: 'Conciliado',
+    PENDING_SETTLEMENT: 'Pendente',
+    DIVERGENT: 'Divergente',
+    INCOMPLETE: 'Incompleto',
+  };
+  return labels[String(value || '')] || String(value || 'Indefinido');
+};
+
 const formatTimeLabel = (totalMinutes: number) => {
   const normalizedMinutes = Math.min(totalMinutes, MINUTES_PER_DAY - 1);
   const hours = Math.floor(normalizedMinutes / 60);
@@ -301,99 +330,28 @@ export function DashboardScreen() {
   const cashIsOpen = cashFinance?.status === 'aberto';
   const financeUnavailable = cashFinance?.status === 'erro_financeiro';
   const hasCashFinanceResponse = cashFinance !== null && cashFinance !== undefined;
-  const canonicalPaymentDetails = canonicalFinance
-    ? {
-        resumo: {
-          pagamentos_recebidos: canonicalFinance.pagamentos?.por_metodo?.reduce((sum: number, item: any) => sum + Number(item.quantidade_transacoes || 0), 0) || 0,
-          pagamentos_previstos: 0,
-          valor_recebido: canonicalFinance.resumo_vendas?.valor_recebido_pedidos || 0,
-          valor_previsto_receber: canonicalFinance.conciliacao?.valores_pendentes || 0,
-        },
-        por_forma_pagamento: (canonicalFinance.pagamentos?.por_metodo || []).map((item: any) => ({
-          metodo_pagamento: item.key || item.label,
-          quantidade: item.quantidade_transacoes,
-          valor_recebido: item.valor_recebido,
-          valor_previsto_receber: item.valor_pendente,
-        })),
-        por_canal_pagamento: (canonicalFinance.pagamentos?.por_canal || []).map((item: any) => ({
-          canal_pagamento: item.key || item.label,
-          quantidade: item.quantidade_transacoes,
-          valor_recebido: item.valor_recebido,
-          valor_previsto_receber: item.valor_pendente,
-          valor_total: Number(item.valor_recebido || 0) + Number(item.valor_pendente || 0),
-        })),
-        por_forma_e_canal: [],
-      }
-    : null;
-  const paymentDetails = canonicalPaymentDetails || metrics?.financeiro?.pagamentos_detalhados || {};
-  const paymentSummary = paymentDetails.resumo || {};
-  const fiados = canonicalFinance
-    ? { resumo: {}, recebimentos_por_forma_pagamento: [] }
-    : metrics?.financeiro?.fiados || {};
-  const fiadoResumo = fiados.resumo || {};
-  const salaoOrigem = canonicalFinance?.por_origem?.find((item: any) => item.key === 'SALON');
-  const salaoResumo = canonicalFinance
-    ? { mesas_fechadas: salaoOrigem?.quantidade_pedidos || 0, valor_mesas_fechadas: salaoOrigem?.valor_liquido || 0 }
-    : metrics?.financeiro?.salao || {};
-  const financeSummary = canonicalFinance
-    ? {
-        recebido_pedidos: canonicalFinance.resumo_vendas?.valor_recebido_pedidos || 0,
-        recebido_fiado: canonicalFinance.resumo_vendas?.fiado_recebido || 0,
-        recebido_total: canonicalFinance.resumo_vendas?.valor_efetivamente_recebido || 0,
-        a_receber_pedidos: canonicalFinance.conciliacao?.valores_pendentes || 0,
-        a_receber_fiado: canonicalFinance.resumo_vendas?.fiado_criado || 0,
-        a_receber_total: canonicalFinance.resumo_vendas?.valor_a_receber || 0,
-        fiado_criado_periodo: canonicalFinance.resumo_vendas?.fiado_criado || 0,
-        fiado_taxa_aplicada_periodo: 0,
-        fiado_pedidos_com_taxa_periodo: 0,
-        fiado_pessoas_com_saldo: 0,
-        fiado_pedidos_abertos: 0,
-      }
-    : hasCashFinanceResponse
-      ? {
-          recebido_pedidos: 0,
-          recebido_fiado: 0,
-          recebido_total: 0,
-          a_receber_pedidos: 0,
-          a_receber_fiado: 0,
-          a_receber_total: 0,
-          fiado_criado_periodo: 0,
-          fiado_taxa_aplicada_periodo: 0,
-          fiado_pedidos_com_taxa_periodo: 0,
-          fiado_pessoas_com_saldo: 0,
-          fiado_pedidos_abertos: 0,
-        }
-    : metrics?.financeiro?.consolidado || {
-    recebido_pedidos: toNumber(paymentSummary.valor_recebido),
-    recebido_fiado: toNumber(fiadoResumo.recebido_periodo),
-    recebido_total: toNumber(paymentSummary.valor_recebido) + toNumber(fiadoResumo.recebido_periodo),
-    a_receber_pedidos: toNumber(paymentSummary.valor_previsto_receber),
-    a_receber_fiado: toNumber(fiadoResumo.saldo_aberto_total),
-    a_receber_total: toNumber(paymentSummary.valor_previsto_receber) + toNumber(fiadoResumo.saldo_aberto_total),
-    fiado_criado_periodo: toNumber(fiadoResumo.valor_fiado_periodo),
-    fiado_taxa_aplicada_periodo: toNumber(fiadoResumo.valor_taxa_aplicada_periodo),
-    fiado_pedidos_com_taxa_periodo: Number(fiadoResumo.pedidos_com_taxa_periodo || 0),
-    fiado_pessoas_com_saldo: Number(fiadoResumo.pessoas_com_saldo || 0),
-    fiado_pedidos_abertos: Number(fiadoResumo.pedidos_abertos || 0),
-  };
-  const receivedTotal = toNumber(financeSummary.recebido_total);
-  const pendingTotal = toNumber(financeSummary.a_receber_total);
-  // Fallbacks if data is not present
-  const statCards = [
-    { label: 'Pedidos', value: metrics?.pedidosHoje?.total || '0', sub: 'No dia', icon: ShoppingCart, color: '#2563eb', bg: '#eff6ff', tooltip: 'Quantidade de pedidos no período selecionado.' },
-    { label: 'Em andamento', value: metrics?.pedidosAndamento || '0', sub: 'Atuais', icon: Activity, color: '#d97706', bg: '#fffbeb', tooltip: 'Pedidos pendentes, confirmados, em separação ou prontos.' },
-    { label: 'Entregues', value: metrics?.pedidosEntregues || '0', sub: 'Concluídos', icon: CheckCircle2, color: '#16a34a', bg: '#f0fdf4', tooltip: 'Pedidos finalizados no período.' },
-    { label: 'Cancelados', value: metrics?.pedidosCancelados || '0', sub: 'Cancelados', icon: XCircle, color: '#dc2626', bg: '#fef2f2', tooltip: 'Pedidos cancelados no período.' },
-    { label: 'Recebido total', value: formatCurrency(receivedTotal), sub: `${formatCurrency(financeSummary.recebido_fiado)} de fiado`, icon: DollarSign, color: PRIMARY, bg: '#eef2f9', tooltip: 'Dinheiro que entrou no período: pagamentos de pedidos e recebimentos de fiados.' },
-    { label: 'A receber', value: formatCurrency(pendingTotal), sub: `${formatCurrency(financeSummary.a_receber_fiado)} em fiado aberto`, icon: Clock, color: '#d97706', bg: '#fffbeb', tooltip: 'Valores ainda pendentes: pagamentos comuns previstos mais saldo aberto das contas fiado.' },
-    { label: 'Fiado criado', value: formatCurrency(financeSummary.fiado_criado_periodo), sub: `${financeSummary.fiado_pedidos_abertos || 0} pedidos abertos`, icon: CreditCard, color: '#7c3aed', bg: '#f5f3ff', tooltip: 'Novos fiados criados no período. Só entram como dinheiro recebido depois do pagamento.' },
-    { label: 'Em rota', value: metrics?.pedidosEmRota || '0', sub: 'Atuais', icon: Truck, color: '#ea580c', bg: '#fff7ed', tooltip: 'Pedidos que já saíram para entrega.' },
+  const cashInfo = canonicalFinance?.caixa || cashFinance?.caixa || {};
+  const financeSummary = canonicalFinance?.resumo_vendas || {};
+  const reconciliation = canonicalFinance?.conciliacao || {};
+  const salesByFulfillment = Array.isArray(canonicalFinance?.por_atendimento) ? canonicalFinance.por_atendimento : [];
+  const salesBySource = Array.isArray(canonicalFinance?.por_origem) ? canonicalFinance.por_origem : [];
+  const paymentsByMethod = Array.isArray(canonicalFinance?.pagamentos?.por_metodo) ? canonicalFinance.pagamentos.por_metodo : [];
+  const paymentsByChannel = Array.isArray(canonicalFinance?.pagamentos?.por_canal) ? canonicalFinance.pagamentos.por_canal : [];
+  const drilldownOrders = Array.isArray(canonicalFinance?.drilldown?.pedidos) ? canonicalFinance.drilldown.pedidos : [];
+  const financialCards = [
+    { label: 'Recebido no caixa', value: formatCurrency(reconciliation.total_recebido_no_caixa), sub: `${formatCurrency(reconciliation.recebido_de_vendas_do_caixa)} de vendas`, icon: DollarSign, color: '#16a34a', bg: '#f0fdf4' },
+    { label: 'Pendente', value: formatCurrency(reconciliation.valores_pendentes), sub: 'Pagamentos ainda não recebidos', icon: Clock, color: '#d97706', bg: '#fffbeb' },
+    { label: 'Fiado criado', value: formatCurrency(reconciliation.fiado_criado), sub: 'Vira recebimento futuro', icon: CreditCard, color: '#7c3aed', bg: '#f5f3ff' },
+    { label: 'Fiado recebido', value: formatCurrency(reconciliation.fiado_recebido), sub: 'Baixas vinculadas ao caixa', icon: CheckCircle2, color: '#0891b2', bg: '#ecfeff' },
+    { label: 'Cancelamentos', value: formatCurrency(reconciliation.cancelamentos), sub: `${formatCurrency(reconciliation.estornos)} estornado`, icon: XCircle, color: '#dc2626', bg: '#fef2f2' },
+    { label: 'Divergência', value: formatCurrency(reconciliation.diferenca_conciliacao), sub: auditStatusLabel(reconciliation.status_auditoria), icon: AlertTriangle, color: toNumber(reconciliation.diferenca_conciliacao) === 0 ? '#16a34a' : '#dc2626', bg: toNumber(reconciliation.diferenca_conciliacao) === 0 ? '#f0fdf4' : '#fef2f2' },
   ];
-
-  const paymentsByMethod = Array.isArray(paymentDetails.por_forma_pagamento) ? paymentDetails.por_forma_pagamento : [];
-  const paymentsByChannel = Array.isArray(paymentDetails.por_canal_pagamento) ? paymentDetails.por_canal_pagamento : [];
-  const paymentsByMethodChannel = Array.isArray(paymentDetails.por_forma_e_canal) ? paymentDetails.por_forma_e_canal : [];
-  const fiadoByMethod = Array.isArray(fiados.recebimentos_por_forma_pagamento) ? fiados.recebimentos_por_forma_pagamento : [];
+  const operationalCards = [
+    { label: 'Pedidos do dia', value: metrics?.pedidosHoje?.total || '0', sub: formatDisplayDate(selectedDate), icon: ShoppingCart, color: '#2563eb', bg: '#eff6ff' },
+    { label: 'Em andamento', value: metrics?.pedidosAndamento || '0', sub: 'Agora', icon: Activity, color: '#d97706', bg: '#fffbeb' },
+    { label: 'Entregues', value: metrics?.pedidosEntregues || '0', sub: 'No dia', icon: CheckCircle2, color: '#16a34a', bg: '#f0fdf4' },
+    { label: 'Em rota', value: metrics?.pedidosEmRota || '0', sub: 'Agora', icon: Truck, color: '#ea580c', bg: '#fff7ed' },
+  ];
 
   const rawSalesData = Array.isArray(metrics?.hourlyData) && metrics.hourlyData.length
     ? metrics.hourlyData
@@ -463,121 +421,195 @@ export function DashboardScreen() {
         </div>
       )}
 
-      {/* Stats grid */}
       <TooltipProvider delayDuration={150}>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
-        {statCards.map(card => (
-          <div key={card.label} className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="flex items-start justify-between mb-3">
-              <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: card.bg }}>
-                <card.icon className="w-4.5 h-4.5" style={{ color: card.color }} />
+        <div className="grid grid-cols-2 gap-3 mt-4 lg:grid-cols-6">
+          {financialCards.map(card => (
+            <div key={card.label} className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg" style={{ backgroundColor: card.bg }}>
+                  <card.icon className="h-4 w-4" style={{ color: card.color }} />
+                </div>
               </div>
-              <MetricInfo text={card.tooltip} />
+              <div className="text-lg font-semibold text-gray-950">{card.value}</div>
+              <div className="mt-1 text-xs font-medium text-gray-600">{card.label}</div>
+              <div className="mt-1 text-[11px] text-gray-400">{card.sub}</div>
             </div>
-            <div className="text-gray-900 font-semibold text-xl leading-tight">{card.value}</div>
-            <div className="text-gray-500 text-xs mt-0.5">{card.label}</div>
-            <div className="text-gray-400 text-[11px] mt-1">{card.sub}</div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
       </TooltipProvider>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mt-4">
-        {[
-          { label: 'Pedidos recebidos', value: formatCurrency(financeSummary.recebido_pedidos), sub: `${paymentSummary.pagamentos_recebidos || 0} pagamento(s)`, icon: DollarSign, color: '#16a34a', bg: '#f0fdf4', tooltip: 'Somente pagamentos recebidos diretamente nos pedidos, sem contar baixas de fiado.' },
-          { label: 'Fiado recebido', value: formatCurrency(financeSummary.recebido_fiado), sub: `${fiadoByMethod.reduce((sum: number, item: any) => sum + Number(item.quantidade || 0), 0)} baixa(s)`, icon: CreditCard, color: '#7c3aed', bg: '#f5f3ff', tooltip: 'Valor pago por clientes que tinham conta fiado. Entra no caixa no dia do recebimento, não no dia do pedido.' },
-          { label: 'Mesas fechadas', value: formatCurrency(salaoResumo.valor_mesas_fechadas), sub: `${salaoResumo.mesas_fechadas || 0} mesa(s)`, icon: Armchair, color: '#0f766e', bg: '#ccfbf1', tooltip: 'Valor total das contas de mesa fechadas no período selecionado, incluindo as que ainda aguardam confirmação de pagamento.' },
-          { label: 'Pedidos a receber', value: formatCurrency(financeSummary.a_receber_pedidos), sub: `${paymentSummary.pagamentos_previstos || 0} pendente(s)`, icon: Clock, color: '#d97706', bg: '#fffbeb', tooltip: 'Pagamentos ainda pendentes, como PIX, cartão em análise ou cobrança na entrega ainda não confirmada.' },
-          { label: 'Fiado em aberto', value: formatCurrency(financeSummary.a_receber_fiado), sub: `${financeSummary.fiado_pessoas_com_saldo || 0} pessoa(s)`, icon: Users, color: '#0891b2', bg: '#ecfeff', tooltip: 'Saldo aberto das contas fiado. É valor a receber, mas ainda não é dinheiro recebido.' },
-        ].map(card => (
-          <div key={card.label} className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="flex items-start justify-between mb-3">
-              <div className="w-9 h-9 rounded-lg flex items-center justify-center" style={{ backgroundColor: card.bg }}>
-                <card.icon className="w-4.5 h-4.5" style={{ color: card.color }} />
-              </div>
-              <MetricInfo text={card.tooltip} />
+      <div className="grid grid-cols-1 gap-4 mt-4 xl:grid-cols-3">
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-gray-900 font-semibold">Caixa atual</h3>
+              <p className="text-xs text-gray-400">
+                {cashInfo?.aberto_em ? `Aberto em ${formatBrasiliaTime(cashInfo.aberto_em)}` : 'Sem sessão aberta'}
+              </p>
             </div>
-            <div className="text-gray-900 font-semibold text-xl leading-tight">{card.value}</div>
-            <div className="text-gray-500 text-xs mt-0.5">{card.label}</div>
-            <div className="text-gray-400 text-[11px] mt-1">{card.sub}</div>
+            <span className={`rounded-full px-2 py-1 text-xs font-semibold ${cashIsOpen ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+              {cashIsOpen ? 'Aberto' : 'Fechado'}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <div className="text-xs text-gray-400">Pedidos</div>
+              <div className="font-semibold text-gray-900">{financeSummary.pedidos_validos || 0} válidos</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-400">Venda líquida</div>
+              <div className="font-semibold text-gray-900">{formatCurrency(financeSummary.valor_liquido_vendido)}</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-400">Descontos</div>
+              <div className="font-semibold text-gray-900">{formatCurrency(financeSummary.descontos)}</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-400">Operador</div>
+              <div className="font-semibold text-gray-900">{cashInfo?.operador_nome || 'Não informado'}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg border border-gray-200 p-4 xl:col-span-2">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-gray-900 font-semibold">Conciliação</h3>
+              <p className="text-xs text-gray-400">Venda líquida menos recebido, pendente e fiado criado</p>
+            </div>
+            <span className={`rounded-full px-2 py-1 text-xs font-semibold ${reconciliation.status_auditoria === 'CONCILIATED' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+              {auditStatusLabel(reconciliation.status_auditoria)}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-5">
+            <div><div className="text-xs text-gray-400">Vendido</div><div className="font-semibold">{formatCurrency(reconciliation.total_vendido)}</div></div>
+            <div><div className="text-xs text-gray-400">Recebido</div><div className="font-semibold">{formatCurrency(reconciliation.total_recebido_no_caixa)}</div></div>
+            <div><div className="text-xs text-gray-400">Pendente</div><div className="font-semibold">{formatCurrency(reconciliation.valores_pendentes)}</div></div>
+            <div><div className="text-xs text-gray-400">Fiado criado</div><div className="font-semibold">{formatCurrency(reconciliation.fiado_criado)}</div></div>
+            <div><div className="text-xs text-gray-400">Diferença</div><div className="font-semibold">{formatCurrency(reconciliation.diferenca_conciliacao)}</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 mt-4 xl:grid-cols-2">
+        {[
+          { title: 'Vendas por atendimento', rows: salesByFulfillment, label: fulfillmentLabel },
+          { title: 'Vendas por origem', rows: salesBySource, label: sourceLabel },
+        ].map(section => (
+          <div key={section.title} className="bg-white rounded-lg border border-gray-200 p-4 overflow-x-auto">
+            <h3 className="mb-3 text-gray-900 font-semibold">{section.title}</h3>
+            <table className="w-full min-w-[720px] text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs uppercase text-gray-400">
+                  <th className="py-2">Tipo</th>
+                  <th className="py-2 text-right">Pedidos</th>
+                  <th className="py-2 text-right">Bruto</th>
+                  <th className="py-2 text-right">Desconto</th>
+                  <th className="py-2 text-right">Líquido</th>
+                  <th className="py-2 text-right">Recebido</th>
+                  <th className="py-2 text-right">Pendente</th>
+                  <th className="py-2 text-right">Fiado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(section.rows.length ? section.rows : []).map((row: any) => (
+                  <tr key={row.key || row.label} className="border-b last:border-0">
+                    <td className="py-2 font-medium text-gray-800">{section.label(row.key) || row.label}</td>
+                    <td className="py-2 text-right">{row.quantidade_pedidos || 0}</td>
+                    <td className="py-2 text-right">{formatCurrency(row.valor_bruto)}</td>
+                    <td className="py-2 text-right">{formatCurrency(row.descontos)}</td>
+                    <td className="py-2 text-right font-semibold">{formatCurrency(row.valor_liquido)}</td>
+                    <td className="py-2 text-right">{formatCurrency(row.valor_recebido)}</td>
+                    <td className="py-2 text-right">{formatCurrency(row.valor_pendente)}</td>
+                    <td className="py-2 text-right">{formatCurrency(row.valor_fiado)}</td>
+                  </tr>
+                ))}
+                {section.rows.length === 0 && (
+                  <tr><td colSpan={8} className="py-6 text-center text-gray-500">Nenhum dado financeiro no caixa atual.</td></tr>
+                )}
+              </tbody>
+            </table>
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <h3 className="text-gray-800 font-semibold mb-3">Pagamentos por Forma</h3>
-          <div className="space-y-3">
-            {(paymentsByMethod.length ? paymentsByMethod : [{ metodo_pagamento: 'sem dados', valor_recebido: 0, valor_previsto_receber: 0, quantidade: 0 }]).map((item: any) => (
-              <div key={item.metodo_pagamento} className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-medium text-gray-700">{paymentMethodLabel(item.metodo_pagamento)}</div>
-                  <div className="text-xs text-gray-400">{item.quantidade || 0} pagamento(s)</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm font-semibold text-gray-900">{formatCurrency(item.valor_recebido)}</div>
-                  <div className="text-xs text-amber-600">{formatCurrency(item.valor_previsto_receber)} previsto</div>
-                </div>
-              </div>
-            ))}
-            {fiadoByMethod.length > 0 && (
-              <div className="border-t border-gray-100 pt-3">
-                <div className="mb-2 flex items-center gap-1 text-xs font-semibold uppercase text-gray-400">
-                  Baixas de fiado
-                  <MetricInfo text="Formas de pagamento usadas para receber contas fiado no período. Esses valores entram no total recebido." />
-                </div>
-                <div className="space-y-2">
-                  {fiadoByMethod.map((item: any) => (
-                    <div key={`fiado-${item.forma_pagamento}`} className="flex items-center justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-medium text-gray-700">{paymentMethodLabel(item.forma_pagamento)}</div>
-                        <div className="text-xs text-gray-400">{item.quantidade || 0} baixa(s)</div>
-                      </div>
-                      <div className="text-sm font-semibold text-gray-900">{formatCurrency(item.valor_recebido)}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+      <div className="grid grid-cols-1 gap-4 mt-4 xl:grid-cols-2">
+        {[
+          { title: 'Pagamentos por método', rows: paymentsByMethod, label: paymentMethodLabel },
+          { title: 'Pagamentos por canal', rows: paymentsByChannel, label: paymentChannelLabel },
+        ].map(section => (
+          <div key={section.title} className="bg-white rounded-lg border border-gray-200 p-4 overflow-x-auto">
+            <h3 className="mb-3 text-gray-900 font-semibold">{section.title}</h3>
+            <table className="w-full min-w-[620px] text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs uppercase text-gray-400">
+                  <th className="py-2">Grupo</th>
+                  <th className="py-2 text-right">Transações</th>
+                  <th className="py-2 text-right">Recebido</th>
+                  <th className="py-2 text-right">Pendente</th>
+                  <th className="py-2 text-right">Fiado</th>
+                  <th className="py-2 text-right">Estornos</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(section.rows.length ? section.rows : []).map((row: any) => (
+                  <tr key={row.key || row.label} className="border-b last:border-0">
+                    <td className="py-2 font-medium text-gray-800">{section.label(row.key) || row.label}</td>
+                    <td className="py-2 text-right">{row.quantidade_transacoes || 0}</td>
+                    <td className="py-2 text-right font-semibold">{formatCurrency(row.valor_recebido)}</td>
+                    <td className="py-2 text-right">{formatCurrency(row.valor_pendente)}</td>
+                    <td className="py-2 text-right">{formatCurrency(row.valor_fiado)}</td>
+                    <td className="py-2 text-right">{formatCurrency(row.estornos)}</td>
+                  </tr>
+                ))}
+                {section.rows.length === 0 && (
+                  <tr><td colSpan={6} className="py-6 text-center text-gray-500">Nenhum pagamento no caixa atual.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </div>
+
+      <div className="bg-white rounded-lg border border-gray-200 mt-4 overflow-hidden">
+        <div className="flex items-center justify-between border-b border-gray-100 p-4">
+          <div>
+            <h3 className="text-gray-900 font-semibold">Drill-down do caixa</h3>
+            <p className="text-xs text-gray-400">Pedidos e pagamentos que compõem os valores acima</p>
           </div>
         </div>
-
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <h3 className="text-gray-800 font-semibold mb-3">Pagamentos por Canal</h3>
-          <div className="space-y-3">
-            {(paymentsByChannel.length ? paymentsByChannel : [{ canal_pagamento: 'sem dados', valor_recebido: 0, valor_previsto_receber: 0, quantidade: 0 }]).map((item: any) => (
-              <div key={item.canal_pagamento} className="flex items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-medium text-gray-700">{paymentChannelLabel(item.canal_pagamento)}</div>
-                  <div className="text-xs text-gray-400">{item.quantidade || 0} pagamento(s)</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm font-semibold text-gray-900">{formatCurrency(item.valor_recebido)}</div>
-                  <div className="text-xs text-amber-600">{formatCurrency(item.valor_previsto_receber)} previsto</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <h3 className="text-gray-800 font-semibold mb-3">Detalhe Financeiro</h3>
-          <div className="space-y-2">
-            {paymentsByMethodChannel.length ? paymentsByMethodChannel.slice(0, 6).map((item: any) => (
-              <div key={`${item.metodo_pagamento}-${item.canal_pagamento}-${item.situacao_financeira}`} className="rounded-lg border border-gray-100 p-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-gray-700">{paymentMethodLabel(item.metodo_pagamento)} · {paymentChannelLabel(item.canal_pagamento)}</span>
-                  <span className="text-[11px] text-gray-400">{item.quantidade || 0}</span>
-                </div>
-                <div className="mt-1 flex items-center justify-between gap-2">
-                  <span className="text-[11px] text-gray-500">{financialStatusLabel(item.situacao_financeira)}</span>
-                  <span className="text-xs font-semibold text-gray-900">{formatCurrency(item.valor_total)}</span>
-                </div>
-              </div>
-            )) : (
-              <div className="text-sm text-gray-500 text-center">Nenhum pagamento no período.</div>
-            )}
-          </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[920px] text-sm">
+            <thead>
+              <tr className="border-b text-left text-xs uppercase text-gray-400">
+                <th className="px-4 py-2">Pedido</th>
+                <th className="px-4 py-2">Origem</th>
+                <th className="px-4 py-2">Atendimento</th>
+                <th className="px-4 py-2 text-right">Líquido</th>
+                <th className="px-4 py-2 text-right">Recebido</th>
+                <th className="px-4 py-2 text-right">Pendente</th>
+                <th className="px-4 py-2 text-right">Fiado</th>
+                <th className="px-4 py-2 text-right">Diferença</th>
+              </tr>
+            </thead>
+            <tbody>
+              {drilldownOrders.slice(0, 12).map((order: any) => (
+                <tr key={order.pedido_id} className="border-b last:border-0">
+                  <td className="px-4 py-2 font-medium text-gray-800">{order.numero_pedido || order.pedido_id}</td>
+                  <td className="px-4 py-2">{sourceLabel(order.order_source)}</td>
+                  <td className="px-4 py-2">{fulfillmentLabel(order.fulfillment_type)}</td>
+                  <td className="px-4 py-2 text-right font-semibold">{formatCurrency(order.valor_liquido)}</td>
+                  <td className="px-4 py-2 text-right">{formatCurrency(order.valor_recebido)}</td>
+                  <td className="px-4 py-2 text-right">{formatCurrency(order.valor_pendente)}</td>
+                  <td className="px-4 py-2 text-right">{formatCurrency(order.valor_fiado)}</td>
+                  <td className="px-4 py-2 text-right">{formatCurrency(order.diferenca_conciliacao)}</td>
+                </tr>
+              ))}
+              {drilldownOrders.length === 0 && (
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500">Nenhum pedido vinculado ao caixa atual.</td></tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
