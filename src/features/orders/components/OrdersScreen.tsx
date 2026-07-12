@@ -691,7 +691,15 @@ export function OrdersScreen() {
 
     pendingPrintAlertRequestRef.current = true;
     try {
-      const types = ["entrega", "retirada"] as const;
+      const activeOperationalType =
+        viewMode === "lista" && typeFilter === "Entrega"
+          ? "entrega"
+          : viewMode === "lista" && typeFilter === "Retirada"
+            ? "retirada"
+            : null;
+      const types: Array<"entrega" | "retirada"> = activeOperationalType
+        ? [activeOperationalType === "entrega" ? "retirada" : "entrega"]
+        : ["entrega", "retirada"];
       const responses = await Promise.allSettled(
         types.map((type) =>
           api.post("/pedidos/operacionais/consulta", {
@@ -720,7 +728,7 @@ export function OrdersScreen() {
     } finally {
       pendingPrintAlertRequestRef.current = false;
     }
-  }, [user?.loja_id]);
+  }, [user?.loja_id, typeFilter, viewMode]);
   const hasPendingDeliveryPrint = useMemo(
     () =>
       pendingPrintAlerts.entrega ||
@@ -801,7 +809,7 @@ export function OrdersScreen() {
     if (!options.silent && mode !== "poll") setLoading(true);
 
     try {
-      const response = await api.post(
+      let response = await api.post(
         "/pedidos/operacionais/consulta",
         {
           tipo_pedido: operationalType,
@@ -817,8 +825,29 @@ export function OrdersScreen() {
       );
       if (requestVersion !== operationalRequestVersionRef.current) return;
 
-      const payload = response.data?.data || {};
-      const incoming = Array.isArray(payload.pedidos) ? payload.pedidos : [];
+      let payload = response.data?.data || {};
+      let incoming = Array.isArray(payload.pedidos) ? payload.pedidos : [];
+      if (
+        Number(payload.abas?.[operationalTabKey]?.total || 0) > 0 &&
+        incoming.length === 0
+      ) {
+        response = await api.post(
+          "/pedidos/operacionais/consulta",
+          {
+            tipo_pedido: operationalType,
+            aba: operationalTabKey,
+            limite: PER_PAGE,
+            busca: search.trim() || undefined,
+            status: frontendToBackendStatus[statusFilter],
+            bairro: bairroFilter === "Todos" ? undefined : bairroFilter,
+            ids_em_cache: [],
+          },
+          { signal: controller.signal },
+        );
+        if (requestVersion !== operationalRequestVersionRef.current) return;
+        payload = response.data?.data || {};
+        incoming = Array.isArray(payload.pedidos) ? payload.pedidos : [];
+      }
       const availability = payload.abas || EMPTY_OPERATIONAL_AVAILABILITY;
       const validIds = new Set<string>(payload.ids_em_cache_validos || []);
       let mergedOrders: any[];
@@ -847,6 +876,10 @@ export function OrdersScreen() {
       operationalCacheRef.current[cacheKey] = nextCache;
       operationalAvailabilityCacheRef.current[filtersKey] = availability;
       setOperationalAvailability(availability);
+      setPendingPrintAlerts((current) => ({
+        ...current,
+        [operationalType]: Number(availability.falta_imprimir?.total || 0) > 0,
+      }));
       setOrders(mergedOrders);
       setHasMore(nextCache.hasMore);
       setPage((current) => (mode === "append" ? current + 1 : 1));
