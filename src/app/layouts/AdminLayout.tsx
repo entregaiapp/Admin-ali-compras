@@ -3,7 +3,7 @@ import { Outlet, useNavigate, useLocation, Navigate } from 'react-router';
 import {
   LayoutDashboard, ShoppingCart, Package,  Grid3X3, Tag, Image, Users, Truck, User,
   Ticket, CreditCard, BarChart3, UserCog, Settings, Bell, Menu, X, LogOut,
-  ChevronRight, Key, Bike, UtensilsCrossed, Wallet
+  ChevronRight, Key, Bike, UtensilsCrossed, Wallet, PanelLeftClose, PanelLeftOpen
 } from 'lucide-react';
 import api from '@/shared/lib/api';
 import logo from '@/assets/logo.png';
@@ -93,6 +93,13 @@ function RouteAccessDenied({ onGoHome }: { onGoHome: () => void }) {
 
 export function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('admin_sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [storeName, setStoreName] = useState('Carregando...');
   const [salaoEnabled, setSalaoEnabled] = useState<boolean | null>(null);
   const [fiadoEnabled, setFiadoEnabled] = useState<boolean | null>(null);
@@ -119,6 +126,14 @@ export function AdminLayout() {
     localStorage.removeItem('user');
     return <Navigate to="/login" replace />;
   }
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('admin_sidebar_collapsed', String(sidebarCollapsed));
+    } catch {
+      // Ignore storage errors; the visual state still works for this session.
+    }
+  }, [sidebarCollapsed]);
   
   useEffect(() => {
     if (user?.loja_id) {
@@ -254,32 +269,42 @@ export function AdminLayout() {
 
       {/* Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-[210] w-64 flex flex-col transition-transform duration-300 ease-in-out
+        className={`fixed inset-y-0 left-0 z-[210] flex w-64 flex-col transition-[transform,width] duration-300 ease-in-out ${sidebarCollapsed ? 'lg:w-20' : 'lg:w-64'}
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:static lg:z-auto`}
         style={{ backgroundColor: PRIMARY }}
       >
         {/* Logo */}
-        <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10">
+        <div className={`flex items-center gap-3 border-b border-white/10 px-5 py-5 ${sidebarCollapsed ? 'lg:flex-col lg:justify-center lg:px-3 lg:py-4' : ''}`}>
           <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center">
             <img src={logo} alt="" className="h-11 w-11 object-contain drop-shadow-sm" />
           </div>
-          <div>
+          <div className={sidebarCollapsed ? 'lg:hidden' : ''}>
             <div className="text-white font-semibold text-sm leading-tight truncate max-w-[140px]">{storeName}</div>
             <div className="text-white/50 text-xs">Entregaí Admin</div>
           </div>
           <button
+            type="button"
+            className={`ml-auto hidden h-8 w-8 items-center justify-center rounded-lg text-white/60 transition-colors hover:bg-white/10 hover:text-white ${sidebarCollapsed ? 'lg:ml-0 lg:flex' : 'lg:flex'}`}
+            onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+            title={sidebarCollapsed ? 'Expandir menu' : 'Recolher menu'}
+            aria-label={sidebarCollapsed ? 'Expandir menu' : 'Recolher menu'}
+          >
+            {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          </button>
+          <button
             className="ml-auto lg:hidden text-white/60 hover:text-white"
             onClick={() => setSidebarOpen(false)}
+            aria-label="Fechar menu"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 overflow-y-auto py-3 px-3">
+        <nav className={`flex-1 overflow-y-auto px-3 py-3 ${sidebarCollapsed ? 'lg:px-2' : ''}`}>
           {visibleNavGroups.map((group, groupIndex) => (
             <section key={group.title} className={groupIndex === 0 ? '' : 'mt-4'}>
-              <h2 className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-white/35">
+              <h2 className={`px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-white/35 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>
                 {group.title}
               </h2>
               <div className="space-y-0.5">
@@ -289,7 +314,9 @@ export function AdminLayout() {
                     <button
                       key={item.path}
                       onClick={() => { navigate(item.path); setSidebarOpen(false); }}
-                      className="group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-150"
+                      className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-150 ${sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''}`}
+                      title={sidebarCollapsed ? item.label : undefined}
+                      aria-label={sidebarCollapsed ? item.label : undefined}
                       style={{
                         backgroundColor: active ? 'rgba(255,255,255,0.15)' : 'transparent',
                         color: active ? 'white' : 'rgba(255,255,255,0.65)',
@@ -298,8 +325,8 @@ export function AdminLayout() {
                       onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; }}
                     >
                       <item.icon className="h-4 w-4 flex-shrink-0" />
-                      <span>{item.label}</span>
-                      {active && <ChevronRight className="ml-auto h-3.5 w-3.5 opacity-70" />}
+                      <span className={sidebarCollapsed ? 'lg:hidden' : ''}>{item.label}</span>
+                      {active && <ChevronRight className={`ml-auto h-3.5 w-3.5 opacity-70 ${sidebarCollapsed ? 'lg:hidden' : ''}`} />}
                     </button>
                   );
                 })}
@@ -309,14 +336,16 @@ export function AdminLayout() {
 
           {user?.perfil === 'superadmin' && (
             <>
-              <div className="px-3 pb-1.5 pt-4 text-[10px] font-semibold uppercase tracking-wider text-white/35">Master</div>
+              <div className={`px-3 pb-1.5 pt-4 text-[10px] font-semibold uppercase tracking-wider text-white/35 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>Master</div>
               {superAdminItems.map((item) => {
                 const active = isActive(item.path);
                 return (
                   <button
                     key={item.path}
                     onClick={() => { navigate(item.path); setSidebarOpen(false); }}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-150 group`}
+                    className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-all duration-150 ${sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''}`}
+                    title={sidebarCollapsed ? item.label : undefined}
+                    aria-label={sidebarCollapsed ? item.label : undefined}
                     style={{
                       backgroundColor: active ? 'rgba(255,255,255,0.15)' : 'transparent',
                       color: active ? 'white' : 'rgba(255,255,255,0.65)',
@@ -325,8 +354,8 @@ export function AdminLayout() {
                     onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; }}
                   >
                     <item.icon className="w-4 h-4 flex-shrink-0" />
-                    <span>{item.label}</span>
-                    {active && <ChevronRight className="w-3.5 h-3.5 ml-auto opacity-70" />}
+                    <span className={sidebarCollapsed ? 'lg:hidden' : ''}>{item.label}</span>
+                    {active && <ChevronRight className={`ml-auto h-3.5 w-3.5 opacity-70 ${sidebarCollapsed ? 'lg:hidden' : ''}`} />}
                   </button>
                 );
               })}
@@ -335,17 +364,18 @@ export function AdminLayout() {
         </nav>
 
         {/* User */}
-        <div className="p-3 border-t border-white/10">
-          <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg" style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
+        <div className={`border-t border-white/10 p-3 ${sidebarCollapsed ? 'lg:px-2' : ''}`}>
+          <div className={`flex items-center gap-3 rounded-lg px-3 py-2.5 ${sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''}`} style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
             <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
-              AM
+              <span className={sidebarCollapsed ? 'lg:hidden' : ''}>AM</span>
+              <User className={`hidden h-4 w-4 ${sidebarCollapsed ? 'lg:block' : ''}`} />
             </div>
-            <div className="flex-1 min-w-0">
+            <div className={`flex-1 min-w-0 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>
               <div className="text-white text-xs font-medium truncate">{user?.nome || 'Usuário'}</div>
               <div className="text-white/50 text-xs truncate">{user?.perfil || 'Administrador'}</div>
             </div>
             <button
-              className="text-white/40 hover:text-white transition-colors"
+              className={`text-white/40 transition-colors hover:text-white ${sidebarCollapsed ? 'lg:hidden' : ''}`}
               onClick={() => void handleLogout()}
               title="Sair"
             >
