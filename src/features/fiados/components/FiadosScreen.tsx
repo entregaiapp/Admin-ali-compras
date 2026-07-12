@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   ChevronLeft,
@@ -66,6 +66,7 @@ export function FiadosScreen() {
     forma_pagamento: "dinheiro",
     observacao: "",
   });
+  const detailsPanelRef = useRef<HTMLElement | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -111,6 +112,15 @@ export function FiadosScreen() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!selectedAccount || typeof window === "undefined") return;
+    if (!window.matchMedia("(max-width: 1279px)").matches) return;
+
+    window.requestAnimationFrame(() => {
+      detailsPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [selectedAccount]);
 
   const pageButtons = useMemo(() => {
     const total = Number(accounts.total_pages || 1);
@@ -214,7 +224,7 @@ export function FiadosScreen() {
   const changePage = (page: number) => setFilters((current) => ({ ...current, page }));
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-auto bg-slate-50 p-4 lg:p-6">
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-slate-50 p-3 sm:p-4 xl:overflow-hidden xl:p-6">
       <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-950">
@@ -235,7 +245,7 @@ export function FiadosScreen() {
         </div>
       )}
 
-      <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+      <div className="mb-5 grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 xl:grid-cols-5">
         {[
           ["Saldo aberto", dashboard?.saldo_aberto_total],
           ["Fiado no período", dashboard?.valor_fiado_periodo],
@@ -243,9 +253,9 @@ export function FiadosScreen() {
           ["Pessoas com saldo", dashboard?.pessoas_com_saldo, false],
           ["Pedidos abertos", dashboard?.pedidos_abertos, false],
         ].map(([label, value, currency = true]) => (
-          <div key={String(label)} className="rounded-lg border bg-white p-4 shadow-sm">
+          <div key={String(label)} className="min-w-0 rounded-lg border bg-white p-3 shadow-sm sm:p-4">
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</div>
-            <div className="mt-2 text-xl font-bold text-slate-950">{currency ? money(value) : Number(value || 0)}</div>
+            <div className="mt-2 truncate text-lg font-bold text-slate-950 sm:text-xl">{currency ? money(value) : Number(value || 0)}</div>
           </div>
         ))}
       </div>
@@ -273,13 +283,13 @@ export function FiadosScreen() {
         </label>
       </div>
 
-      <div className="grid min-h-0 gap-4 xl:grid-cols-[minmax(0,1fr)_460px]">
-        <section className="overflow-hidden rounded-lg border bg-white">
+      <div className="grid min-h-0 gap-4 xl:flex-1 xl:grid-cols-[minmax(0,1fr)_460px]">
+        <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border bg-white">
           <div className="border-b px-4 py-3 text-sm font-semibold text-slate-700">
             {loading ? "Carregando..." : `${accounts.total || 0} pessoas encontradas`}
           </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
+          <div className="max-h-[60vh] min-h-0 flex-1 overflow-y-auto xl:max-h-none">
+            <table className="hidden min-w-full text-sm md:table">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3">Pessoa</th>
@@ -308,25 +318,61 @@ export function FiadosScreen() {
                 )}
               </tbody>
             </table>
+
+            <div className="divide-y md:hidden">
+              {loading ? (
+                <div className="py-12 text-center text-slate-400">
+                  <Loader2 className="mx-auto h-6 w-6 animate-spin" />
+                </div>
+              ) : accounts.data?.length ? accounts.data.map((account: any) => (
+                <button
+                  type="button"
+                  key={account.id}
+                  onClick={() => void loadDetails(account)}
+                  className={`block w-full p-4 text-left transition-colors ${selectedAccount?.id === account.id ? "bg-blue-50" : "bg-white active:bg-slate-50"}`}
+                >
+                  <span className="flex items-start justify-between gap-3">
+                    <span className="min-w-0">
+                      <span className="block truncate font-bold text-slate-950">{account.nome}</span>
+                      <span className="mt-0.5 block text-xs text-slate-500">{account.telefone || "Sem telefone"}</span>
+                    </span>
+                    <span className="shrink-0 text-right">
+                      <span className="block text-xs font-semibold uppercase text-slate-500">Saldo</span>
+                      <span className="block font-bold text-slate-950">{money(account.saldo_aberto)}</span>
+                    </span>
+                  </span>
+                  <span className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                    <span><span className="block text-slate-400">Fiado</span><b className="text-slate-700">{money(account.valor_fiado_periodo)}</b></span>
+                    <span><span className="block text-slate-400">Recebido</span><b className="text-slate-700">{money(account.valor_pago_periodo)}</b></span>
+                    <span className="text-right"><span className="block text-slate-400">Pedidos</span><b className="text-slate-700">{account.pedidos_abertos}</b></span>
+                  </span>
+                </button>
+              )) : (
+                <div className="px-4 py-12 text-center text-sm text-slate-500">Nenhuma conta fiado encontrada.</div>
+              )}
+            </div>
           </div>
-          <div className="flex items-center justify-between border-t px-4 py-3">
+          <div className="flex shrink-0 items-center justify-between gap-2 border-t px-3 py-3 sm:px-4">
             <button disabled={Number(accounts.page || 1) <= 1} onClick={() => changePage(Number(accounts.page || 1) - 1)} className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-40">
-              <ChevronLeft className="h-4 w-4" /> Anterior
+              <ChevronLeft className="h-4 w-4" /> <span className="hidden sm:inline">Anterior</span>
             </button>
-            <div className="flex gap-1">
+            <div className="hidden gap-1 sm:flex">
               {pageButtons.map((page) => (
                 <button key={page} onClick={() => changePage(page)} className={`h-9 min-w-9 rounded-lg px-3 text-sm font-bold ${page === Number(accounts.page || 1) ? "bg-[#122a4c] text-white" : "border bg-white text-slate-700"}`}>
                   {page}
                 </button>
               ))}
             </div>
+            <div className="text-xs font-semibold text-slate-600 sm:hidden">
+              {Number(accounts.page || 1)} / {Number(accounts.total_pages || 1)}
+            </div>
             <button disabled={Number(accounts.page || 1) >= Number(accounts.total_pages || 1)} onClick={() => changePage(Number(accounts.page || 1) + 1)} className="inline-flex items-center gap-1 rounded-lg border px-3 py-2 text-sm font-semibold disabled:opacity-40">
-              Proxima <ChevronRight className="h-4 w-4" />
+              <span className="hidden sm:inline">Próxima</span> <ChevronRight className="h-4 w-4" />
             </button>
           </div>
         </section>
 
-        <aside className="rounded-lg border bg-white p-4">
+        <aside ref={detailsPanelRef} className={`scroll-mt-3 rounded-lg border bg-white p-4 xl:min-h-0 xl:overflow-y-auto ${selectedAccount ? "block" : "hidden xl:block"}`}>
           {!selectedAccount ? (
             <div className="flex h-full min-h-80 flex-col items-center justify-center text-center text-slate-500">
               <ReceiptText className="mb-3 h-10 w-10 text-slate-300" />
