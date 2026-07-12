@@ -380,6 +380,43 @@ const ORDER_TABS = [
   { value: "Salao", label: "Salão" },
 ] as const;
 type OrderTab = (typeof ORDER_TABS)[number]["value"];
+type OperationalOrderTabKey =
+  | "falta_imprimir"
+  | "andamento"
+  | "cancelamentos"
+  | "saiu_para_entrega"
+  | "entregues"
+  | "entregues_aguardando_pagamento"
+  | "nao_entregues"
+  | "cancelados";
+type OperationalTabAvailability = Record<
+  OperationalOrderTabKey,
+  { disponivel: boolean; total: number }
+>;
+type OperationalTabCache = {
+  orders: any[];
+  nextCursor: string | null;
+  hasMore: boolean;
+  firstPageIds: string[];
+};
+const OPERATIONAL_TAB_DEFINITIONS: Array<{
+  key: OperationalOrderTabKey;
+  title: string;
+  description: string;
+  defaultExpanded: boolean;
+}> = [
+  { key: "falta_imprimir", title: "Falta imprimir", description: "Pedidos do app aguardando impressão da comanda", defaultExpanded: true },
+  { key: "andamento", title: "Em andamento", description: "Recebidos, confirmados, em separação e prontos", defaultExpanded: true },
+  { key: "cancelamentos", title: "Cancelamentos para análise", description: "Pedidos bloqueados até a decisão da loja", defaultExpanded: true },
+  { key: "saiu_para_entrega", title: "Saiu para entrega", description: "Pedidos em rota com entregador", defaultExpanded: false },
+  { key: "entregues", title: "Entregues", description: "Finalizados prontos para arquivar", defaultExpanded: false },
+  { key: "entregues_aguardando_pagamento", title: "Entregues aguardando pagamento", description: "Finalizados com pagamento pendente", defaultExpanded: false },
+  { key: "nao_entregues", title: "Não entregues", description: "Pedidos com problema relatado pelo entregador", defaultExpanded: false },
+  { key: "cancelados", title: "Cancelados", description: "Pedidos cancelados", defaultExpanded: false },
+];
+const EMPTY_OPERATIONAL_AVAILABILITY = Object.fromEntries(
+  OPERATIONAL_TAB_DEFINITIONS.map(({ key }) => [key, { disponivel: false, total: 0 }]),
+) as OperationalTabAvailability;
 type ArchivedOrderTypeFilter = "Todos" | OrderTab;
 type ArchivedDailySummary = {
   date: string;
@@ -540,6 +577,8 @@ export function OrdersScreen() {
     Record<string, boolean>
   >({});
   const [activeListGroupKey, setActiveListGroupKey] = useState("andamento");
+  const [operationalAvailability, setOperationalAvailability] =
+    useState<OperationalTabAvailability>(EMPTY_OPERATIONAL_AVAILABILITY);
   const [couriers, setCouriers] = useState<any[]>([]);
   const [areas, setAreas] = useState<any[]>([]);
   const [deliveryRecords, setDeliveryRecords] = useState<any[]>([]);
@@ -625,6 +664,14 @@ export function OrdersScreen() {
     }
   })();
   const realtimeRefreshTimeoutRef = useRef<number | null>(null);
+  const operationalCacheRef = useRef<Record<string, OperationalTabCache>>({});
+  const operationalAvailabilityCacheRef = useRef<
+    Record<string, OperationalTabAvailability>
+  >({});
+  const operationalAbortRef = useRef<AbortController | null>(null);
+  const operationalRequestVersionRef = useRef(0);
+  const operationalRequestInFlightRef = useRef(false);
+  const searchEffectReadyRef = useRef(false);
   const archivedDaysCarouselRef = useRef<HTMLDivElement | null>(null);
   const { enabled: deliverySoundEnabled, setEnabled: setDeliverySoundEnabled } =
     useAlertSoundPreference(user?.loja_id, "entrega");
@@ -653,11 +700,158 @@ export function OrdersScreen() {
     hasPendingPickupPrint,
   );
 
+  const isOperationalOrdersView =
+    viewMode === "lista" && (typeFilter === "Entrega" || typeFilter === "Retirada");
+  const operationalType = typeFilter === "Retirada" ? "retirada" : "entrega";
+  const operationalFiltersKey = JSON.stringify([
+    operationalType,
+    frontendToBackendStatus[statusFilter] || "",
+    search.trim(),
+    bairroFilter === "Todos" ? "" : bairroFilter,
+  ]);
+  const operationalTabKey = OPERATIONAL_TAB_DEFINITIONS.some(
+    ({ key }) => key === activeListGroupKey,
+  )
+    ? (activeListGroupKey as OperationalOrderTabKey)
+    : "andamento";
+  const operationalCacheKey = `${operationalFiltersKey}:${operationalTabKey}`;
+
+  const invalidateOperationalOrderCaches = (orderId: string, type: string) => {
+    const normalizedType = type === "retirada" ? "retirada" : "entrega";
+    Object.entries(operationalCacheRef.current).forEach(([key, cache]) => {
+      if (!key.startsWith(`[\"${normalizedType}\"`)) return;
+      operationalCacheRef.current[key] = {
+        ...cache,
+        orders: cache.orders.filter((order) => order.id !== orderId),
+        firstPageIds: cache.firstPageIds.filter((id) => id !== orderId),
+      };
+    });
+    Object.keys(operationalAvailabilityCacheRef.current).forEach((key) => {
+      if (key.startsWith(`[\"${normalizedType}\"`)) {
+        delete operationalAvailabilityCacheRef.current[key];
+      }
+    });
+    if (isOperationalOrdersView && operationalType === normalizedType) {
+      setOrders((current) => current.filter((order) => order.id !== orderId));
+    }
+  };
+
+  const fetchOperationalOrders = async (
+    mode: "reset" | "append" | "poll" = "reset",
+    options: { silent?: boolean } = {},
+  ) => {
+    if (!isOperationalOrdersView || !user?.loja_id) return;
+    if (mode === "poll" && operationalRequestInFlightRef.current) return;
+    if (mode === "append" && operationalRequestInFlightRef.current) return;
+
+    const cacheKey = operationalCacheKey;
+    const filtersKey = operationalFiltersKey;
+    const cached = operationalCacheRef.current[cacheKey];
+    if (mode === "append" && (!cached?.hasMore || !cached.nextCursor)) return;
+
+    if (mode !== "append") operationalAbortRef.current?.abort();
+    const controller = new AbortController();
+    operationalAbortRef.current = controller;
+    const requestVersion = ++operationalRequestVersionRef.current;
+    operationalRequestInFlightRef.current = true;
+    if (!options.silent && mode !== "poll") setLoading(true);
+
+    try {
+      const response = await api.post(
+        "/pedidos/operacionais/consulta",
+        {
+          tipo_pedido: operationalType,
+          aba: operationalTabKey,
+          limite: PER_PAGE,
+          cursor: mode === "append" ? cached?.nextCursor : undefined,
+          busca: search.trim() || undefined,
+          status: frontendToBackendStatus[statusFilter],
+          bairro: bairroFilter === "Todos" ? undefined : bairroFilter,
+          ids_em_cache: mode === "append" ? [] : (cached?.orders || []).map((order) => order.id),
+        },
+        { signal: controller.signal },
+      );
+      if (requestVersion !== operationalRequestVersionRef.current) return;
+
+      const payload = response.data?.data || {};
+      const incoming = Array.isArray(payload.pedidos) ? payload.pedidos : [];
+      const availability = payload.abas || EMPTY_OPERATIONAL_AVAILABILITY;
+      const validIds = new Set<string>(payload.ids_em_cache_validos || []);
+      let mergedOrders: any[];
+
+      if (mode === "append") {
+        const byId = new Map((cached?.orders || []).map((order) => [order.id, order]));
+        incoming.forEach((order: any) => byId.set(order.id, order));
+        mergedOrders = Array.from(byId.values());
+      } else {
+        const incomingIds = new Set(incoming.map((order: any) => order.id));
+        const preserved = (cached?.orders || []).filter(
+          (order) => validIds.has(order.id) && !incomingIds.has(order.id),
+        );
+        mergedOrders = [...incoming, ...preserved];
+      }
+
+      const nextCache: OperationalTabCache = {
+        orders: mergedOrders,
+        nextCursor: payload.paginacao?.proximo_cursor || null,
+        hasMore: payload.paginacao?.tem_mais === true,
+        firstPageIds:
+          mode === "append"
+            ? cached?.firstPageIds || []
+            : incoming.map((order: any) => order.id),
+      };
+      operationalCacheRef.current[cacheKey] = nextCache;
+      operationalAvailabilityCacheRef.current[filtersKey] = availability;
+      setOperationalAvailability(availability);
+      setOrders(mergedOrders);
+      setHasMore(nextCache.hasMore);
+      setPage((current) => (mode === "append" ? current + 1 : 1));
+      setLastOrdersLoadedAt((current) => ({
+        ...current,
+        [operationalType]: payload.verificado_em || new Date().toISOString(),
+      }));
+      setNewOrdersCount((current) => ({ ...current, [operationalType]: 0 }));
+
+      if (!availability[operationalTabKey]?.disponivel) {
+        const firstAvailable = OPERATIONAL_TAB_DEFINITIONS.find(
+          ({ key }) => availability[key]?.disponivel,
+        );
+        if (firstAvailable && firstAvailable.key !== operationalTabKey) {
+          setActiveListGroupKey(firstAvailable.key);
+        }
+      }
+    } catch (error: any) {
+      if (error?.name !== "CanceledError" && error?.code !== "ERR_CANCELED") {
+        console.error("Error fetching operational orders:", error);
+      }
+    } finally {
+      if (requestVersion === operationalRequestVersionRef.current) {
+        operationalRequestInFlightRef.current = false;
+      }
+      if (!options.silent && mode !== "poll" && requestVersion === operationalRequestVersionRef.current) {
+        setLoading(false);
+      }
+    }
+  };
+
   useEffect(() => {
-    setOrders([]);
+    operationalAbortRef.current?.abort();
+    operationalRequestVersionRef.current += 1;
     setPage(1);
-    fetchOrders(1, true);
-    fetchAuxiliaryData();
+    if (isOperationalOrdersView) {
+      const cached = operationalCacheRef.current[operationalCacheKey];
+      setOrders(cached?.orders || []);
+      setHasMore(cached?.hasMore || false);
+      setOperationalAvailability(
+        operationalAvailabilityCacheRef.current[operationalFiltersKey] ||
+          EMPTY_OPERATIONAL_AVAILABILITY,
+      );
+      void fetchOperationalOrders("reset");
+    } else {
+      setOrders([]);
+      fetchOrders(1, true);
+    }
+    return () => operationalAbortRef.current?.abort();
   }, [
     statusFilter,
     typeFilter,
@@ -666,7 +860,13 @@ export function OrdersScreen() {
     archivedStartDate,
     archivedEndDate,
     fiadoEnabled,
+    operationalTabKey,
+    bairroFilter,
   ]);
+
+  useEffect(() => {
+    void fetchAuxiliaryData();
+  }, [user?.loja_id]);
 
   useEffect(() => {
     if (!user?.loja_id) return;
@@ -788,10 +988,21 @@ export function OrdersScreen() {
 
   // Debounced search
   useEffect(() => {
+    if (!searchEffectReadyRef.current) {
+      searchEffectReadyRef.current = true;
+      return;
+    }
     const timer = setTimeout(() => {
-      setOrders([]);
       setPage(1);
-      fetchOrders(1, true);
+      if (isOperationalOrdersView) {
+        const cached = operationalCacheRef.current[operationalCacheKey];
+        setOrders(cached?.orders || []);
+        setHasMore(cached?.hasMore || false);
+        void fetchOperationalOrders("reset");
+      } else {
+        setOrders([]);
+        fetchOrders(1, true);
+      }
     }, 500);
     return () => clearTimeout(timer);
   }, [search]);
@@ -848,6 +1059,11 @@ export function OrdersScreen() {
     reset = false,
     options: { silent?: boolean } = {},
   ) => {
+    if (isOperationalOrdersView) {
+      await fetchOperationalOrders(reset || pageNum === 1 ? "reset" : "append", options);
+      return;
+    }
+
     try {
       if (!options.silent) setLoading(true);
       const params: any = getOrderQueryParams(pageNum);
@@ -864,40 +1080,6 @@ export function OrdersScreen() {
         : pageNum < Number(rawData?.total_pages || pageNum);
       let displayData =
         Array.isArray(rawData) && more ? data.slice(0, PER_PAGE) : data;
-      const shouldLoadActiveWorkFirst =
-        reset &&
-        pageNum === 1 &&
-        viewMode === "lista" &&
-        statusFilter === "Todos" &&
-        ["Entrega", "Retirada"].includes(typeFilter);
-
-      if (shouldLoadActiveWorkFirst) {
-        const activeResponses = await Promise.allSettled(
-          ACTIVE_WORK_STATUS_KEYS.map((status) =>
-            api.get("/pedidos", {
-              params: getOrderQueryParams(1, {
-                status,
-                page: 1,
-                per_page: PER_PAGE,
-              }),
-            }),
-          ),
-        );
-        const activeOrders = activeResponses.flatMap((activeResponse) => {
-          if (activeResponse.status !== "fulfilled") return [];
-          const activePayload = activeResponse.value.data.data;
-          return Array.isArray(activePayload)
-            ? activePayload
-            : activePayload?.data || [];
-        });
-        const seenOrderIds = new Set<string>();
-        displayData = [...activeOrders, ...displayData].filter((order: any) => {
-          if (!order?.id || seenOrderIds.has(order.id)) return false;
-          seenOrderIds.add(order.id);
-          return true;
-        });
-      }
-
       setHasMore(more);
       if (reset && viewMode === "arquivados") {
         setArchivedDailySummary(nextDailySummary);
@@ -967,7 +1149,11 @@ export function OrdersScreen() {
     if (!newOrderCursorsReady) return;
 
     const intervalId = window.setInterval(() => {
-      checkNewOrders();
+      if (isOperationalOrdersView) {
+        void fetchOperationalOrders("poll", { silent: true });
+      } else {
+        void checkNewOrders();
+      }
     }, 60000);
 
     return () => window.clearInterval(intervalId);
@@ -1020,6 +1206,9 @@ export function OrdersScreen() {
       .channel(ordersTenantTopic(lojaId), { config: { private: true } })
       .on("broadcast", { event: "pedidos:update" }, ({ payload }: any) => {
         const tipoPedido = String(payload?.tipoPedido || "").toLowerCase();
+        if (payload?.pedidoId && (tipoPedido === "entrega" || tipoPedido === "retirada")) {
+          invalidateOperationalOrderCaches(payload.pedidoId, tipoPedido);
+        }
         if (
           payload?.event === "PEDIDO_CRIADO" &&
           payload?.requiresPrintAlert === true &&
@@ -2530,6 +2719,7 @@ export function OrdersScreen() {
       await api.patch(
         `/pedidos/${order.id}/${shouldRestore ? "restaurar" : "arquivar"}`,
       );
+      invalidateOperationalOrderCaches(order.id, getOrderType(order));
       setOrders((prev) => prev.filter((item) => item.id !== order.id));
       if (viewMode === "arquivados" && shouldRestore) {
         const restoredDayKey = getDateKey(getArchivedOrderTimestamp(order));
@@ -2552,7 +2742,9 @@ export function OrdersScreen() {
         setSelected(null);
       }
 
-      if (hasMore) {
+      if (isOperationalOrdersView) {
+        await fetchOrders(1, true, { silent: true });
+      } else if (hasMore) {
         await fetchOrders(page, false, { silent: true });
       }
     } catch (error) {
@@ -2925,7 +3117,15 @@ export function OrdersScreen() {
   const listGroups =
     viewMode === "arquivados"
       ? archivedGroups
-      : [
+      : isOperationalOrdersView
+        ? OPERATIONAL_TAB_DEFINITIONS
+            .filter(({ key }) => operationalAvailability[key]?.disponivel)
+            .map((definition) => ({
+              ...definition,
+              orders: definition.key === operationalTabKey ? filtered : [],
+              total: operationalAvailability[definition.key]?.total || 0,
+            }))
+        : [
           {
             key: "falta_imprimir",
             title: "Falta imprimir",
@@ -2999,11 +3199,12 @@ export function OrdersScreen() {
             ),
             defaultExpanded: false,
           },
-        ].filter((group) => group.orders.length > 0);
+          ].filter((group) => group.orders.length > 0);
   const firstListGroupKey = listGroups[0]?.key || "andamento";
 
   useEffect(() => {
     if (viewMode !== "lista") return;
+    if (isOperationalOrdersView && listGroups.length === 0) return;
     if (!listGroups.some((group) => group.key === activeListGroupKey)) {
       setActiveListGroupKey(firstListGroupKey);
     }
@@ -3808,7 +4009,9 @@ export function OrdersScreen() {
                               : undefined
                           }
                         >
-                          {group.orders.length > 99 ? "99+" : group.orders.length}
+                          {Number("total" in group ? group.total : group.orders.length) > 99
+                            ? "99+"
+                            : Number("total" in group ? group.total : group.orders.length)}
                         </span>
                       </button>
                     );
