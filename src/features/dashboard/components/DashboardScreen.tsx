@@ -427,7 +427,7 @@ export function DashboardScreen() {
       >
         <div>
           <div className="text-white/70 text-xs mb-0.5">
-            {parseLocalDate(selectedDate).toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+            {cashIsOpen ? 'Caixa operacional aberto' : 'Resumo financeiro do caixa'}
           </div>
           <h2 className="text-white font-semibold">
             {greeting}, {user?.nome?.split(' ')[0] || 'Administrador'}. Boas vindas!
@@ -440,25 +440,9 @@ export function DashboardScreen() {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex flex-wrap items-center gap-2 bg-white/10 rounded-lg p-1 text-sm">
-            <Calendar className="w-4 h-4 ml-2 mr-1 text-white/70" />
-            <input 
-              type="date" 
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="bg-transparent border-none text-white outline-none cursor-pointer p-1 [&::-webkit-calendar-picker-indicator]:filter-[invert(1)]"
-            />
-            <select
-              value={salesIntervalMinutes}
-              onChange={(e) => setSalesIntervalMinutes(Number(e.target.value))}
-              className="bg-white/10 border border-white/10 rounded-md text-white outline-none cursor-pointer px-2 py-1"
-            >
-              {salesIntervalOptions.map((minutes) => (
-                <option key={minutes} value={minutes} className="text-gray-900">
-                  {minutes} min
-                </option>
-              ))}
-            </select>
+          <div className="flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm">
+            <Calendar className="h-4 w-4 text-white/70" />
+            <span>{cashIsOpen ? 'Valores do caixa atual' : 'Sem caixa aberto'}</span>
           </div>
         </div>
       </div>
@@ -601,13 +585,36 @@ export function DashboardScreen() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
         {/* Sales chart */}
         <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-4">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
             <div>
               <h3 className="text-gray-800 font-semibold">Pedidos por Hora</h3>
-              <p className="text-gray-400 text-xs mt-0.5">Quantidade de pedidos por intervalo</p>
+              <p className="text-gray-400 text-xs mt-0.5">
+                Métrica operacional por dia, separada do caixa financeiro
+              </p>
             </div>
-            <div className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-600 bg-white">
-              {salesIntervalLabel}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-600">
+                <Calendar className="h-4 w-4 text-gray-400" />
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="bg-transparent outline-none"
+                  aria-label="Data das métricas operacionais"
+                />
+              </div>
+              <select
+                value={salesIntervalMinutes}
+                onChange={(e) => setSalesIntervalMinutes(Number(e.target.value))}
+                className="rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs text-gray-600 outline-none"
+                aria-label="Intervalo do gráfico de pedidos"
+              >
+                {salesIntervalOptions.map((minutes) => (
+                  <option key={minutes} value={minutes}>
+                    {minutes} min
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
           <ResponsiveContainer width="100%" height={200}>
