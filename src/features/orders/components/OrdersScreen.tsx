@@ -544,6 +544,7 @@ export function OrdersScreen() {
   const [searchParams] = useSearchParams();
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("Todos");
   const [typeFilter, setTypeFilter] = useState<OrderTab>("Entrega");
@@ -676,6 +677,10 @@ export function OrdersScreen() {
   const operationalAbortRef = useRef<AbortController | null>(null);
   const operationalRequestVersionRef = useRef(0);
   const operationalRequestInFlightRef = useRef(false);
+  const ordersAbortRef = useRef<AbortController | null>(null);
+  const ordersRequestVersionRef = useRef(0);
+  const ordersRequestInFlightRef = useRef(false);
+  const ordersPaginationInvalidatedRef = useRef(false);
   const searchEffectReadyRef = useRef(false);
   const archivedDaysCarouselRef = useRef<HTMLDivElement | null>(null);
   const { enabled: deliverySoundEnabled, setEnabled: setDeliverySoundEnabled } =
@@ -945,6 +950,8 @@ export function OrdersScreen() {
   useEffect(() => {
     operationalAbortRef.current?.abort();
     operationalRequestVersionRef.current += 1;
+    ordersAbortRef.current?.abort();
+    ordersRequestVersionRef.current += 1;
     setPage(1);
     if (isOperationalOrdersView) {
       const cached = operationalCacheRef.current[operationalCacheKey];
@@ -957,9 +964,13 @@ export function OrdersScreen() {
       void fetchOperationalOrders("reset");
     } else {
       setOrders([]);
-      fetchOrders(1, true);
+      setHasMore(false);
+      void fetchOrders(1, true);
     }
-    return () => operationalAbortRef.current?.abort();
+    return () => {
+      operationalAbortRef.current?.abort();
+      ordersAbortRef.current?.abort();
+    };
   }, [
     statusFilter,
     typeFilter,
@@ -1109,7 +1120,8 @@ export function OrdersScreen() {
         void fetchOperationalOrders("reset");
       } else {
         setOrders([]);
-        fetchOrders(1, true);
+        setHasMore(false);
+        void fetchOrders(1, true);
       }
     }, 500);
     return () => clearTimeout(timer);
@@ -1172,11 +1184,34 @@ export function OrdersScreen() {
       return;
     }
 
+    const requestMode = reset ? "reset" : "append";
+    if (ordersRequestInFlightRef.current) {
+      if (requestMode === "append" || options.silent) return;
+      ordersAbortRef.current?.abort();
+    }
+
+    const controller = new AbortController();
+    ordersAbortRef.current = controller;
+    const requestVersion = ++ordersRequestVersionRef.current;
+    ordersRequestInFlightRef.current = true;
+
+    if (!options.silent) {
+      if (requestMode === "append") {
+        setLoadingMore(true);
+      } else {
+        setLoadingMore(false);
+        setLoading(true);
+      }
+    }
+
     try {
-      if (!options.silent) setLoading(true);
       const params: any = getOrderQueryParams(pageNum);
 
-      const response = await api.get("/pedidos", { params });
+      const response = await api.get("/pedidos", {
+        params,
+        signal: controller.signal,
+      });
+      if (requestVersion !== ordersRequestVersionRef.current) return;
       const rawData = response.data.data;
       const data = Array.isArray(rawData) ? rawData : rawData?.data || [];
       const nextDailySummary = Array.isArray(rawData?.daily_summary)
@@ -1207,6 +1242,7 @@ export function OrdersScreen() {
             ],
       );
       setPage(pageNum);
+      ordersPaginationInvalidatedRef.current = false;
       if (reset && viewMode !== "arquivados") {
         const activeType = getOrderCounterKey();
         setLastOrdersLoadedAt((current) => ({
@@ -1218,10 +1254,18 @@ export function OrdersScreen() {
           setActiveListGroupKey("falta_imprimir");
         }
       }
-    } catch (error) {
-      console.error("Error fetching orders:", error);
+    } catch (error: any) {
+      if (error?.name !== "CanceledError" && error?.code !== "ERR_CANCELED") {
+        console.error("Error fetching orders:", error);
+      }
     } finally {
-      if (!options.silent) setLoading(false);
+      if (requestVersion === ordersRequestVersionRef.current) {
+        ordersRequestInFlightRef.current = false;
+        if (!options.silent) {
+          setLoading(false);
+          setLoadingMore(false);
+        }
+      }
     }
   };
 
@@ -1437,12 +1481,25 @@ export function OrdersScreen() {
   };
 
   const handleLoadMore = () => {
+    if (
+      loading ||
+      loadingMore ||
+      operationalRequestInFlightRef.current ||
+      ordersRequestInFlightRef.current ||
+      loadingArchivedDayKey
+    ) {
+      return;
+    }
+
     if (viewMode === "arquivados" && activeListGroupKey) {
       void fetchArchivedDayOrders(activeListGroupKey, page + 1, false);
       return;
     }
 
-    fetchOrders(page + 1);
+    const nextPage = ordersPaginationInvalidatedRef.current
+      ? Math.max(1, page)
+      : page + 1;
+    void fetchOrders(nextPage);
   };
 
   const handleManualOrderCreated = async (result: any) => {
@@ -2880,7 +2937,11 @@ export function OrdersScreen() {
       if (isOperationalOrdersView) {
         await fetchOrders(1, true, { silent: true });
       } else if (hasMore) {
-        await fetchOrders(page, false, { silent: true });
+        if (viewMode === "arquivados") {
+          await fetchOrders(page, false, { silent: true });
+        } else {
+          ordersPaginationInvalidatedRef.current = true;
+        }
       }
     } catch (error) {
       console.error("Error updating order archive status", error);
@@ -4469,12 +4530,14 @@ export function OrdersScreen() {
                   onClick={handleLoadMore}
                   disabled={
                     loading ||
+                    loadingMore ||
                     (viewMode === "arquivados" && Boolean(loadingArchivedDayKey))
                   }
                   className="px-6 py-2 rounded-full border text-sm font-medium transition-colors hover:bg-gray-50 flex items-center gap-2"
                   style={{ borderColor: PRIMARY, color: PRIMARY }}
                 >
                   {loading ||
+                  loadingMore ||
                   (viewMode === "arquivados" && Boolean(loadingArchivedDayKey)) ? (
                     <div
                       className="w-4 h-4 border-2 border-gray-200 border-t-primary rounded-full animate-spin"
@@ -4489,7 +4552,7 @@ export function OrdersScreen() {
               </div>
             )}
 
-            {(filtered.length === 0 || listGroups.length === 0) && !loading && (
+            {(filtered.length === 0 || listGroups.length === 0) && !loading && !loadingMore && (
               <div className="flex flex-col items-center justify-center py-16 text-gray-400">
                 <Package className="w-10 h-10 mb-3 opacity-40" />
                 <p className="text-sm">
