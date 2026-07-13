@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Plus, Edit2, Power, Ticket, X, Copy, Check } from 'lucide-react';
 import api from '@/shared/lib/api';
 import { dateInputInBrasilia, endOfBrasiliaDayInput, formatBrasiliaDate } from '@/shared/lib/dateTime';
-import { showSystemNotice } from '@/shared/components/SystemNoticeModal';
+import { showSystemNotice } from '@/shared/components/SystemToast';
 
 const PRIMARY = '#122a4c';
 const toNullableNumber = (value: string) => {

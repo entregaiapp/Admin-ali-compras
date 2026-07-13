@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Search, CreditCard, Smartphone, Banknote, CheckCircle2, Clock, XCircle, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '@/shared/lib/api';
-import { showSystemNotice } from '@/shared/components/SystemNoticeModal';
+import { systemToast } from '@/shared/components/SystemToast';
 import { formatBrasiliaDate } from '@/shared/lib/dateTime';
 import { MfaApprovalModal, type MfaApproval } from '@/shared/components/MfaApprovalModal';
 import { authService } from '@/features/auth/services/authService';
@@ -157,13 +157,13 @@ export function PaymentsScreen() {
     try {
       setRefundingPaymentId(payment.originalId);
       await api.post(`/payment-gateways/payment/${payment.originalId}/refund`, approval ? { mfa_approval: approval } : {});
-      showSystemNotice('Reembolso solicitado com sucesso.');
+      systemToast.success('Reembolso solicitado com sucesso.');
       await fetchPayments({ silent: true });
     } catch (error) {
       console.error('Error refunding payment:', error);
-      showSystemNotice(
+      systemToast.error(
         getApiErrorMessage(error, 'Não foi possível realizar o reembolso. Tente novamente.'),
-        'Erro no reembolso'
+        { title: 'Erro no reembolso' }
       );
     } finally {
       setRefundingPaymentId('');
@@ -180,7 +180,9 @@ export function PaymentsScreen() {
       }
       await refundPayment(payment);
     } catch (error) {
-      showSystemNotice('Não foi possível verificar a preferência de segurança.', 'Erro no reembolso');
+      systemToast.error('Não foi possível verificar a preferência de segurança.', {
+        title: 'Erro no reembolso',
+      });
     }
   };
 

@@ -5,7 +5,7 @@ import {
   Eye, FileUp, Filter, Grid2X2, List, Package, PackagePlus, Plus, Power, Search, Star, Tag,
   ImagePlus, Trash2, UtensilsCrossed, X, Zap
 } from 'lucide-react';
-import { showSystemNotice } from '@/shared/components/SystemNoticeModal';
+import { showSystemNotice } from '@/shared/components/SystemToast';
 import api from '@/shared/lib/api';
 import { useProducts } from '../hooks/useProducts';
 import { productsService } from '../services/productsService';

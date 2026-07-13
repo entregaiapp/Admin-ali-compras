@@ -14,7 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import { formatBrasiliaDate } from '@/shared/lib/dateTime';
-import { showSystemNotice } from '@/shared/components/SystemNoticeModal';
+import { showSystemNotice } from '@/shared/components/SystemToast';
 import {
   type AvailableCashOrder,
   type CashMovement,

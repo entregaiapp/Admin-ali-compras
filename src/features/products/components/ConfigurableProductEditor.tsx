@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ImagePlus, Info, Plus, Trash2, X } from "lucide-react";
-import { showSystemNotice } from "@/shared/components/SystemNoticeModal";
+import { showSystemNotice } from "@/shared/components/SystemToast";
 import { dateTimeInputInBrasilia } from "@/shared/lib/dateTime";
 import { productsService } from "../services/productsService";
 import type {

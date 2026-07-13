@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CalendarDays, CheckCircle2, ChevronDown, ChevronRight, Clock, Loader2, MapPin, Package, RefreshCw, Route, Truck, User } from 'lucide-react';
 import api from '@/shared/lib/api';
 import { dateInputInBrasilia, formatBrasiliaDate } from '@/shared/lib/dateTime';
-import { showSystemNotice } from '@/shared/components/SystemNoticeModal';
+import { showSystemNotice } from '@/shared/components/SystemToast';
 
 const PRIMARY = '#122a4c';
 const API_ROUTES_PER_PAGE = 100;

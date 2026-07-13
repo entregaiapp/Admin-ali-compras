@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { AlertCircle, CheckCircle2, Download, FileText, Upload, X } from "lucide-react";
-import { showSystemNotice } from "@/shared/components/SystemNoticeModal";
+import { systemToast } from "@/shared/components/SystemToast";
 import { productsService } from "../services/productsService";
 
 const PRIMARY = "#122a4c";
@@ -44,7 +44,7 @@ export function ProductCsvImportScreen() {
 
     const isCsv = file.name.toLowerCase().endsWith(".csv") || file.type.includes("csv");
     if (!isCsv) {
-      showSystemNotice("Selecione um arquivo CSV.");
+      systemToast.warning("Selecione um arquivo CSV.");
       return;
     }
 
@@ -54,7 +54,7 @@ export function ProductCsvImportScreen() {
 
   const handleImport = async () => {
     if (!selectedFile) {
-      showSystemNotice("Selecione um CSV para importar.");
+      systemToast.warning("Selecione um CSV para importar.");
       return;
     }
 
@@ -62,10 +62,10 @@ export function ProductCsvImportScreen() {
       setLoading(true);
       const importResult = await productsService.importStoreProductsCSV(selectedFile);
       setResult(importResult);
-      showSystemNotice("Importação concluída.");
+      systemToast.success("Importação concluída.");
     } catch (error: any) {
       console.error("Error importing store products CSV", error);
-      showSystemNotice(error.response?.data?.message || "Não foi possível importar o arquivo.");
+      systemToast.error(error.response?.data?.message || "Não foi possível importar o arquivo.");
     } finally {
       setLoading(false);
     }

@@ -38,7 +38,7 @@ import {
   salaoTenantTopic,
 } from "@/features/salao/services/salaoRealtime";
 import { productsService } from "@/features/products";
-import { showSystemNotice } from "@/shared/components/SystemNoticeModal";
+import { showSystemNotice } from "@/shared/components/SystemToast";
 import api from "@/shared/lib/api";
 import { SalaoProductConfiguratorModal } from "./SalaoProductConfiguratorModal";
 import type { ComandaPrintMode } from "@/features/orders/utils/print";

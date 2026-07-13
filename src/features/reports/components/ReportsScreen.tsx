@@ -6,6 +6,7 @@ import {
 import { TrendingUp, ShoppingCart, Users, XCircle, DollarSign, BarChart3, Calendar, FileText, Download, Eye, ArrowLeft, Printer, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '@/shared/lib/api';
 import { dateInputInBrasilia } from '@/shared/lib/dateTime';
+import { systemToast } from '@/shared/components/SystemToast';
 import { useNavigate } from 'react-router';
 import {
   deliveryPaymentReportsService,
@@ -103,7 +104,7 @@ const escapePrintHtml = (value: unknown) =>
 const openPrintDocument = (title: string, body: string) => {
   const printWindow = window.open('', '_blank', 'width=900,height=700');
   if (!printWindow) {
-    window.alert('Não foi possível abrir a janela de impressão. Verifique se o navegador bloqueou pop-ups.');
+    systemToast.error('Não foi possível abrir a janela de impressão. Verifique se o navegador bloqueou pop-ups.');
     return false;
   }
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Archive, Laptop, Link, Printer, RefreshCw, TestTube2, Trash2 } from "lucide-react";
-import { showSystemNotice } from "@/shared/components/SystemNoticeModal";
+import { showSystemNotice } from "@/shared/components/SystemToast";
 import { formatBrasiliaDate } from "@/shared/lib/dateTime";
 import api from "@/shared/lib/api";
 import { printingService } from "@/features/printing/services/printingService";

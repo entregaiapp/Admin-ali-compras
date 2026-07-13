@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { SystemNoticeHost } from "@/shared/components/SystemNoticeModal";
+import { SystemToastHost } from "@/shared/components/SystemToast";
 
 type AppProvidersProps = {
   children: ReactNode;
@@ -9,7 +9,7 @@ export function AppProviders({ children }: AppProvidersProps) {
   return (
     <>
       {children}
-      <SystemNoticeHost />
+      <SystemToastHost />
     </>
   );
 }

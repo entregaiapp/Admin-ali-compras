@@ -93,7 +93,7 @@ import {
   ComandaPrintModeModal,
   KitchenPrintSelectionModal,
 } from "@/features/orders/components/ComandaPrintModals";
-import { showSystemNotice } from "@/shared/components/SystemNoticeModal";
+import { showSystemNotice, systemToast } from "@/shared/components/SystemToast";
 import {
   MfaApprovalModal,
   type MfaApproval,
@@ -2540,13 +2540,13 @@ export function OrdersScreen() {
       }
       await fetchOrders(1, true, { silent: true });
       setForceFinalizeCandidate(null);
-      showSystemNotice(
+      systemToast.success(
         paymentWasForced || accountWasForced
           ? "Pedido finalizado. A conta também foi marcada como paga."
           : "Pedido finalizado.",
       );
     } catch (error) {
-      showSystemNotice(
+      systemToast.error(
         getApiErrorMessage(error, "Não foi possível finalizar o pedido."),
       );
     } finally {

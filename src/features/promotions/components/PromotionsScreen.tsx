@@ -4,7 +4,7 @@ import {
   AlertCircle, DollarSign, TrendingDown, Percent, Plus
 } from 'lucide-react';
 import api from '@/shared/lib/api';
-import { showSystemNotice } from '@/shared/components/SystemNoticeModal';
+import { showSystemNotice } from '@/shared/components/SystemToast';
 
 const PRIMARY = '#122a4c';
 

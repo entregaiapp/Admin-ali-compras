@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import api from '@/shared/lib/api';
 import LoadingModal from '@/shared/components/ui/LoadingModal';
-import { showSystemNotice } from '@/shared/components/SystemNoticeModal';
+import { showSystemNotice } from '@/shared/components/SystemToast';
 import { getApiList } from '@/shared/utils/apiData';
 import { SecurityMfaPanel } from './SecurityMfaPanel';
 import { PrintingSettingsPanel, type StorePrintMode } from '@/features/printing/components/PrintingSettingsPanel';
