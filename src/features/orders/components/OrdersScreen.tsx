@@ -5013,8 +5013,8 @@ export function OrdersScreen() {
 
             {isFiadoOrder(forceFinalizeCandidate) && (
               <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
-                Este pedido e fiado. A finalizacao encerra apenas o fluxo
-                operacional; a conta continua aberta no modulo Fiados.
+                Este pedido é fiado. A finalização encerra apenas o fluxo
+                operacional; a conta continua aberta no módulo Fiados.
               </div>
             )}
 
@@ -5654,8 +5654,8 @@ export function OrdersScreen() {
                   Pedido fiado
                 </h4>
                 <p className="mt-1 text-sm text-amber-800">
-                  A conta e os recebimentos deste pedido sao gerenciados no
-                  modulo Fiados.
+                  A conta e os recebimentos deste pedido são gerenciados no
+                  módulo Fiados.
                 </p>
                 <div className="mt-3 flex items-center justify-between rounded-lg border border-amber-200 bg-white/70 px-3 py-2 text-sm">
                   <span className="font-semibold text-amber-900">Valor em fiado</span>
