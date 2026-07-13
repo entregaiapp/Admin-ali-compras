@@ -3441,14 +3441,23 @@ export function OrdersScreen() {
 
   useEffect(() => {
     if (viewMode !== "arquivados" || !activeListGroup?.key) return;
-    const activeDayButton =
-      archivedDaysCarouselRef.current?.querySelector<HTMLElement>(
-        `[data-archive-day="${activeListGroup.key}"]`,
-      );
-    activeDayButton?.scrollIntoView({
+    const carousel = archivedDaysCarouselRef.current;
+    const activeDayButton = carousel?.querySelector<HTMLElement>(
+      `[data-archive-day="${activeListGroup.key}"]`,
+    );
+    if (!carousel || !activeDayButton) return;
+
+    const carouselRect = carousel.getBoundingClientRect();
+    const buttonRect = activeDayButton.getBoundingClientRect();
+    const centeredPosition =
+      carousel.scrollLeft +
+      buttonRect.left -
+      carouselRect.left -
+      (carousel.clientWidth - buttonRect.width) / 2;
+
+    carousel.scrollTo({
+      left: Math.max(0, centeredPosition),
       behavior: "smooth",
-      block: "nearest",
-      inline: "center",
     });
   }, [activeListGroup?.key, listGroups.length, viewMode]);
 
@@ -3598,7 +3607,7 @@ export function OrdersScreen() {
   );
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full w-full min-w-0 overflow-hidden">
       {manualOrderOpen && canCreateManualOrder && user?.loja_id && (
         <ManualDeliveryOrderModal
           lojaId={user.loja_id}
@@ -3656,7 +3665,7 @@ export function OrdersScreen() {
       )}
       {/* Left panel: list or bairros */}
       <div
-        className={`flex flex-col ${selected ? "hidden lg:flex lg:w-1/2 xl:w-3/5" : "flex-1"}`}
+        className={`min-w-0 overflow-hidden flex flex-col ${selected ? "hidden lg:flex lg:w-1/2 xl:w-3/5" : "flex-1"}`}
       >
         <div className="border-b border-gray-200 bg-white px-4 pt-2">
           {viewMode === "arquivados" ? (
@@ -4058,8 +4067,8 @@ export function OrdersScreen() {
         {(viewMode === "lista" || viewMode === "arquivados") && (
           <>
             {listGroups.length > 0 && viewMode === "arquivados" && (
-              <div className="border-b border-gray-200 bg-white px-4 py-3">
-                <div className="flex items-stretch gap-2">
+              <div className="min-w-0 max-w-full overflow-hidden border-b border-gray-200 bg-white px-4 py-3">
+                <div className="flex min-w-0 max-w-full items-stretch gap-2">
                   <button
                     type="button"
                     onClick={() => handleArchivedDayStep(-1)}
@@ -4072,7 +4081,7 @@ export function OrdersScreen() {
                   </button>
                   <div
                     ref={archivedDaysCarouselRef}
-                    className="flex min-w-0 flex-1 gap-2 overflow-x-auto scroll-smooth pb-1"
+                    className="flex min-w-0 max-w-full flex-1 gap-2 overflow-x-auto overscroll-x-contain scroll-smooth pb-1"
                     role="tablist"
                     aria-label="Dias arquivados"
                   >
@@ -4226,7 +4235,7 @@ export function OrdersScreen() {
               </div>
             )}
 
-            <div className="flex-1 overflow-y-auto bg-slate-50/50 p-4 space-y-4">
+            <div className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-slate-50/50 p-4 space-y-4">
               {loading && orders.length === 0 && (
                 <div className="flex min-h-[320px] flex-col items-center justify-center text-gray-400">
                   <div
