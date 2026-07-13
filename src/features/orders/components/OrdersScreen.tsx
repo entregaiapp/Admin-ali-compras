@@ -771,6 +771,9 @@ export function OrdersScreen() {
   )
     ? (activeListGroupKey as OperationalOrderTabKey)
     : "andamento";
+  const operationalTabRequestKey = isOperationalOrdersView
+    ? operationalTabKey
+    : "";
   const operationalCacheKey = `${operationalFiltersKey}:${operationalTabKey}`;
 
   const invalidateOperationalOrderCaches = (orderId: string, type: string) => {
@@ -979,7 +982,7 @@ export function OrdersScreen() {
     archivedStartDate,
     archivedEndDate,
     fiadoEnabled,
-    operationalTabKey,
+    operationalTabRequestKey,
     bairroFilter,
   ]);
 
@@ -2911,6 +2914,9 @@ export function OrdersScreen() {
       await api.patch(
         `/pedidos/${order.id}/${shouldRestore ? "restaurar" : "arquivar"}`,
       );
+      if (!isOperationalOrdersView && viewMode !== "arquivados" && hasMore) {
+        ordersPaginationInvalidatedRef.current = true;
+      }
       invalidateOperationalOrderCaches(order.id, getOrderType(order));
       setOrders((prev) => prev.filter((item) => item.id !== order.id));
       if (viewMode === "arquivados" && shouldRestore) {
@@ -2939,8 +2945,6 @@ export function OrdersScreen() {
       } else if (hasMore) {
         if (viewMode === "arquivados") {
           await fetchOrders(page, false, { silent: true });
-        } else {
-          ordersPaginationInvalidatedRef.current = true;
         }
       }
     } catch (error) {
@@ -3395,7 +3399,13 @@ export function OrdersScreen() {
             ),
             defaultExpanded: false,
           },
-          ].filter((group) => group.orders.length > 0);
+          ].filter(
+            (group) =>
+              group.orders.length > 0 ||
+              (hasMore &&
+                ordersPaginationInvalidatedRef.current &&
+                group.key === activeListGroupKey),
+          );
   const firstListGroupKey = listGroups[0]?.key || "andamento";
 
   useEffect(() => {
