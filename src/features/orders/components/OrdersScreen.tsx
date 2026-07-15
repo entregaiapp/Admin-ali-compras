@@ -2013,7 +2013,14 @@ export function OrdersScreen() {
         if (!sent) return;
         markKitchenItemsPrinted(storageKey, itemKeys);
       } else {
-        const sent = await enqueueOrFallbackPrint(printableOrder, items, mode, undefined, orderPayment);
+        const sent = await enqueueOrFallbackPrint(
+          printableOrder,
+          items,
+          mode,
+          undefined,
+          orderPayment,
+          true,
+        );
         if (!sent) return;
       }
       await markOrderComandaPrinted(printableOrder, mode);
