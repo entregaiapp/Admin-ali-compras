@@ -9,7 +9,6 @@ import {
   X,
   Phone,
   MapPin,
-  Clock,
   CreditCard,
   User,
   Package,
@@ -35,12 +34,15 @@ import {
   Pencil,
   Trash2,
   SlidersHorizontal,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import api from "@/shared/lib/api";
 import { formatBrasiliaDate } from "@/shared/lib/dateTime";
 import {
   allStatuses,
   bairroColors,
+  CREATE_ORDER_SHORTCUT_PARAM,
   frontendToBackendStatus,
   PRIMARY,
   statusColor,
@@ -90,11 +92,13 @@ import { ManualDeliveryOrderModal } from "@/features/orders/components/ManualDel
 import { AddOrderItemsModal } from "@/features/orders/components/AddOrderItemsModal";
 import { EditOrderItemModal } from "@/features/orders/components/EditOrderItemModal";
 import { PendingPaymentMethodModal } from "@/features/orders/components/PendingPaymentMethodModal";
+import { CompactOrderStatusTimeline } from "@/features/orders/components/CompactOrderStatusTimeline";
 import {
   ComandaPrintModeModal,
   KitchenPrintSelectionModal,
 } from "@/features/orders/components/ComandaPrintModals";
 import { showSystemNotice, systemToast } from "@/shared/components/SystemToast";
+import { ADMIN_COLLAPSE_SIDEBAR_EVENT } from "@/shared/constants/uiEvents";
 import {
   MfaApprovalModal,
   type MfaApproval,
@@ -448,6 +452,59 @@ const getOrderTypeLabel = (order: any) => ({
   retirada: "Retirada",
   salao: "Salão",
 })[getOrderType(order)];
+const OrderCustomerSummary = ({
+  order,
+  payment,
+  timestamp,
+  cashChangeStatusLabel,
+}: {
+  order: any;
+  payment: any;
+  timestamp: Date | string;
+  cashChangeStatusLabel?: string;
+}) => (
+  <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
+    <span className="min-w-0 max-w-full truncate font-medium text-gray-600 sm:max-w-[220px]">
+      {order.cliente?.nome || order.customer || "Desconhecido"}
+    </span>
+    <span className="text-gray-300" aria-hidden="true">|</span>
+    <span className="whitespace-nowrap text-gray-400">
+      {formatBrasiliaDate(timestamp, {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })}
+    </span>
+    <span className="text-gray-300" aria-hidden="true">|</span>
+    <span className="whitespace-nowrap text-gray-400">
+      {getOrderPaymentMethod(order, payment)}
+    </span>
+    {isDeliveryOrder(order) && (
+      <>
+        <span className="text-gray-300" aria-hidden="true">|</span>
+        <span className="whitespace-nowrap text-gray-400">
+          {getOrderNeighborhood(order)}
+        </span>
+      </>
+    )}
+    {cashChangeStatusLabel && (
+      <>
+        <span className="text-gray-300" aria-hidden="true">|</span>
+        <span
+          className={`whitespace-nowrap font-semibold ${
+            cashChangeStatusLabel === "Troco repassado"
+              ? "text-green-600"
+              : "text-red-600"
+          }`}
+        >
+          {cashChangeStatusLabel}
+        </span>
+      </>
+    )}
+  </div>
+);
 const getSalaoComandaStatus = (order: any) =>
   String(order?.salao_comanda?.status || order?.comanda?.status || "").toLowerCase();
 const canTakeSalaoOrderToTable = (order: any) =>
@@ -542,12 +599,13 @@ const isAppOrderAwaitingPrint = (order: any) => {
 };
 
 export function OrdersScreen() {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [search, setSearch] = useState("");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [ordersFullscreen, setOrdersFullscreen] = useState(false);
   const [statusFilter, setStatusFilter] = useState("Todos");
   const [typeFilter, setTypeFilter] = useState<OrderTab>("Entrega");
   const [archivedTypeFilter, setArchivedTypeFilter] =
@@ -626,7 +684,7 @@ export function OrdersScreen() {
   const [addressEditOrder, setAddressEditOrder] = useState<any | null>(null);
   const [addressEditForm, setAddressEditForm] = useState<any>({ ...EMPTY_ADMIN_ORDER_ADDRESS });
   const [addressEditSaving, setAddressEditSaving] = useState(false);
-  const [manualOrderCreationAllowed, setManualOrderCreationAllowed] = useState(false);
+  const [manualOrderCreationAllowed, setManualOrderCreationAllowed] = useState<boolean | null>(null);
   const [salaoEnabled, setSalaoEnabled] = useState(false);
   const [fiadoEnabled, setFiadoEnabled] = useState(false);
   const [newOrdersCount, setNewOrdersCount] = useState<Record<OrderCounterKey, number>>({
@@ -685,6 +743,24 @@ export function OrdersScreen() {
   const ordersPaginationInvalidatedRef = useRef(false);
   const searchEffectReadyRef = useRef(false);
   const archivedDaysCarouselRef = useRef<HTMLDivElement | null>(null);
+  const ordersScreenRef = useRef<HTMLDivElement | null>(null);
+  const orderCardClickTimeoutRef = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (orderCardClickTimeoutRef.current !== null) {
+      window.clearTimeout(orderCardClickTimeoutRef.current);
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setOrdersFullscreen(document.fullscreenElement === ordersScreenRef.current);
+    };
+
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    };
+  }, []);
   const { enabled: deliverySoundEnabled, setEnabled: setDeliverySoundEnabled } =
     useAlertSoundPreference(user?.loja_id, "entrega");
   const { enabled: pickupSoundEnabled, setEnabled: setPickupSoundEnabled } =
@@ -1048,6 +1124,7 @@ export function OrdersScreen() {
     }
 
     let active = true;
+    setManualOrderCreationAllowed(null);
     Promise.allSettled([
       api.get(`/lojas/${user.loja_id}`),
       api.get(`/lojas/${user.loja_id}/configuracoes`),
@@ -1080,6 +1157,33 @@ export function OrdersScreen() {
       active = false;
     };
   }, [user?.loja_id]);
+
+  useEffect(() => {
+    const shortcutRequest = searchParams.get(CREATE_ORDER_SHORTCUT_PARAM);
+    if (!shortcutRequest || manualOrderCreationAllowed === null) return;
+
+    const nextSearchParams = new URLSearchParams(searchParams);
+    nextSearchParams.delete(CREATE_ORDER_SHORTCUT_PARAM);
+    setSearchParams(nextSearchParams, { replace: true });
+
+    if (!manualOrderCreationAllowed || !user?.loja_id) {
+      showSystemNotice(
+        "A criação de pedidos pelo painel está desabilitada nas configurações da loja.",
+      );
+      return;
+    }
+
+    setViewMode("lista");
+    setTypeFilter("Entrega");
+    setSelected(null);
+    setMobileFiltersOpen(false);
+    setManualOrderOpen(true);
+  }, [
+    manualOrderCreationAllowed,
+    searchParams,
+    setSearchParams,
+    user?.loja_id,
+  ]);
 
   useEffect(() => {
     if (viewMode === "bairros" && typeFilter !== "Entrega") {
@@ -3066,7 +3170,7 @@ export function OrdersScreen() {
   const canCreateManualOrder =
     viewMode !== "arquivados" &&
     typeFilter !== "Salao" &&
-    manualOrderCreationAllowed;
+    manualOrderCreationAllowed === true;
   const totalNewOrdersCount = availableOrderTabs.reduce(
     (total, tab) => total + newOrdersCount[tab.value.toLowerCase() as OrderCounterKey],
     0,
@@ -3512,6 +3616,59 @@ export function OrdersScreen() {
     );
   };
 
+  const handleOrderCardClick = (order: any) => {
+    if (orderCardClickTimeoutRef.current !== null) {
+      window.clearTimeout(orderCardClickTimeoutRef.current);
+    }
+
+    orderCardClickTimeoutRef.current = window.setTimeout(() => {
+      handleSelectOrder(order);
+      orderCardClickTimeoutRef.current = null;
+    }, 250);
+  };
+
+  const handleOrderCardDoubleClick = (
+    order: any,
+    canSelectForDelivery: boolean,
+  ) => {
+    if (orderCardClickTimeoutRef.current !== null) {
+      window.clearTimeout(orderCardClickTimeoutRef.current);
+      orderCardClickTimeoutRef.current = null;
+    }
+
+    if (!canSelectForDelivery) {
+      handleSelectOrder(order);
+      return;
+    }
+
+    setSelectedOrderIds((current) =>
+      current.includes(order.id)
+        ? current.filter((id) => id !== order.id)
+        : [...current, order.id],
+    );
+  };
+
+  const toggleOrdersFullscreen = async () => {
+    if (document.fullscreenElement === ordersScreenRef.current) {
+      await document.exitFullscreen();
+      return;
+    }
+
+    const target = ordersScreenRef.current;
+    if (!target?.requestFullscreen) {
+      showSystemNotice("A tela cheia não está disponível neste navegador.");
+      return;
+    }
+
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      await target.requestFullscreen();
+      window.dispatchEvent(new Event(ADMIN_COLLAPSE_SIDEBAR_EVENT));
+    } catch {
+      showSystemNotice("Não foi possível abrir a tela de pedidos em tela cheia.");
+    }
+  };
+
   const resetDeliveryModal = () => {
     setDeliveryModalOrders(null);
     setRouteDriverId("");
@@ -3621,7 +3778,10 @@ export function OrdersScreen() {
   );
 
   return (
-    <div className="flex h-full w-full min-w-0 overflow-hidden">
+    <div
+      ref={ordersScreenRef}
+      className="flex h-full w-full min-w-0 overflow-hidden bg-white"
+    >
       {manualOrderOpen && canCreateManualOrder && user?.loja_id && (
         <ManualDeliveryOrderModal
           lojaId={user.loja_id}
@@ -3843,6 +4003,25 @@ export function OrdersScreen() {
                 {hasPendingPickupPrint && (
                   <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-white bg-amber-400" />
                 )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void toggleOrdersFullscreen()}
+                  className={`relative inline-flex h-11 w-11 flex-none items-center justify-center rounded-full border shadow-sm transition-all hover:bg-gray-50 sm:my-1.5 sm:h-9 sm:w-9 ${
+                    ordersFullscreen
+                      ? "border-transparent text-white"
+                      : "border-gray-200 bg-white text-gray-500"
+                  }`}
+                  style={ordersFullscreen ? { backgroundColor: primaryColor } : undefined}
+                  title={ordersFullscreen ? "Sair da tela cheia" : "Abrir pedidos em tela cheia"}
+                  aria-label={ordersFullscreen ? "Sair da tela cheia" : "Abrir pedidos em tela cheia"}
+                  aria-pressed={ordersFullscreen}
+                >
+                  {ordersFullscreen ? (
+                    <Minimize2 className="h-4 w-4" />
+                  ) : (
+                    <Maximize2 className="h-4 w-4" />
+                  )}
                 </button>
               </div>
             </div>
@@ -4362,7 +4541,12 @@ export function OrdersScreen() {
                     return (
                       <div
                         key={order.id}
-                        onClick={() => handleSelectOrder(order)}
+                        onClick={() => handleOrderCardClick(order)}
+                        onDoubleClick={(event) => {
+                          if ((event.target as HTMLElement).closest("button, a, input, select, textarea")) return;
+                          event.preventDefault();
+                          handleOrderCardDoubleClick(order, canSelectForDelivery);
+                        }}
                         onKeyDown={(event) => {
                           if (event.key === "Enter" || event.key === " ") {
                             event.preventDefault();
@@ -4371,7 +4555,7 @@ export function OrdersScreen() {
                         }}
                         role="button"
                         tabIndex={0}
-                        className={`cursor-pointer border-l-2 px-3 py-3.5 transition-colors sm:px-4 ${rowBgClass} hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-inset ${isSelectedForDelivery ? "" : "border-transparent"}`}
+                        className={`cursor-pointer border-l-2 px-3 py-3.5 transition-colors duration-150 sm:px-4 ${rowBgClass} hover:bg-slate-200 focus:outline-none focus:ring-2 focus:ring-inset ${isSelectedForDelivery ? "" : "border-transparent"}`}
                         style={
                           isSelectedForDelivery
                             ? {
@@ -4486,55 +4670,34 @@ export function OrdersScreen() {
                                     </span>
                                   )}
                               </div>
-                              <div className="text-sm text-gray-600 mt-0.5">
-                                {order.cliente?.nome ||
-                                  order.customer ||
-                                  "Desconhecido"}
-                              </div>
+                              <OrderCustomerSummary
+                                order={order}
+                                payment={orderPayment}
+                                timestamp={
+                                  viewMode === "arquivados"
+                                    ? getOrderCreatedTimestamp(order)
+                                    : order.realizado_em ||
+                                      order.criado_em ||
+                                      order.created_at ||
+                                      new Date()
+                                }
+                                cashChangeStatusLabel={cashChangeStatusLabel}
+                              />
                               {order.status === "nao_entregue" && (
                                 <div className="mt-1 rounded-md border border-red-100 bg-red-50 px-2 py-1 text-xs font-medium text-red-700">
                                   Problema na entrega
                                   {failureReason ? `: ${failureReason}` : ""}
                                 </div>
                               )}
-                              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-                                <span className="text-xs text-gray-400 flex items-center gap-1">
-                                  <Clock className="w-3 h-3" />
-                                  {viewMode === "arquivados"
-                                    ? `Criado em ${formatOrderDateTime(getOrderCreatedTimestamp(order))}`
-                                    : formatOrderDateTime(
-                                        order.realizado_em ||
-                                          order.criado_em ||
-                                          order.created_at ||
-                                          new Date(),
-                                      )}
-                                </span>
-                                <span className="text-xs text-gray-400 flex items-center gap-1">
-                                  <CreditCard className="w-3 h-3" />
-                                  {getOrderPaymentMethod(order, orderPayment)}
-                                </span>
-                                {cashChangeStatusLabel && (
-                                  <span
-                                    className={`text-xs font-semibold flex items-center gap-1 ${
-                                      cashChangeStatusLabel === "Troco repassado"
-                                        ? "text-green-600"
-                                        : "text-red-600"
-                                    }`}
-                                  >
-                                    {cashChangeStatusLabel}
-                                  </span>
-                                )}
-                                {isEntrega && (
-                                  <span className="text-xs text-gray-400 flex items-center gap-1">
-                                    <MapPin className="w-3 h-3" />
-                                    {getOrderNeighborhood(order)}
-                                  </span>
-                                )}
-                              </div>
+                              <CompactOrderStatusTimeline
+                                order={order}
+                                primaryColor={primaryColor}
+                                confirmationPending={orderPaymentIsPending}
+                              />
                             </div>
                           </div>
-                          <div className="flex w-full flex-wrap items-center gap-2 border-t border-gray-100 pt-3 text-left sm:block sm:w-auto sm:flex-shrink-0 sm:border-0 sm:pt-0 sm:text-right">
-                            <div className="mr-auto text-base font-bold text-gray-800 sm:mr-0 sm:text-sm sm:font-semibold">
+                          <div className="flex w-full flex-col items-end gap-1 border-t border-gray-100 pt-3 text-right sm:w-auto sm:flex-shrink-0 sm:border-0 sm:pt-0">
+                            <div className="text-base font-bold text-gray-800 sm:text-sm sm:font-semibold">
                               R${" "}
                               {parseFloat(order.valor_total || order.total || 0)
                                 .toFixed(2)
@@ -4827,8 +4990,13 @@ export function OrdersScreen() {
                         return (
                           <div
                             key={order.id}
-                            className={`flex items-center gap-3 px-4 py-3 transition-colors border-l-2 hover:bg-gray-50 cursor-pointer focus:outline-none focus:ring-2 focus:ring-inset ${isSelectedForDelivery ? "" : "border-transparent"}`}
-                            onClick={() => handleSelectOrder(order)}
+                            className={`flex items-center gap-3 px-4 py-3 transition-colors duration-150 border-l-2 hover:bg-slate-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-inset ${isSelectedForDelivery ? "" : "border-transparent"}`}
+                            onClick={() => handleOrderCardClick(order)}
+                            onDoubleClick={(event) => {
+                              if ((event.target as HTMLElement).closest("button, a, input, select, textarea")) return;
+                              event.preventDefault();
+                              handleOrderCardDoubleClick(order, canSelectForDelivery);
+                            }}
                             onKeyDown={(event) => {
                               if (event.key === "Enter" || event.key === " ") {
                                 event.preventDefault();
@@ -4925,9 +5093,17 @@ export function OrdersScreen() {
                                   </span>
                                 )}
                               </div>
-                              <div className="text-xs text-gray-600 mt-0.5 truncate">
-                                {order.cliente?.nome || order.customer}
-                              </div>
+                              <OrderCustomerSummary
+                                order={order}
+                                payment={orderPayment}
+                                timestamp={
+                                  order.realizado_em ||
+                                  order.criado_em ||
+                                  order.created_at ||
+                                  new Date()
+                                }
+                                cashChangeStatusLabel={cashChangeStatusLabel}
+                              />
                               {order.status === "nao_entregue" && (
                                 <div className="mt-1 rounded-md border border-red-100 bg-red-50 px-2 py-1 text-xs font-medium text-red-700">
                                   Problema na entrega
@@ -4941,21 +5117,12 @@ export function OrdersScreen() {
                                 <span className="text-[11px] text-gray-400">
                                   {order.cliente?.telefone || order.phone}
                                 </span>
-                                <span className="text-[11px] text-gray-400">
-                                  · {getOrderPaymentMethod(order, orderPayment)}
-                                </span>
-                                {cashChangeStatusLabel && (
-                                  <span
-                                    className={`text-[11px] font-semibold ${
-                                      cashChangeStatusLabel === "Troco repassado"
-                                        ? "text-green-600"
-                                        : "text-red-600"
-                                    }`}
-                                  >
-                                    · {cashChangeStatusLabel}
-                                  </span>
-                                )}
                               </div>
+                              <CompactOrderStatusTimeline
+                                order={order}
+                                primaryColor={primaryColor}
+                                confirmationPending={orderPaymentIsPending}
+                              />
                             </div>
                             <div className="text-right flex-shrink-0">
                               <div className="text-sm font-semibold text-gray-700">

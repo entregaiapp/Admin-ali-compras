@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 import api from '@/shared/lib/api';
 import logo from '@/assets/logo.png';
+import { CREATE_ORDER_SHORTCUT_PARAM } from '@/features/orders/constants';
+import { ADMIN_COLLAPSE_SIDEBAR_EVENT } from '@/shared/constants/uiEvents';
 
 const PRIMARY = '#122a4c';
 
@@ -134,6 +136,18 @@ export function AdminLayout() {
       // Ignore storage errors; the visual state still works for this session.
     }
   }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    const handleCollapseSidebar = () => {
+      setSidebarOpen(false);
+      setSidebarCollapsed(true);
+    };
+
+    window.addEventListener(ADMIN_COLLAPSE_SIDEBAR_EVENT, handleCollapseSidebar);
+    return () => {
+      window.removeEventListener(ADMIN_COLLAPSE_SIDEBAR_EVENT, handleCollapseSidebar);
+    };
+  }, []);
   
   useEffect(() => {
     if (user?.loja_id) {
@@ -230,6 +244,24 @@ export function AdminLayout() {
     if (user?.perfil === 'superadmin' || user?.perfil === 'administrador') return true;
     return user?.permissions?.includes(item.slug);
   };
+
+  const ordersNavItem = navItems.find((item) => item.slug === 'pedidos');
+  const canAccessOrders = Boolean(ordersNavItem && canViewNavItem(ordersNavItem));
+
+  useEffect(() => {
+    const handleCreateOrderShortcut = (event: KeyboardEvent) => {
+      if (event.key !== 'F10' || event.repeat || !canAccessOrders) return;
+
+      event.preventDefault();
+      const shortcutParams = new URLSearchParams();
+      shortcutParams.set(CREATE_ORDER_SHORTCUT_PARAM, String(Date.now()));
+      navigate(`/orders?${shortcutParams.toString()}`);
+      setSidebarOpen(false);
+    };
+
+    window.addEventListener('keydown', handleCreateOrderShortcut);
+    return () => window.removeEventListener('keydown', handleCreateOrderShortcut);
+  }, [canAccessOrders, navigate]);
 
   const visibleNavGroups = navGroups
     .map(group => ({

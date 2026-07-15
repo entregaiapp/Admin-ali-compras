@@ -24,7 +24,6 @@ import {
   ShoppingCart,
   SlidersHorizontal,
   Trash2,
-  UserCheck,
   UserRound,
 } from "lucide-react";
 import { salaoService } from "@/features/salao/services/salaoService";
@@ -58,6 +57,7 @@ import {
   useAlertSoundPreference,
   usePersistentAttentionSound,
 } from "@/shared/hooks/usePersistentAttentionSound";
+import { ADMIN_COLLAPSE_SIDEBAR_EVENT } from "@/shared/constants/uiEvents";
 
 const PRIMARY = "#122a4c";
 const TABLE_CARD_SCALE_STORAGE_KEY = "admin_salao_table_card_scale";
@@ -295,6 +295,18 @@ const unwrapList = (payload: any) => {
 
 const phoneSearchPattern = /(?:\+?55\s*)?(?:\(?\d{2}\)?\s*)?(?:9?\d{4})[-.\s]?\d{4}/;
 const onlyDigits = (value: string) => String(value || "").replace(/\D/g, "");
+
+const sanitizeQuantityInput = (value: string) => {
+  const numericValue = String(value || "").replace(/[^0-9,.]/g, "");
+  const separatorIndex = numericValue.search(/[,.]/);
+
+  if (separatorIndex < 0) return numericValue;
+
+  return (
+    numericValue.slice(0, separatorIndex + 1) +
+    numericValue.slice(separatorIndex + 1).replace(/[,.]/g, "")
+  );
+};
 const compactText = (value: string) => String(value || "").replace(/\s+/g, " ").trim();
 const inferQuickContactFromQuery = (query: string) => {
   const value = compactText(query);
@@ -501,12 +513,13 @@ export function SalaoPage() {
   const [tableCardScale, setTableCardScale] = useState(getStoredTableCardScale);
   const [kdsCardScale, setKdsCardScale] = useState(getStoredKdsCardScale);
   const [tableScaleControlOpen, setTableScaleControlOpen] = useState(false);
-  const [kdsFullscreen, setKdsFullscreen] = useState(false);
+  const [salaoFullscreen, setSalaoFullscreen] = useState(false);
+  const kdsFullscreen = salaoFullscreen && tab === "kds";
   const [selectedKdsId, setSelectedKdsId] = useState("");
   const [selectedComanda, setSelectedComanda] = useState<any | null>(null);
-  const [comandaModule, setComandaModule] = useState<
-    "mesa" | "participantes" | "pedidos"
-  >("mesa");
+  const [comandaModule, setComandaModule] = useState<"mesa" | "pedidos">(
+    "mesa",
+  );
   const [productSearch, setProductSearch] = useState("");
   const [productSearchResults, setProductSearchResults] = useState<any[] | null>(
     null,
@@ -670,7 +683,7 @@ export function SalaoPage() {
 
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setKdsFullscreen(document.fullscreenElement === salaoPageRef.current);
+      setSalaoFullscreen(document.fullscreenElement === salaoPageRef.current);
     };
 
     document.addEventListener("fullscreenchange", handleFullscreenChange);
@@ -1144,6 +1157,13 @@ export function SalaoPage() {
   };
 
   const selectProductForComanda = async (product: any) => {
+    if (selectedProductId === product.id) {
+      setSelectedProductId("");
+      setItemQuantity("1");
+      setItemNotes("");
+      return;
+    }
+
     if (product.modo_compra !== "configuravel") {
       setSelectedProductId(product.id);
       setItemQuantity("1");
@@ -2104,12 +2124,10 @@ export function SalaoPage() {
 
     setTableCardScale(clampTableCardScale(value));
   };
-  const toggleKdsFullscreen = async () => {
-    if (tab !== "kds") setTab("kds");
-
-    if (kdsFullscreen) {
+  const toggleSalaoFullscreen = async () => {
+    if (salaoFullscreen) {
       if (document.fullscreenElement) await document.exitFullscreen();
-      setKdsFullscreen(false);
+      setSalaoFullscreen(false);
       return;
     }
 
@@ -2117,13 +2135,16 @@ export function SalaoPage() {
     if (target?.requestFullscreen) {
       try {
         await target.requestFullscreen();
+        window.dispatchEvent(new Event(ADMIN_COLLAPSE_SIDEBAR_EVENT));
       } catch {
-        setKdsFullscreen(true);
+        setSalaoFullscreen(true);
+        window.dispatchEvent(new Event(ADMIN_COLLAPSE_SIDEBAR_EVENT));
       }
       return;
     }
 
-    setKdsFullscreen(true);
+    setSalaoFullscreen(true);
+    window.dispatchEvent(new Event(ADMIN_COLLAPSE_SIDEBAR_EVENT));
   };
   const mesasById = useMemo(
     () => new Map(mesas.map((mesa) => [mesa.id, mesa])),
@@ -2182,12 +2203,16 @@ export function SalaoPage() {
   const activeSalaoTab =
     salaoTabs.find((item) => item.id === tab) || salaoTabs[0];
   const ActiveSalaoTabIcon = activeSalaoTab.Icon;
+  const lockComandaOrdersScroll =
+    tab === "comandas" &&
+    Boolean(selectedComanda) &&
+    comandaModule === "pedidos";
 
   return (
     <div
       ref={salaoPageRef}
       className={`flex h-full min-h-0 max-w-full flex-col overflow-x-hidden bg-gray-50 ${
-        kdsFullscreen ? "fixed inset-0 z-[9999]" : ""
+        salaoFullscreen ? "fixed inset-0 z-[9999]" : ""
       }`}
     >
       <div className="border-b border-gray-200 bg-white px-2.5 py-2 lg:px-4 lg:py-0 lg:pt-2">
@@ -2227,24 +2252,25 @@ export function SalaoPage() {
                   className={`h-4 w-4 ${loading || refreshing ? "animate-spin" : ""}`}
                 />
               </button>
-              {showingKdsControls && (
-                <button
-                  type="button"
-                  onClick={() => void toggleKdsFullscreen()}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm"
-                  aria-label={
-                    kdsFullscreen
-                      ? "Sair da tela cheia do KDS"
-                      : "Abrir KDS em tela cheia"
-                  }
-                >
-                  {kdsFullscreen ? (
-                    <Minimize2 className="h-4 w-4" />
-                  ) : (
-                    <Maximize2 className="h-4 w-4" />
-                  )}
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => void toggleSalaoFullscreen()}
+                className={`inline-flex h-8 w-8 items-center justify-center rounded-full border shadow-sm transition-all ${
+                  salaoFullscreen
+                    ? "border-transparent text-white"
+                    : "border-slate-200 bg-white text-slate-600"
+                }`}
+                style={salaoFullscreen ? { backgroundColor: PRIMARY } : undefined}
+                title={salaoFullscreen ? "Sair da tela cheia" : `Abrir ${activeSalaoTab.label} em tela cheia`}
+                aria-label={salaoFullscreen ? "Sair da tela cheia" : `Abrir ${activeSalaoTab.label} em tela cheia`}
+                aria-pressed={salaoFullscreen}
+              >
+                {salaoFullscreen ? (
+                  <Minimize2 className="h-4 w-4" />
+                ) : (
+                  <Maximize2 className="h-4 w-4" />
+                )}
+              </button>
               <button
                 type="button"
                 onClick={() => setTableScaleControlOpen((current) => !current)}
@@ -2387,23 +2413,25 @@ export function SalaoPage() {
                 className={`h-4 w-4 ${loading || refreshing ? "animate-spin" : ""}`}
               />
             </button>
-            {showingKdsControls && (
-              <button
-                type="button"
-                onClick={() => void toggleKdsFullscreen()}
-                className="inline-flex h-9 w-9 flex-none items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 shadow-sm transition-all hover:border-gray-300 hover:text-gray-900"
-                title={kdsFullscreen ? "Sair da tela cheia" : "Tela cheia"}
-                aria-label={
-                  kdsFullscreen ? "Sair da tela cheia do KDS" : "Abrir KDS em tela cheia"
-                }
-              >
-                {kdsFullscreen ? (
-                  <Minimize2 className="h-4 w-4" />
-                ) : (
-                  <Maximize2 className="h-4 w-4" />
-                )}
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => void toggleSalaoFullscreen()}
+              className={`inline-flex h-9 w-9 flex-none items-center justify-center rounded-full border shadow-sm transition-all hover:border-gray-300 ${
+                salaoFullscreen
+                  ? "border-transparent text-white"
+                  : "border-gray-200 bg-white text-gray-600 hover:text-gray-900"
+              }`}
+              style={salaoFullscreen ? { backgroundColor: PRIMARY } : undefined}
+              title={salaoFullscreen ? "Sair da tela cheia" : `Abrir ${activeSalaoTab.label} em tela cheia`}
+              aria-label={salaoFullscreen ? "Sair da tela cheia" : `Abrir ${activeSalaoTab.label} em tela cheia`}
+              aria-pressed={salaoFullscreen}
+            >
+              {salaoFullscreen ? (
+                <Minimize2 className="h-4 w-4" />
+              ) : (
+                <Maximize2 className="h-4 w-4" />
+              )}
+            </button>
             <button
               type="button"
               onClick={() => setTableScaleControlOpen((current) => !current)}
@@ -2435,7 +2463,13 @@ export function SalaoPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 pb-16 sm:p-6 sm:pb-28 lg:pb-20">
+      <div
+        className={`min-h-0 flex-1 overflow-x-hidden p-2 pb-16 sm:p-6 sm:pb-28 ${
+          lockComandaOrdersScroll
+            ? "overflow-y-auto lg:overflow-y-hidden lg:pb-6"
+            : "overflow-y-auto lg:pb-20"
+        }`}
+      >
         {loading ? (
           <div className="flex h-64 items-center justify-center text-gray-500">
             <Loader2 className="mr-2 h-5 w-5 animate-spin" />
@@ -2681,8 +2715,8 @@ export function SalaoPage() {
             </div>
           </div>
         ) : !kdsFullscreen && tab === "comandas" ? (
-          <div className="grid min-w-0 max-w-full gap-2 overflow-x-hidden xl:grid-cols-[minmax(260px,360px)_1fr] xl:gap-4">
-            <div className={`space-y-1.5 sm:space-y-3 ${selectedComanda ? "hidden xl:block" : ""}`}>
+          <div className={`grid min-w-0 max-w-full gap-2 overflow-x-hidden xl:grid-cols-[minmax(260px,360px)_1fr] xl:gap-4 ${lockComandaOrdersScroll ? "lg:h-full lg:min-h-0" : ""}`}>
+            <div className={`space-y-1.5 sm:space-y-3 ${selectedComanda ? "hidden xl:block" : ""} ${lockComandaOrdersScroll ? "min-h-0 overflow-y-auto pr-1" : ""}`}>
               {comandas.map((comanda) => {
                 const mesaDaComanda = mesasById.get(
                   comanda.mesa_id || comanda.mesa?.id,
@@ -2750,11 +2784,20 @@ export function SalaoPage() {
 
             <div
               ref={comandaDetailRef}
-              className="max-w-full overflow-x-hidden scroll-mt-2 rounded-lg border border-gray-200 bg-white p-2 shadow-sm sm:scroll-mt-4 sm:rounded-xl sm:p-4"
+              className={`max-w-full overflow-x-hidden scroll-mt-2 rounded-lg border border-gray-200 bg-white p-2 shadow-sm sm:scroll-mt-4 sm:rounded-xl sm:p-4 ${lockComandaOrdersScroll ? "lg:grid lg:h-full lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_var(--product-panel-width)] lg:grid-rows-[auto_auto_minmax(0,1fr)] lg:gap-x-5 lg:overflow-hidden" : ""}`}
+              style={
+                lockComandaOrdersScroll
+                  ? ({ "--product-panel-width": "clamp(400px, 46%, 560px)" } as CSSProperties)
+                  : undefined
+              }
             >
               {selectedComanda ? (
                 <>
-                  <div className="mb-2 grid w-full grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1 lg:sticky lg:top-0 lg:z-30 lg:-mx-4 lg:mb-4 lg:flex lg:gap-1 lg:overflow-x-auto lg:border-b lg:border-gray-100 lg:bg-white lg:px-4 lg:py-2 lg:shadow-sm lg:scrollbar-hide">
+                  <div
+                    className={`mb-2 flex w-full overflow-x-auto border-b border-gray-200 bg-white scrollbar-hide lg:sticky lg:top-0 lg:z-30 lg:-mx-4 lg:mb-4 lg:w-auto lg:px-4 ${lockComandaOrdersScroll ? "lg:col-start-1 lg:row-start-1" : ""}`}
+                    role="tablist"
+                    aria-label="Detalhes da comanda"
+                  >
                     {[
                       {
                         id: "pedidos",
@@ -2765,30 +2808,62 @@ export function SalaoPage() {
                       {
                         id: "mesa",
                         Icon: Armchair,
-                        label: "Mesa",
-                        mobileLabel: "Mesa",
+                        label: "Informações da mesa",
+                        mobileLabel: "Informações da mesa",
                       },
-                      {
-                        id: "participantes",
-                        Icon: UserCheck,
-                        label: "Participantes",
-                        mobileLabel: "Pessoas",
-                      },
-                    ].map(({ id, Icon, label, mobileLabel }) => (
-                      <button
-                        key={String(id)}
-                        onClick={() =>
-                          setComandaModule(id as typeof comandaModule)
-                        }
-                        className={`inline-flex min-h-10 min-w-0 items-center justify-center gap-1 rounded-lg px-1.5 py-1.5 text-center text-[10px] font-extrabold leading-tight lg:min-h-10 lg:shrink-0 lg:flex-row lg:gap-1.5 lg:rounded-xl lg:px-2.5 lg:py-1.5 lg:text-[11px] xl:min-h-11 xl:gap-2 xl:px-3 xl:py-2 xl:text-xs ${comandaModule === id ? "bg-[#122a4c] text-white shadow-sm" : "bg-white text-slate-600 lg:bg-slate-100"}`}
-                      >
-                        <Icon className="h-3.5 w-3.5 shrink-0 lg:h-4 lg:w-4" />
-                        <span className="truncate lg:hidden">{mobileLabel}</span>
-                        <span className="hidden truncate lg:inline">{label}</span>
-                      </button>
-                    ))}
+                    ].map(({ id, Icon, label, mobileLabel }) => {
+                      const active = comandaModule === id;
+
+                      return (
+                        <button
+                          key={String(id)}
+                          type="button"
+                          role="tab"
+                          aria-selected={active}
+                          onClick={() =>
+                            setComandaModule(id as typeof comandaModule)
+                          }
+                          className={`relative isolate inline-flex min-h-11 min-w-0 flex-1 items-center justify-center gap-1.5 overflow-hidden border-b-2 px-2 py-2.5 text-center text-xs font-semibold transition-all duration-200 lg:min-w-40 lg:flex-none lg:gap-2 lg:px-4 lg:py-3 lg:text-sm ${
+                            active
+                              ? "text-gray-900"
+                              : "border-transparent text-gray-500 hover:text-gray-800"
+                          }`}
+                          style={
+                            active
+                              ? { borderBottomColor: PRIMARY, color: PRIMARY }
+                              : undefined
+                          }
+                        >
+                          {active && (
+                            <>
+                              <span
+                                aria-hidden="true"
+                                className="pointer-events-none absolute inset-x-0 bottom-0 h-7"
+                                style={{
+                                  background: `linear-gradient(to top, ${hexToRgba(PRIMARY, 0.13)} 0%, ${hexToRgba(PRIMARY, 0.055)} 38%, ${hexToRgba(PRIMARY, 0)} 100%)`,
+                                }}
+                              />
+                              <span
+                                aria-hidden="true"
+                                className="pointer-events-none absolute inset-x-3 bottom-0 h-1 blur-md"
+                                style={{
+                                  backgroundColor: hexToRgba(PRIMARY, 0.22),
+                                }}
+                              />
+                            </>
+                          )}
+                          <Icon className="relative z-10 h-4 w-4 shrink-0" />
+                          <span className="relative z-10 truncate lg:hidden">
+                            {mobileLabel}
+                          </span>
+                          <span className="relative z-10 hidden truncate lg:inline">
+                            {label}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
-                  <div className="mb-2 flex flex-wrap items-center justify-between gap-1.5 rounded-lg border border-blue-100 bg-blue-50 px-2 py-1.5 sm:mb-3 sm:gap-2 sm:rounded-xl sm:px-3 sm:py-2">
+                  <div className={`mb-2 flex flex-wrap items-center justify-between gap-1.5 rounded-lg border border-blue-100 bg-blue-50 px-2 py-1.5 sm:mb-3 sm:gap-2 sm:rounded-xl sm:px-3 sm:py-2 ${lockComandaOrdersScroll ? "lg:col-start-1 lg:row-start-2" : ""}`}>
                     <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
                       <KeyRound className="h-3.5 w-3.5 shrink-0 text-blue-800 sm:h-4 sm:w-4" />
                       <span className="text-[11px] font-semibold text-blue-900 sm:text-xs">
@@ -2813,8 +2888,8 @@ export function SalaoPage() {
                       <RefreshCw className="h-3.5 w-3.5" /> Novo PIN
                     </button>
                   </div>
-                  <div className="grid min-w-0 max-w-full gap-3 overflow-x-hidden lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-5">
-                    <div className="order-2 min-w-0 max-w-full overflow-x-hidden lg:order-none">
+                  <div className={`grid min-w-0 max-w-full gap-3 overflow-x-hidden lg:gap-5 ${lockComandaOrdersScroll ? "lg:contents" : ""}`}>
+                    <div className={`order-2 min-w-0 max-w-full overflow-x-hidden lg:order-none ${lockComandaOrdersScroll ? "lg:col-start-1 lg:row-start-3 lg:flex lg:min-h-0 lg:flex-col lg:overflow-hidden" : ""}`}>
                       <div
                         className={
                           comandaModule === "mesa"
@@ -2843,8 +2918,7 @@ export function SalaoPage() {
 
                       <div
                         className={
-                          comandaModule === "mesa" ||
-                          comandaModule === "participantes"
+                          comandaModule === "mesa"
                             ? "mt-3 grid gap-2 md:grid-cols-2 sm:mt-4 sm:gap-3"
                             : "hidden"
                         }
@@ -2939,7 +3013,7 @@ export function SalaoPage() {
                         <div
                           className={
                             comandaModule === "mesa"
-                              ? "rounded-lg border border-red-100 bg-red-50/60 p-2.5 md:col-span-2 sm:p-3"
+                              ? "order-4 rounded-lg border border-red-100 bg-red-50/60 p-2.5 md:col-span-2 sm:p-3"
                               : "hidden"
                           }
                         >
@@ -2975,8 +3049,8 @@ export function SalaoPage() {
                         </div>
                         <div
                           className={
-                            comandaModule === "participantes"
-                              ? "rounded-lg border border-gray-100 bg-gray-50 p-2.5 md:col-span-2 sm:p-3"
+                            comandaModule === "mesa"
+                              ? "order-3 rounded-lg border border-gray-100 bg-gray-50 p-2.5 md:col-span-2 sm:p-3"
                               : "hidden"
                           }
                         >
@@ -3028,20 +3102,21 @@ export function SalaoPage() {
                       <div
                         className={
                           comandaModule === "pedidos"
-                            ? "mt-2 space-y-1.5 sm:mt-4 sm:space-y-2"
+                            ? "mt-2 space-y-1.5 sm:mt-4 sm:space-y-2 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:space-y-0"
                             : "hidden"
                         }
                       >
-                        <div className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-gray-900 sm:mb-3 sm:gap-2">
+                        <div className="mb-1.5 flex shrink-0 items-center gap-1.5 text-sm font-semibold text-gray-900 sm:mb-3 sm:gap-2">
                           <ClipboardList className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                           Pedidos da mesa
                         </div>
-                        {(selectedComanda.itens || []).length === 0 ? (
-                          <div className="rounded-lg border border-dashed border-gray-200 p-4 text-center text-xs text-gray-500 sm:p-6 sm:text-sm">
-                            Nenhum produto adicionado.
-                          </div>
-                        ) : (
-                          selectedComanda.itens.map((item: any) => {
+                        <div className="space-y-1.5 sm:space-y-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1.5">
+                          {(selectedComanda.itens || []).length === 0 ? (
+                            <div className="rounded-lg border border-dashed border-gray-200 p-4 text-center text-xs text-gray-500 sm:p-6 sm:text-sm">
+                              Nenhum produto adicionado.
+                            </div>
+                          ) : (
+                            selectedComanda.itens.map((item: any) => {
                             const itemSelections = arrayOrEmpty<any>(item.selecoes);
                             const itemVariation = String(item.nome_variacao || "").trim();
                             const itemNote = String(item.observacoes || "").trim();
@@ -3173,14 +3248,15 @@ export function SalaoPage() {
                                 </div>
                               </div>
                             );
-                          })
-                        )}
+                            })
+                          )}
+                        </div>
                       </div>
 
                       <div
                         className={
                           comandaModule === "pedidos"
-                            ? "mt-2 grid gap-1.5 sm:mt-5 sm:flex sm:flex-wrap sm:gap-2"
+                            ? "mt-2 grid shrink-0 gap-1.5 sm:mt-5 sm:flex sm:flex-wrap sm:gap-2"
                             : "hidden"
                         }
                       >
@@ -3233,8 +3309,8 @@ export function SalaoPage() {
 
                     <div
                       className={
-                        comandaModule === "pedidos"
-                          ? "order-1 min-w-0 max-w-full self-start overflow-hidden rounded-lg border border-gray-100 bg-gray-50 p-2 shadow-sm lg:order-none lg:sticky lg:top-3 lg:rounded-xl lg:p-3"
+                          comandaModule === "pedidos"
+                          ? "order-1 min-w-0 max-w-full self-start overflow-hidden rounded-lg border border-gray-100 bg-gray-50 p-2 shadow-sm lg:col-start-2 lg:row-span-3 lg:row-start-1 lg:grid lg:h-full lg:min-h-0 lg:self-stretch lg:grid-rows-[auto_auto_minmax(0,1fr)_auto] lg:rounded-xl lg:p-4"
                           : "hidden"
                       }
                     >
@@ -3243,7 +3319,7 @@ export function SalaoPage() {
                         Adicionar produto
                       </div>
                       <div className="relative">
-                        <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-gray-400 sm:left-3 sm:h-4 sm:w-4" />
+                        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400 sm:left-3 sm:h-4 sm:w-4" />
                         <input
                           value={productSearch}
                           onChange={(event) =>
@@ -3254,7 +3330,7 @@ export function SalaoPage() {
                         />
                       </div>
 
-                      <div className="mt-2 max-h-44 space-y-1.5 overflow-auto sm:mt-3 sm:max-h-64 sm:space-y-2">
+                      <div className="mt-2 max-h-44 space-y-1.5 overflow-y-auto overscroll-contain sm:mt-3 sm:max-h-64 sm:space-y-2 lg:min-h-0 lg:max-h-none lg:overflow-y-scroll lg:pr-2 [scrollbar-gutter:stable]">
                         {searchingProducts ? (
                           <div className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white p-2 text-xs text-gray-500 sm:gap-2 sm:p-3 sm:text-sm">
                             <Loader2 className="h-3.5 w-3.5 animate-spin sm:h-4 sm:w-4" />
@@ -3267,10 +3343,11 @@ export function SalaoPage() {
                             onClick={() =>
                               void selectProductForComanda(product)
                             }
-                            className={`flex w-full min-w-0 max-w-full items-center justify-between gap-2 overflow-hidden rounded-lg border bg-white p-2 text-left sm:gap-3 sm:p-3 ${
+                            aria-pressed={selectedProductId === product.id}
+                            className={`flex w-full min-w-0 max-w-full items-center justify-between gap-2 overflow-hidden rounded-lg border p-2 text-left transition-colors sm:gap-3 sm:p-3 ${
                               selectedProductId === product.id
-                                ? "border-blue-300"
-                                : "border-gray-200"
+                                ? "border-blue-400 bg-blue-50 shadow-sm ring-1 ring-blue-100"
+                                : "border-gray-200 bg-white hover:bg-slate-50"
                             }`}
                           >
                             <div className="min-w-0 flex-1 overflow-hidden">
@@ -3296,6 +3373,7 @@ export function SalaoPage() {
                           </div>
                         )}
                       </div>
+                      <div className="shrink-0 bg-gray-50 lg:border-t lg:border-gray-200 lg:pt-3">
                       {productSearch.trim() &&
                         !searchingProducts &&
                         productSearchTotal > productList.length && (
@@ -3315,10 +3393,12 @@ export function SalaoPage() {
                         <input
                           value={itemQuantity}
                           onChange={(event) =>
-                            setItemQuantity(event.target.value)
+                            setItemQuantity(sanitizeQuantityInput(event.target.value))
                           }
                           className="h-9 rounded-lg border border-gray-300 px-2.5 text-sm sm:h-12 sm:rounded-xl sm:px-3 sm:text-base"
                           inputMode="decimal"
+                          pattern="[0-9]*[,.]?[0-9]*"
+                          aria-label="Quantidade do produto"
                           placeholder="Qtd."
                         />
                         <input
@@ -3350,6 +3430,7 @@ export function SalaoPage() {
                             ? "Adicionar pelo admin"
                             : "Adicionar à mesa"}
                       </button>
+                      </div>
                     </div>
                   </div>
                 </>

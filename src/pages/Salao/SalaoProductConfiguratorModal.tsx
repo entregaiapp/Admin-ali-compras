@@ -37,6 +37,20 @@ const normalizeText = (value: unknown) => String(value || "")
   .replace(/[\u0300-\u036f]/g, "")
   .toLowerCase();
 
+const getOptionSearchRank = (option: any, query: string) => {
+  if (!query) return 0;
+
+  const name = normalizeText(option?.nome).trim();
+  const description = normalizeText(option?.descricao).trim();
+
+  if (name === query) return 0;
+  if (name.startsWith(query)) return 1;
+  if (name.split(/\s+/).some((word) => word.startsWith(query))) return 2;
+  if (name.includes(query)) return 3;
+  if (description.includes(query)) return 4;
+  return null;
+};
+
 const formatMoney = (value: unknown) => `R$ ${Number(value || 0).toFixed(2).replace(".", ",")}`;
 
 const roundCurrency = (value: number) => Number(value.toFixed(2));
@@ -169,10 +183,19 @@ export function SalaoProductConfiguratorModal({
     return groups
       .map((group: any) => ({
         ...group,
-        opcoes: (group.opcoes || []).filter((option: any) => (
-          isOptionAvailable(option, variationId)
-          && (!query || normalizeText(`${option.nome} ${option.descricao || ""}`).includes(query))
-        )),
+        opcoes: (group.opcoes || [])
+          .map((option: any, originalIndex: number) => ({
+            option,
+            originalIndex,
+            rank: getOptionSearchRank(option, query),
+          }))
+          .filter(({ option, rank }: any) => (
+            isOptionAvailable(option, variationId) && rank !== null
+          ))
+          .sort((first: any, second: any) => (
+            first.rank - second.rank || first.originalIndex - second.originalIndex
+          ))
+          .map(({ option }: any) => option),
       }))
       .filter((group: any) => group.opcoes.length > 0);
   }, [groups, search, variationId]);

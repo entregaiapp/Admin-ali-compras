@@ -1,4 +1,5 @@
 export const PRIMARY = "#122a4c";
+export const CREATE_ORDER_SHORTCUT_PARAM = "criarPedido";
 
 export const statusColor: Record<string, { bg: string; text: string }> = {
   Recebido: { bg: "#fffbeb", text: "#d97706" },
