@@ -452,59 +452,126 @@ const getOrderTypeLabel = (order: any) => ({
   retirada: "Retirada",
   salao: "Salão",
 })[getOrderType(order)];
+
+const formatElapsedOrderTime = (elapsedMinutes: number) => {
+  const safeMinutes = Math.max(0, Math.floor(elapsedMinutes));
+  if (safeMinutes < 1) return "menos de 1 min";
+  if (safeMinutes < 60) return `${safeMinutes} min`;
+
+  if (safeMinutes >= 1_440) {
+    const days = Math.floor(safeMinutes / 1_440);
+    const remainingHours = Math.floor((safeMinutes % 1_440) / 60);
+    return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
+  }
+
+  const hours = Math.floor(safeMinutes / 60);
+  const minutes = safeMinutes % 60;
+  return minutes > 0 ? `${hours}h ${minutes}min` : `${hours}h`;
+};
+
+const interpolateColor = (start: [number, number, number], end: [number, number, number], amount: number) => {
+  const ratio = Math.min(1, Math.max(0, amount));
+  const channel = (index: number) => Math.round(start[index] + (end[index] - start[index]) * ratio);
+  return `rgb(${channel(0)}, ${channel(1)}, ${channel(2)})`;
+};
+
+const getWaitingTimeColor = (elapsedMinutes: number, averageDeliveryMinutes: number) => {
+  const safeLimit = Math.max(1, averageDeliveryMinutes);
+  const progress = Math.min(1, Math.max(0, elapsedMinutes / safeLimit));
+  const blue: [number, number, number] = [37, 99, 235];
+  const amber: [number, number, number] = [217, 119, 6];
+  const red: [number, number, number] = [220, 38, 38];
+
+  return progress < 0.7
+    ? interpolateColor(blue, amber, progress / 0.7)
+    : interpolateColor(amber, red, (progress - 0.7) / 0.3);
+};
+
+const getTransparentRgb = (color: string, opacity: number) =>
+  color.replace("rgb(", "rgba(").replace(")", `, ${opacity})`);
+
 const OrderCustomerSummary = ({
   order,
   payment,
   timestamp,
   cashChangeStatusLabel,
+  nowMs,
+  averageDeliveryMinutes,
 }: {
   order: any;
   payment: any;
   timestamp: Date | string;
   cashChangeStatusLabel?: string;
-}) => (
-  <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
-    <span className="min-w-0 max-w-full truncate font-medium text-gray-600 sm:max-w-[220px]">
-      {order.cliente?.nome || order.customer || "Desconhecido"}
-    </span>
-    <span className="text-gray-300" aria-hidden="true">|</span>
-    <span className="whitespace-nowrap text-gray-400">
-      {formatBrasiliaDate(timestamp, {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      })}
-    </span>
-    <span className="text-gray-300" aria-hidden="true">|</span>
-    <span className="whitespace-nowrap text-gray-400">
-      {getOrderPaymentMethod(order, payment)}
-    </span>
-    {isDeliveryOrder(order) && (
-      <>
-        <span className="text-gray-300" aria-hidden="true">|</span>
-        <span className="whitespace-nowrap text-gray-400">
-          {getOrderNeighborhood(order)}
-        </span>
-      </>
-    )}
-    {cashChangeStatusLabel && (
-      <>
-        <span className="text-gray-300" aria-hidden="true">|</span>
+  nowMs: number;
+  averageDeliveryMinutes: number;
+}) => {
+  const timestampMs = new Date(timestamp).getTime();
+  const elapsedMinutes = Number.isFinite(timestampMs)
+    ? Math.max(0, (nowMs - timestampMs) / 60_000)
+    : 0;
+  const status = getBackendStatus(order?.status || "");
+  const tracksDeliveryWait =
+    isDeliveryOrder(order) && !["entregue", "cancelado"].includes(status);
+  const reachedDeliveryLimit =
+    tracksDeliveryWait && elapsedMinutes >= averageDeliveryMinutes;
+  const waitingColor = getWaitingTimeColor(
+    elapsedMinutes,
+    averageDeliveryMinutes,
+  );
+
+  return (
+    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
+      <span className="min-w-0 max-w-full truncate font-medium text-gray-600 sm:max-w-[220px]">
+        {order.cliente?.nome || order.customer || "Desconhecido"}
+      </span>
+      <span className="text-gray-300" aria-hidden="true">|</span>
+      {tracksDeliveryWait ? (
         <span
-          className={`whitespace-nowrap font-semibold ${
-            cashChangeStatusLabel === "Troco repassado"
-              ? "text-green-600"
-              : "text-red-600"
-          }`}
+          className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 font-semibold"
+          style={{
+            color: waitingColor,
+            borderColor: waitingColor,
+            backgroundColor: getTransparentRgb(waitingColor, 0.1),
+          }}
+          title={`Tempo médio de entrega configurado: ${averageDeliveryMinutes} min`}
         >
-          {cashChangeStatusLabel}
+          {reachedDeliveryLimit && <AlertTriangle className="h-3.5 w-3.5" />}
+          Aguardando há {formatElapsedOrderTime(elapsedMinutes)}
         </span>
-      </>
-    )}
-  </div>
-);
+      ) : (
+        <span className="whitespace-nowrap text-gray-400">
+          Realizado há {formatElapsedOrderTime(elapsedMinutes)}
+        </span>
+      )}
+      <span className="text-gray-300" aria-hidden="true">|</span>
+      <span className="whitespace-nowrap text-gray-400">
+        {getOrderPaymentMethod(order, payment)}
+      </span>
+      {isDeliveryOrder(order) && (
+        <>
+          <span className="text-gray-300" aria-hidden="true">|</span>
+          <span className="whitespace-nowrap text-gray-400">
+            {getOrderNeighborhood(order)}
+          </span>
+        </>
+      )}
+      {cashChangeStatusLabel && (
+        <>
+          <span className="text-gray-300" aria-hidden="true">|</span>
+          <span
+            className={`whitespace-nowrap font-semibold ${
+              cashChangeStatusLabel === "Troco repassado"
+                ? "text-green-600"
+                : "text-red-600"
+            }`}
+          >
+            {cashChangeStatusLabel}
+          </span>
+        </>
+      )}
+    </div>
+  );
+};
 const getSalaoComandaStatus = (order: any) =>
   String(order?.salao_comanda?.status || order?.comanda?.status || "").toLowerCase();
 const canTakeSalaoOrderToTable = (order: any) =>
@@ -605,6 +672,7 @@ export function OrdersScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [search, setSearch] = useState("");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
   const [ordersFullscreen, setOrdersFullscreen] = useState(false);
   const [statusFilter, setStatusFilter] = useState("Todos");
   const [typeFilter, setTypeFilter] = useState<OrderTab>("Entrega");
@@ -648,6 +716,7 @@ export function OrdersScreen() {
   const [unassigningDeliveryId, setUnassigningDeliveryId] = useState("");
   const [updatingStatusOrderId, setUpdatingStatusOrderId] = useState("");
   const [confirmingCashPaymentId, setConfirmingCashPaymentId] = useState("");
+  const [confirmingPaymentOrderId, setConfirmingPaymentOrderId] = useState("");
   const [updatingCashChangePaymentId, setUpdatingCashChangePaymentId] = useState("");
   const [forceFinalizingOrderId, setForceFinalizingOrderId] = useState("");
   const [forceFinalizeCandidate, setForceFinalizeCandidate] = useState<any | null>(null);
@@ -666,6 +735,8 @@ export function OrdersScreen() {
   const [loadingOpenRoutes, setLoadingOpenRoutes] = useState(false);
   const [confirmStep, setConfirmStep] = useState(false);
   const [primaryColor, setPrimaryColor] = useState(PRIMARY);
+  const [averageDeliveryTimeMinutes, setAverageDeliveryTimeMinutes] = useState(30);
+  const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
   const [storePrintData, setStorePrintData] = useState<any | null>(null);
   const [printOrder, setPrintOrder] = useState<any | null>(null);
   const [printBusy, setPrintBusy] = useState(false);
@@ -692,6 +763,9 @@ export function OrdersScreen() {
     retirada: 0,
     salao: 0,
   });
+  const [inProgressOrdersCount, setInProgressOrdersCount] = useState<
+    Record<"entrega" | "retirada", number>
+  >({ entrega: 0, retirada: 0 });
   const [lastOrdersLoadedAt, setLastOrdersLoadedAt] = useState<Record<OrderCounterKey, string>>(() => {
     const initialCursor = new Date(0).toISOString();
     return { entrega: initialCursor, retirada: initialCursor, salao: initialCursor };
@@ -745,6 +819,12 @@ export function OrdersScreen() {
   const archivedDaysCarouselRef = useRef<HTMLDivElement | null>(null);
   const ordersScreenRef = useRef<HTMLDivElement | null>(null);
   const orderCardClickTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setCurrentTimeMs(Date.now()), 30_000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
   useEffect(() => () => {
     if (orderCardClickTimeoutRef.current !== null) {
       window.clearTimeout(orderCardClickTimeoutRef.current);
@@ -765,6 +845,45 @@ export function OrdersScreen() {
     useAlertSoundPreference(user?.loja_id, "entrega");
   const { enabled: pickupSoundEnabled, setEnabled: setPickupSoundEnabled } =
     useAlertSoundPreference(user?.loja_id, "retirada");
+  const refreshInProgressOrderCounts = useCallback(async () => {
+    if (!user?.loja_id) {
+      setInProgressOrdersCount({ entrega: 0, retirada: 0 });
+      return;
+    }
+
+    const types = ["entrega", "retirada"] as const;
+    const responses = await Promise.allSettled(
+      types.map((type) =>
+        api.post("/pedidos/operacionais/consulta", {
+          tipo_pedido: type,
+          aba: "andamento",
+          limite: 1,
+          ids_em_cache: [],
+        }),
+      ),
+    );
+
+    setInProgressOrdersCount((current) => {
+      const next = { ...current };
+      responses.forEach((response, index) => {
+        if (response.status !== "fulfilled") return;
+        const payload = response.value.data?.data || {};
+        const total = Number(payload.abas?.andamento?.total || 0);
+        next[types[index]] = Number.isFinite(total) ? total : 0;
+      });
+      return next;
+    });
+  }, [user?.loja_id]);
+
+  useEffect(() => {
+    void refreshInProgressOrderCounts();
+    const intervalId = window.setInterval(
+      () => void refreshInProgressOrderCounts(),
+      60_000,
+    );
+    return () => window.clearInterval(intervalId);
+  }, [refreshInProgressOrderCounts]);
+
   const pendingPrintOrders = useMemo(
     () => orders.filter(isAppOrderAwaitingPrint),
     [orders],
@@ -995,6 +1114,16 @@ export function OrdersScreen() {
       operationalCacheRef.current[resolvedCacheKey] = nextCache;
       operationalAvailabilityCacheRef.current[filtersKey] = availability;
       setOperationalAvailability(availability);
+      if (
+        statusFilter === "Todos" &&
+        !search.trim() &&
+        bairroFilter === "Todos"
+      ) {
+        setInProgressOrdersCount((current) => ({
+          ...current,
+          [operationalType]: Number(availability.andamento?.total || 0),
+        }));
+      }
       setPendingPrintAlerts((current) => ({
         ...current,
         [operationalType]: Number(availability.falta_imprimir?.total || 0) > 0,
@@ -1117,6 +1246,7 @@ export function OrdersScreen() {
   useEffect(() => {
     if (!user?.loja_id) {
       setPrimaryColor(PRIMARY);
+      setAverageDeliveryTimeMinutes(30);
       setStorePrintData(null);
       setManualOrderCreationAllowed(false);
       setManualOrderOpen(false);
@@ -1141,6 +1271,15 @@ export function OrdersScreen() {
           : {};
 
       setPrimaryColor(config.cor_primaria || PRIMARY);
+      const configuredAverageDeliveryTime = Number(
+        config.tempo_medio_entrega_minutos,
+      );
+      setAverageDeliveryTimeMinutes(
+        Number.isFinite(configuredAverageDeliveryTime) &&
+          configuredAverageDeliveryTime > 0
+          ? configuredAverageDeliveryTime
+          : 30,
+      );
       setManualOrderCreationAllowed(config.permitir_criacao_pedidos_delivery_admin === true);
       if (config.permitir_criacao_pedidos_delivery_admin !== true) {
         setManualOrderOpen(false);
@@ -2580,21 +2719,32 @@ export function OrdersScreen() {
     }
   };
 
-  const confirmCashPayment = async () => {
-    if (!selected?.id || !selectedPayment?.id || !selectedIsPendingCash) return;
+  const confirmPendingPaymentForOrder = async (
+    order: any,
+    payments: any[],
+  ) => {
+    const preferredPayment = getPreferredOrderPayment(order, payments);
+    if (!order?.id || !preferredPayment?.id || !isOrderPendingCash(order, payments)) {
+      handleSelectOrder(order);
+      showSystemNotice(
+        "Confira a forma de pagamento nos detalhes antes de registrar o recebimento.",
+      );
+      return;
+    }
 
     try {
-      setConfirmingCashPaymentId(selectedPayment.id);
-      const splitGroupId = getPaymentSplitGroupId(selectedPayment);
+      setConfirmingPaymentOrderId(order.id);
+      setConfirmingCashPaymentId(preferredPayment.id);
+      const splitGroupId = getPaymentSplitGroupId(preferredPayment);
       const paymentsToConfirm = splitGroupId
-        ? selectedPayments.filter((payment) =>
+        ? payments.filter((payment) =>
             getPaymentSplitGroupId(payment) === splitGroupId &&
             isCurrentPaymentRecord(payment) &&
             ["pendente", "em_processamento", "processando"].includes(
               normalizePaymentText(payment?.status),
             )
           )
-        : [selectedPayment];
+        : [preferredPayment];
       const responses = await Promise.all(
         paymentsToConfirm.map((payment) =>
           api.patch(`/pagamentos/${payment.id}/status`, {
@@ -2606,19 +2756,21 @@ export function OrdersScreen() {
       const updatedPayments = responses.map((response) => response.data.data || response.data);
       const updatedPayment = updatedPayments[0];
 
-      setSelectedPayments((previous) =>
-        previous.map((payment) =>
-          updatedPayments.find((updated) => updated.id === payment.id) || payment,
-        ),
-      );
-      setSelected((previous: any) =>
-        previous ? { ...previous, pagamento: updatedPayment } : previous,
-      );
+      if (selected?.id === order.id) {
+        setSelectedPayments((previous) =>
+          previous.map((payment) =>
+            updatedPayments.find((updated) => updated.id === payment.id) || payment,
+          ),
+        );
+        setSelected((previous: any) =>
+          previous ? { ...previous, pagamento: updatedPayment } : previous,
+        );
+      }
       setOrders((previous) =>
-        previous.map((order) =>
-          order.id === selected.id
-            ? { ...order, pagamento: updatedPayment }
-            : order,
+        previous.map((currentOrder) =>
+          currentOrder.id === order.id
+            ? { ...currentOrder, pagamento: updatedPayment, pagamentos: updatedPayments }
+            : currentOrder,
         ),
       );
       await fetchOrders(1, true, { silent: true });
@@ -2636,7 +2788,28 @@ export function OrdersScreen() {
       );
     } finally {
       setConfirmingCashPaymentId("");
+      setConfirmingPaymentOrderId("");
     }
+  };
+
+  const confirmCashPayment = async () => {
+    if (!selected?.id) return;
+    await confirmPendingPaymentForOrder(selected, selectedPayments);
+  };
+
+  const confirmOrderPaymentFromList = async (order: any) => {
+    let payments = getOrderEmbeddedPayments(order);
+
+    if (payments.length === 0) {
+      try {
+        const response = await api.get(`/pedidos/${order.id}/pagamentos`);
+        payments = getApiList(response.data);
+      } catch (error) {
+        console.error("Error fetching order payments from operational list:", error);
+      }
+    }
+
+    await confirmPendingPaymentForOrder(order, payments);
   };
 
   const updateCashChangePaidToCourier = async (checked: boolean) => {
@@ -3347,6 +3520,45 @@ export function OrdersScreen() {
     selectedCanProceed &&
     !selectedCancellationPending;
   const selectedCanForceFinalize = canForceFinalizeOrder(selected);
+  const selectedIsTerminal = ["Entregue", "Cancelado", "Não entregue"].includes(
+    selectedStatusLabel,
+  );
+  const selectedCanAdvanceFromStickyAction =
+    Boolean(selected) &&
+    !selectedIsSalao &&
+    !selectedIsTerminal &&
+    selectedCanProceed &&
+    !selectedPickupNeedsCashConfirmation &&
+    !selectedCancellationPending &&
+    !adminCannotDispatchDelivery &&
+    !adminCannotConfirmDelivery;
+  const selectedStickyActionLabel = selectedCancellationPending
+    ? "Analisar cancelamento"
+    : selectedCanTakeSalaoToTable
+      ? "Levar para a mesa"
+      : selectedCanAdvanceFromStickyAction
+        ? selectedStatusLabel === "Recebido"
+          ? "Confirmar pedido"
+          : selectedStatusLabel === "Confirmado"
+            ? "Iniciar separação"
+            : selectedStatusLabel === "Em Separação"
+              ? "Marcar como pronto"
+              : selectedStatusLabel === "Pronto" && selectedIsPickup
+                ? "Confirmar retirada"
+                : ""
+        : "";
+  const selectedStickyWaitingLabel =
+    selected && !selectedIsTerminal
+      ? !selectedCanProceed && !selectedIsTerminal
+        ? "Aguardando aprovação do pagamento"
+        : selectedPickupNeedsCashConfirmation
+          ? "Aguardando confirmação do pagamento"
+          : adminCannotDispatchDelivery
+            ? "Aguardando saída pelo entregador"
+            : adminCannotConfirmDelivery
+              ? "Aguardando confirmação do entregador"
+              : ""
+      : "";
   const forceFinalizeCandidatePayments =
     forceFinalizeCandidate?.id === selected?.id ? selectedPayments : [];
   const forceFinalizeWillSettlePayment =
@@ -3366,6 +3578,22 @@ export function OrdersScreen() {
         selectedCustomerWhatsappMessage,
       )
     : null;
+  const handleSelectedStickyAction = async (
+    event: MouseEvent<HTMLButtonElement>,
+  ) => {
+    if (!selected) return;
+    if (selectedCancellationPending) {
+      openCancellationReview(selected);
+      return;
+    }
+    if (selectedCanTakeSalaoToTable) {
+      await takeSalaoOrderToTable(selected, event);
+      return;
+    }
+    if (selectedCanAdvanceFromStickyAction) {
+      await advanceStatus(selected.id, selected.status);
+    }
+  };
   const getOrderStatusKey = (order: any) => getBackendStatus(order?.status || "");
   const activeWorkStatuses = new Set(ACTIVE_WORK_STATUS_KEYS);
   const orderStatusIs = (order: any, status: string) =>
@@ -3703,6 +3931,79 @@ export function OrdersScreen() {
     openDeliveryModal(selectedDeliveryOrders);
   };
 
+  const getOperationalRowActionLabel = (order: any, groupKey: string) => {
+    if (groupKey === "falta_imprimir") return "Imprimir comanda";
+    if (groupKey === "cancelamentos") return "Analisar";
+    if (groupKey === "entregues_aguardando_pagamento") {
+      return "Registrar pagamento";
+    }
+    if (groupKey === "nao_entregues") return "Resolver entrega";
+    if (groupKey !== "andamento") return "";
+
+    const status = getBackendStatus(order?.status || "");
+    if (status === "pendente") return "Confirmar pedido";
+    if (status === "confirmado") return "Iniciar separação";
+    if (status === "em_separacao") return "Marcar como pronto";
+    if (status === "pronto") {
+      if (getOrderType(order) === "entrega") {
+        return assignedOrderIds.has(order.id)
+          ? "Ver detalhes"
+          : "Adicionar à entrega";
+      }
+      if (getOrderType(order) === "retirada") return "Confirmar retirada";
+      if (getOrderType(order) === "salao") return "Levar para a mesa";
+    }
+
+    return "Ver detalhes";
+  };
+
+  const handleOperationalRowAction = async (
+    order: any,
+    groupKey: string,
+    event: MouseEvent<HTMLButtonElement>,
+  ) => {
+    event.stopPropagation();
+
+    if (groupKey === "falta_imprimir") {
+      handlePrintComanda(order);
+      return;
+    }
+    if (groupKey === "cancelamentos") {
+      openCancellationReview(order);
+      return;
+    }
+    if (groupKey === "entregues_aguardando_pagamento") {
+      await confirmOrderPaymentFromList(order);
+      return;
+    }
+    if (groupKey === "nao_entregues") {
+      handleSelectOrder(order);
+      return;
+    }
+    if (groupKey !== "andamento") return;
+
+    const status = getBackendStatus(order?.status || "");
+    const orderType = getOrderType(order);
+    if (status === "pronto" && orderType === "entrega") {
+      if (assignedOrderIds.has(order.id)) {
+        handleSelectOrder(order);
+      } else {
+        openDeliveryModal([order]);
+      }
+      return;
+    }
+    if (status === "pronto" && orderType === "salao") {
+      await takeSalaoOrderToTable(order, event);
+      return;
+    }
+    if (["pendente", "confirmado", "em_separacao", "pronto"].includes(status)) {
+      await advanceStatus(order.id, order.status);
+      return;
+    }
+
+    handleSelectOrder(order);
+  };
+
   const fetchOpenRoutes = async (driverId: string) => {
     if (!driverId) {
       setOpenRoutes([]);
@@ -3914,7 +4215,18 @@ export function OrdersScreen() {
                         />
                       </>
                     )}
-                    <span className="relative z-10">{tab.label}</span>
+                    <span className="relative z-10 flex flex-col items-center leading-tight">
+                      <span>{tab.label}</span>
+                      {(type === "entrega" || type === "retirada") && (
+                        <span
+                          className={`mt-1 text-[10px] font-medium ${
+                            active ? "opacity-80" : "text-gray-400"
+                          }`}
+                        >
+                          {inProgressOrdersCount[type]} em andamento
+                        </span>
+                      )}
+                    </span>
                     {count > 0 && (
                       <span
                         className="relative z-10 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white"
@@ -4104,7 +4416,33 @@ export function OrdersScreen() {
                   />
                 </div>
 
-                <div>
+                {viewMode === "lista" && (
+                  <button
+                    type="button"
+                    onClick={() => setAdvancedFiltersOpen((open) => !open)}
+                    className="flex h-10 items-center justify-between self-end rounded-lg border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900"
+                    aria-expanded={advancedFiltersOpen}
+                    aria-controls="pedidos-filtros-avancados"
+                  >
+                    <span className="flex items-center gap-2">
+                      <SlidersHorizontal className="h-4 w-4" />
+                      Filtros avançados
+                      {statusFilter !== "Todos" && (
+                        <span
+                          className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white"
+                          style={{ backgroundColor: primaryColor }}
+                        >
+                          1
+                        </span>
+                      )}
+                    </span>
+                    <ChevronDown
+                      className={`h-4 w-4 transition-transform ${advancedFiltersOpen ? "rotate-180" : ""}`}
+                    />
+                  </button>
+                )}
+
+                {(viewMode !== "lista" || advancedFiltersOpen) && <div id="pedidos-filtros-avancados">
                   <label className="block text-[11px] font-semibold uppercase text-gray-400 mb-1">
                     Status
                   </label>
@@ -4119,7 +4457,7 @@ export function OrdersScreen() {
                       </option>
                     ))}
                   </select>
-                </div>
+                </div>}
 
                 {viewMode === "arquivados" && (
                   <div>
@@ -4529,9 +4867,15 @@ export function OrdersScreen() {
                     );
                     const assignedDelivery = deliveryByOrderId.get(order.id);
                     const failureReason = getDeliveryFailureReason(order);
-                    const canTakeToTable = canTakeSalaoOrderToTable(order);
-                    const takingToTable = updatingStatusOrderId === order.id;
                     const dailyTicketNumber = getDailyTicketNumber(order);
+                    const operationalActionLabel = getOperationalRowActionLabel(
+                      order,
+                      activeListGroup.key,
+                    );
+                    const operationalActionBusy =
+                      updatingStatusOrderId === order.id ||
+                      confirmingPaymentOrderId === order.id ||
+                      resolvingCancellationOrderId === order.id;
                     const rowBgClass = isSelectedForDelivery
                       ? ""
                       : orderIndex % 2 === 0
@@ -4605,30 +4949,30 @@ export function OrdersScreen() {
                             )}
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
-                                {dailyTicketNumber && (
+                                {dailyTicketNumber ? (
                                   <span className="rounded-md border border-slate-300 bg-white px-2 py-0.5 font-mono text-sm font-black text-slate-900">
                                     Comanda {dailyTicketNumber}
                                   </span>
-                                )}
-                                <span className="text-sm font-semibold text-gray-800">
-                                  {order.numero_pedido || order.id}
-                                </span>
-                                <span
-                                  className="px-2 py-0.5 rounded-full text-[11px] font-medium"
-                                  style={{
-                                    backgroundColor: sc.bg,
-                                    color: sc.text,
-                                  }}
-                                >
-                                  {statusDisplay}
-                                </span>
-                                <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
-                                  {getOrderTypeLabel(order)}
-                                </span>
-                                {viewMode === "arquivados" && (
-                                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                                    Arquivado
+                                ) : (
+                                  <span className="text-sm font-semibold text-gray-800">
+                                    Pedido {order.numero_pedido || order.id}
                                   </span>
+                                )}
+                                {viewMode === "arquivados" && (
+                                  <>
+                                    <span
+                                      className="px-2 py-0.5 rounded-full text-[11px] font-medium"
+                                      style={{
+                                        backgroundColor: sc.bg,
+                                        color: sc.text,
+                                      }}
+                                    >
+                                      {statusDisplay}
+                                    </span>
+                                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
+                                      {getOrderTypeLabel(order)}
+                                    </span>
+                                  </>
                                 )}
                                 {orderPaymentIsPending && (
                                   <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
@@ -4673,6 +5017,8 @@ export function OrdersScreen() {
                               <OrderCustomerSummary
                                 order={order}
                                 payment={orderPayment}
+                                nowMs={currentTimeMs}
+                                averageDeliveryMinutes={averageDeliveryTimeMinutes}
                                 timestamp={
                                   viewMode === "arquivados"
                                     ? getOrderCreatedTimestamp(order)
@@ -4703,16 +5049,48 @@ export function OrdersScreen() {
                                 .toFixed(2)
                                 .replace(".", ",")}
                             </div>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleSelectOrder(order);
-                              }}
-                              className="inline-flex min-h-11 items-center gap-1 rounded-lg border px-3 text-xs font-semibold hover:bg-gray-50 sm:ml-auto sm:mt-1 sm:min-h-0 sm:border-0 sm:px-0 sm:font-normal sm:hover:underline"
-                              style={{ color: PRIMARY }}
-                            >
-                              <Eye className="w-3 h-3" /> Detalhes
-                            </button>
+                            {operationalActionLabel && viewMode !== "arquivados" && (
+                              <button
+                                type="button"
+                                onClick={(event) =>
+                                  void handleOperationalRowAction(
+                                    order,
+                                    activeListGroup.key,
+                                    event,
+                                  )
+                                }
+                                disabled={operationalActionBusy}
+                                className="mt-2 inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-70 sm:ml-auto sm:min-h-0"
+                                style={{ backgroundColor: primaryColor }}
+                              >
+                                {operationalActionBusy ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : activeListGroup.key === "falta_imprimir" ? (
+                                  <Printer className="h-3.5 w-3.5" />
+                                ) : activeListGroup.key === "cancelamentos" ? (
+                                  <AlertTriangle className="h-3.5 w-3.5" />
+                                ) : activeListGroup.key === "entregues_aguardando_pagamento" ? (
+                                  <CreditCard className="h-3.5 w-3.5" />
+                                ) : activeListGroup.key === "nao_entregues" ? (
+                                  <RotateCcw className="h-3.5 w-3.5" />
+                                ) : (
+                                  <CheckCircle2 className="h-3.5 w-3.5" />
+                                )}
+                                {operationalActionLabel}
+                              </button>
+                            )}
+                            {operationalActionLabel !== "Ver detalhes" && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSelectOrder(order);
+                                }}
+                                className="inline-flex min-h-11 items-center gap-1 rounded-lg border px-3 text-xs font-semibold hover:bg-gray-50 sm:ml-auto sm:mt-1 sm:min-h-0 sm:border-0 sm:px-0 sm:font-normal sm:hover:underline"
+                                style={{ color: PRIMARY }}
+                              >
+                                <Eye className="w-3 h-3" /> Detalhes
+                              </button>
+                            )}
                             {viewMode !== "arquivados" &&
                               canQuickArchiveOrder(order) && (
                                 <button
@@ -4732,40 +5110,6 @@ export function OrdersScreen() {
                                   Arquivar
                                 </button>
                               )}
-                            {canForceFinalizeOrder(order) && (
-                              <button
-                                type="button"
-                                onClick={(event) =>
-                                  openForceFinalizeConfirm(order, event)
-                                }
-                                disabled={forceFinalizingOrderId === order.id}
-                                className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-red-100 px-3 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:cursor-wait disabled:opacity-70 sm:ml-auto sm:mt-1 sm:min-h-0 sm:border-0 sm:px-0 sm:hover:underline"
-                              >
-                                {forceFinalizingOrderId === order.id ? (
-                                  <Loader2 className="h-3 w-3 animate-spin" />
-                                ) : (
-                                  <AlertTriangle className="h-3 w-3" />
-                                )}
-                                Pular etapas
-                              </button>
-                            )}
-                            {canTakeToTable && (
-                              <button
-                                type="button"
-                                onClick={(event) =>
-                                  void takeSalaoOrderToTable(order, event)
-                                }
-                                disabled={takingToTable}
-                                className="inline-flex min-h-11 items-center justify-center gap-1 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:cursor-wait disabled:opacity-70 sm:ml-auto sm:mt-2 sm:min-h-0 sm:px-2.5"
-                              >
-                                {takingToTable ? (
-                                  <Loader2 className="h-3 w-3 animate-spin" />
-                                ) : (
-                                  <CheckCircle2 className="h-3 w-3" />
-                                )}
-                                Levar pra mesa
-                              </button>
-                            )}
                           </div>
                         </div>
                       </div>
@@ -5096,6 +5440,8 @@ export function OrdersScreen() {
                               <OrderCustomerSummary
                                 order={order}
                                 payment={orderPayment}
+                                nowMs={currentTimeMs}
+                                averageDeliveryMinutes={averageDeliveryTimeMinutes}
                                 timestamp={
                                   order.realizado_em ||
                                   order.criado_em ||
@@ -5181,23 +5527,6 @@ export function OrdersScreen() {
                                     <Archive className="h-3 w-3" />
                                   )}
                                   Arquivar
-                                </button>
-                              )}
-                              {canForceFinalizeOrder(order) && (
-                                <button
-                                  type="button"
-                                  onClick={(event) =>
-                                    openForceFinalizeConfirm(order, event)
-                                  }
-                                  disabled={forceFinalizingOrderId === order.id}
-                                  className="mt-1 ml-auto flex items-center gap-1 text-[11px] font-semibold text-red-600 hover:underline disabled:cursor-wait disabled:opacity-70"
-                                >
-                                  {forceFinalizingOrderId === order.id ? (
-                                    <Loader2 className="h-3 w-3 animate-spin" />
-                                  ) : (
-                                    <AlertTriangle className="h-3 w-3" />
-                                  )}
-                                  Pular etapas
                                 </button>
                               )}
                             </div>
@@ -5491,7 +5820,7 @@ export function OrdersScreen() {
 
       {/* ── DETAIL PANEL ───────────────────────────────── */}
       {selected && (
-        <div className="min-w-0 flex-1 overflow-y-auto bg-white lg:border-l lg:border-gray-200">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white lg:border-l lg:border-gray-200">
           {/* Header */}
           <div className="sticky top-0 z-10 flex items-start gap-2 border-b border-gray-100 bg-white px-3 py-2.5 sm:items-center sm:gap-3 sm:px-5 sm:py-3.5">
             <button
@@ -5568,7 +5897,7 @@ export function OrdersScreen() {
             </button>
           </div>
 
-          <div className="space-y-3 p-3 sm:space-y-5 sm:p-5">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3 sm:space-y-5 sm:p-5">
             {/* Timeline */}
             {!selectedIsSalao && <div className="rounded-xl bg-gray-50 p-3 sm:p-4">
               <div className="flex items-start gap-1 overflow-x-auto pb-1">
@@ -6233,55 +6562,6 @@ export function OrdersScreen() {
             {/* Actions */}
             <div className="space-y-2">
               {!selectedIsSalao && <>
-              {getStatusLabel(selected.status) !== "Entregue" &&
-                getStatusLabel(selected.status) !== "Cancelado" &&
-                getStatusLabel(selected.status) !== "Não entregue" &&
-                selectedCanProceed &&
-                !selectedPickupNeedsCashConfirmation &&
-                !selectedCancellationPending &&
-                !adminCannotDispatchDelivery &&
-                !adminCannotConfirmDelivery && (
-                  <button
-                    onClick={() =>
-                      advanceStatus(
-                        selected.id,
-                        getStatusLabel(selected.status),
-                      )
-                    }
-                    disabled={selectedOrderUpdating}
-                    aria-busy={selectedStatusUpdating}
-                    className="w-full py-2.5 rounded-lg text-white text-sm font-medium transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-70 flex items-center justify-center gap-2"
-                    style={{ backgroundColor: PRIMARY }}
-                  >
-                    {selectedStatusUpdating ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Atualizando...
-                      </>
-                    ) : (
-                      <>
-                        {getStatusLabel(selected.status) === "Recebido" &&
-                          "Confirmar Pedido"}
-                        {getStatusLabel(selected.status) === "Confirmado" &&
-                          "Iniciar Separação"}
-                        {getStatusLabel(selected.status) === "Em Separação" &&
-                          "Marcar como Pronto"}
-                        {getStatusLabel(selected.status) === "Pronto" &&
-                          ((
-                            selected.tipo_pedido ||
-                            selected.type ||
-                            ""
-                          ).toLowerCase() === "retirada"
-                            ? "Confirmar Retirada"
-                            : selectedIsSalao
-                              ? "Concluir pedido"
-                              : "")}
-                        {getStatusLabel(selected.status) ===
-                          "Saiu para Entrega" && "Confirmar Entrega"}
-                      </>
-                    )}
-                  </button>
-                )}
               {!selectedCanProceed &&
                 getStatusLabel(selected.status) !== "Entregue" &&
                 getStatusLabel(selected.status) !== "Cancelado" &&
@@ -6309,28 +6589,6 @@ export function OrdersScreen() {
                 </div>
               )}
               </>}
-              {selectedCanTakeSalaoToTable && (
-                <button
-                  onClick={(event) =>
-                    void takeSalaoOrderToTable(selected, event)
-                  }
-                  disabled={selectedOrderUpdating}
-                  aria-busy={selectedStatusUpdating}
-                  className="w-full py-2.5 rounded-lg bg-green-600 text-white text-sm font-medium transition-colors hover:bg-green-700 disabled:cursor-wait disabled:opacity-70 flex items-center justify-center gap-2"
-                >
-                  {selectedStatusUpdating ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Atualizando...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 className="w-4 h-4" />
-                      Levar pra mesa
-                    </>
-                  )}
-                </button>
-              )}
               {selectedCanForceFinalize && (
                 <button
                   onClick={(event) =>
@@ -6429,6 +6687,48 @@ export function OrdersScreen() {
               </button>}
             </div>
           </div>
+          {(selectedStickyActionLabel || selectedStickyWaitingLabel) && (
+            <div className="z-20 shrink-0 border-t border-gray-200 bg-white/95 p-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur sm:px-5 sm:py-4">
+              {selectedStickyActionLabel ? (
+                <div className="flex items-center gap-3">
+                  <div className="hidden min-w-0 flex-1 sm:block">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+                      Próxima ação
+                    </div>
+                    <div className="truncate text-sm font-medium text-gray-700">
+                      {selectedStickyActionLabel}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(event) => void handleSelectedStickyAction(event)}
+                    disabled={selectedOrderUpdating}
+                    aria-busy={selectedStatusUpdating || selectedCancellationResolving}
+                    className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-70 sm:w-auto sm:min-w-56"
+                    style={{
+                      backgroundColor: selectedCancellationPending
+                        ? "#b91c1c"
+                        : primaryColor,
+                    }}
+                  >
+                    {selectedOrderUpdating ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : selectedCancellationPending ? (
+                      <AlertTriangle className="h-4 w-4" />
+                    ) : (
+                      <CheckCircle2 className="h-4 w-4" />
+                    )}
+                    {selectedOrderUpdating ? "Atualizando..." : selectedStickyActionLabel}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-800">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  {selectedStickyWaitingLabel}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
       {cancellationReviewOrder && (
