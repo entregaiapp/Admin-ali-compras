@@ -36,6 +36,10 @@ import {
   createSalaoAdminRealtime,
   salaoTenantTopic,
 } from "@/features/salao/services/salaoRealtime";
+import {
+  formatSalaoQuantity,
+  formatSalaoQuantityInput,
+} from "@/features/salao/utils/salaoQuantity";
 import { productsService } from "@/features/products";
 import { showSystemNotice } from "@/shared/components/SystemToast";
 import api from "@/shared/lib/api";
@@ -425,7 +429,7 @@ const salaoPrintSelectionLine = (selection: any) => {
   const quantity = Number(selection?.quantidade || 1);
   const fraction = Number(selection?.fracao || 0);
   const suffix = [
-    quantity > 1 ? `x${quantity}` : "",
+    quantity > 1 ? `x${formatSalaoQuantity(quantity)}` : "",
     fraction > 0 ? `${Math.round(fraction * 100)}%` : "",
   ].filter(Boolean).join(", ");
   return `${selection?.nome_grupo || "Opção"}: ${selection?.nome_opcao || "Opção"}${suffix ? ` (${suffix})` : ""}`;
@@ -1263,7 +1267,7 @@ export function SalaoPage() {
     if (!hasConfiguration) {
       setEditingSimpleItem({
         item,
-        quantity: String(item.quantidade || 1).replace(".", ","),
+        quantity: formatSalaoQuantityInput(item.quantidade || 1),
         notes: String(item.observacoes || ""),
       });
       return;
@@ -1796,7 +1800,7 @@ export function SalaoPage() {
         ${group.items
           .map(
             (item) => `
-          <div class="row product-row"><span>${escapePrintHtml(item.quantidade)}x ${escapePrintHtml(salaoPrintItemName(item))}</span><span>R$ ${formatMoney(item.preco_total)}</span></div>
+          <div class="row product-row"><span>${escapePrintHtml(formatSalaoQuantity(item.quantidade))}x ${escapePrintHtml(salaoPrintItemName(item))}</span><span>R$ ${formatMoney(item.preco_total)}</span></div>
           ${arrayOrEmpty<any>(item.selecoes)
             .map(
               (selection) =>
@@ -1826,7 +1830,7 @@ export function SalaoPage() {
         .map(
           (item) => `
           <section class="product-block">
-            <div class="product-row"><span>${escapePrintHtml(item.quantidade)}x ${escapePrintHtml(salaoPrintItemName(item))}</span></div>
+            <div class="product-row"><span>${escapePrintHtml(formatSalaoQuantity(item.quantidade))}x ${escapePrintHtml(salaoPrintItemName(item))}</span></div>
             ${arrayOrEmpty<any>(item.selecoes)
               .map(
                 (selection) =>
@@ -3132,7 +3136,7 @@ export function SalaoPage() {
                                   </div>
                                   <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-gray-500 sm:mt-1 sm:gap-1.5 sm:text-xs">
                                     <span className="min-w-0 break-words [overflow-wrap:anywhere]">
-                                      {item.quantidade} x R${" "}
+                                      {formatSalaoQuantity(item.quantidade)} x R${" "}
                                       {formatMoney(item.preco_unitario)}
                                     </span>
                                     <span
@@ -3166,7 +3170,7 @@ export function SalaoPage() {
                                                   {selection.nome_grupo || "Opção"}:
                                                 </span>{" "}
                                                 {selection.nome_opcao || "Opção"}
-                                                {quantity > 1 ? ` x${quantity}` : ""}
+                                                {quantity > 1 ? ` x${formatSalaoQuantity(quantity)}` : ""}
                                                 {selection.fracao ? ` (${selection.fracao})` : ""}
                                               </span>
                                               {extra > 0 && (
@@ -3542,7 +3546,7 @@ export function SalaoPage() {
                             <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">
                               <span className="font-semibold">{selection.nome_grupo || "Opção"}:</span>{" "}
                               {selection.nome_opcao || "Opção"}
-                              {quantity > 1 ? ` x${quantity}` : ""}
+                              {quantity > 1 ? ` x${formatSalaoQuantity(quantity)}` : ""}
                               {selection.fracao ? ` (${selection.fracao})` : ""}
                             </span>
                             {extra > 0 && (
@@ -4046,7 +4050,7 @@ export function SalaoPage() {
                 </p>
                 <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
                   <div className="font-bold text-slate-900">
-                    {deleteItemTarget.quantidade}x {deleteItemTarget.nome_produto}
+                    {formatSalaoQuantity(deleteItemTarget.quantidade)}x {deleteItemTarget.nome_produto}
                     {deleteItemTarget.nome_variacao ? ` - ${deleteItemTarget.nome_variacao}` : ""}
                   </div>
                   <div className="mt-1 font-semibold text-slate-700">
