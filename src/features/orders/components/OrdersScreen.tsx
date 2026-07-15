@@ -759,8 +759,13 @@ export function OrdersScreen() {
     hasPendingPickupPrint,
   );
 
+  const globalSearchTerm = search.trim();
+  const normalizedGlobalSearchTerm = globalSearchTerm.toLowerCase();
+  const isGlobalSearchActive = globalSearchTerm.length > 0;
   const isOperationalOrdersView =
-    viewMode === "lista" && (typeFilter === "Entrega" || typeFilter === "Retirada");
+    !isGlobalSearchActive &&
+    viewMode === "lista" &&
+    (typeFilter === "Entrega" || typeFilter === "Retirada");
   const operationalType = typeFilter === "Retirada" ? "retirada" : "entrega";
   const operationalFiltersKey = JSON.stringify([
     operationalType,
@@ -1144,10 +1149,10 @@ export function OrdersScreen() {
     arquivado: viewMode === "arquivados" ? "true" : "false",
     status: frontendToBackendStatus[statusFilter],
     tipo_pedido:
-      getActiveOrderTypeFilter() === "Todos"
+      isGlobalSearchActive || getActiveOrderTypeFilter() === "Todos"
         ? undefined
         : String(getActiveOrderTypeFilter()).toLowerCase(),
-    busca: search || undefined,
+    busca: globalSearchTerm || undefined,
     realizado_em_inicial:
       viewMode === "arquivados" ? archivedStartDate || undefined : undefined,
     realizado_em_final:
@@ -1248,7 +1253,7 @@ export function OrdersScreen() {
       );
       setPage(pageNum);
       ordersPaginationInvalidatedRef.current = false;
-      if (reset && viewMode !== "arquivados") {
+      if (reset && viewMode !== "arquivados" && !isGlobalSearchActive) {
         const activeType = getOrderCounterKey();
         setLastOrdersLoadedAt((current) => ({
           ...current,
@@ -2988,9 +2993,9 @@ export function OrdersScreen() {
     const orderId = (o.numero_pedido || o.id || "").toLowerCase();
     const dailyTicket = getDailyTicketNumber(o).toLowerCase();
     const matchSearch =
-      customerName.includes(search.toLowerCase()) ||
-      dailyTicket.includes(search.toLowerCase()) ||
-      orderId.includes(search.toLowerCase());
+      customerName.includes(normalizedGlobalSearchTerm) ||
+      dailyTicket.includes(normalizedGlobalSearchTerm) ||
+      orderId.includes(normalizedGlobalSearchTerm);
 
     // No longer filtering by status/type in memory as we do it in API
     return matchSearch;
@@ -3903,13 +3908,19 @@ export function OrdersScreen() {
               >
                 <div className="relative">
                   <label className="block text-[11px] font-semibold uppercase text-gray-400 mb-1">
-                    Busca
+                    Busca global
                   </label>
                   <Search className="absolute left-3 bottom-2.5 w-4 h-4 text-gray-400" />
                   <input
                     value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Comanda, pedido ou cliente"
+                    onChange={(e) => {
+                      const nextSearch = e.target.value;
+                      setSearch(nextSearch);
+                      if (nextSearch.trim() && viewMode === "bairros") {
+                        setViewMode("lista");
+                      }
+                    }}
+                    placeholder="Comanda, pedido ou cliente em todos os tipos"
                     className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1"
                   />
                 </div>
@@ -4077,6 +4088,7 @@ export function OrdersScreen() {
               <span className="text-xs text-gray-500">
                 {filtered.length} pedido{filtered.length !== 1 ? "s" : ""}{" "}
                 encontrado{filtered.length !== 1 ? "s" : ""}
+                {isGlobalSearchActive ? " em todos os tipos" : ""}
               </span>
               {selectedDeliveryCount > 0 && (
                 <button
