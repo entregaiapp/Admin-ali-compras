@@ -34,6 +34,7 @@ import {
   Plus,
   Pencil,
   Trash2,
+  SlidersHorizontal,
 } from "lucide-react";
 import api from "@/shared/lib/api";
 import { formatBrasiliaDate } from "@/shared/lib/dateTime";
@@ -546,6 +547,7 @@ export function OrdersScreen() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [search, setSearch] = useState("");
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState("Todos");
   const [typeFilter, setTypeFilter] = useState<OrderTab>("Entrega");
   const [archivedTypeFilter, setArchivedTypeFilter] =
@@ -3699,8 +3701,13 @@ export function OrdersScreen() {
               </span>
             </div>
           ) : (
-            <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Tipos de pedido">
-              {availableOrderTabs.map((tab) => {
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <div
+                className="flex min-w-0 flex-1 gap-1 overflow-x-auto"
+                role="tablist"
+                aria-label="Tipos de pedido"
+              >
+                {availableOrderTabs.map((tab) => {
                 const active = typeFilter === tab.value;
                 const type = tab.value.toLowerCase() as OrderCounterKey;
                 const count = newOrdersCount[type];
@@ -3757,12 +3764,14 @@ export function OrdersScreen() {
                     )}
                   </button>
                 );
-              })}
-              <button
+                })}
+              </div>
+              <div className="flex shrink-0 items-center justify-end gap-2 border-t border-gray-100 py-2 sm:border-l sm:border-t-0 sm:py-0 sm:pl-3">
+                <button
                 type="button"
                 disabled={totalNewOrdersCount === 0}
                 onClick={handleNewOrdersButton}
-                className="relative ml-auto my-1.5 inline-flex h-9 w-9 flex-none items-center justify-center rounded-full text-white shadow-sm transition-all hover:opacity-90 disabled:cursor-default disabled:opacity-45"
+                className="relative ml-auto inline-flex h-11 w-11 flex-none items-center justify-center rounded-full text-white shadow-sm transition-all hover:opacity-90 disabled:cursor-default disabled:opacity-45 sm:my-1.5 sm:h-9 sm:w-9"
                 style={{ backgroundColor: primaryColor }}
                 title={totalNewOrdersCount > 0 ? `${totalNewOrdersCount} pedido${totalNewOrdersCount === 1 ? " novo" : "s novos"}` : "Nenhum pedido novo"}
                 aria-label={totalNewOrdersCount > 0 ? `Atualizar ${totalNewOrdersCount} pedidos novos` : "Nenhum pedido novo"}
@@ -3773,15 +3782,15 @@ export function OrdersScreen() {
                     {totalNewOrdersCount > 99 ? "99+" : totalNewOrdersCount}
                   </span>
                 )}
-              </button>
-              <button
+                </button>
+                <button
                 type="button"
                 onClick={() => {
                   const nextEnabled = !deliverySoundEnabled;
                   setDeliverySoundEnabled(nextEnabled);
                   if (nextEnabled) deliverySound.arm();
                 }}
-                className={`relative my-1.5 inline-flex h-9 w-9 flex-none items-center justify-center rounded-full border shadow-sm transition-all ${
+                className={`relative inline-flex h-11 w-11 flex-none items-center justify-center rounded-full border shadow-sm transition-all sm:my-1.5 sm:h-9 sm:w-9 ${
                   hasPendingDeliveryPrint && deliverySoundEnabled
                     ? "animate-pulse border-red-300 bg-red-600 text-white"
                     : deliverySoundEnabled
@@ -3801,15 +3810,15 @@ export function OrdersScreen() {
                 {hasPendingDeliveryPrint && (
                   <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-white bg-amber-400" />
                 )}
-              </button>
-              <button
+                </button>
+                <button
                 type="button"
                 onClick={() => {
                   const nextEnabled = !pickupSoundEnabled;
                   setPickupSoundEnabled(nextEnabled);
                   if (nextEnabled) pickupSound.arm();
                 }}
-                className={`relative my-1.5 inline-flex h-9 w-9 flex-none items-center justify-center rounded-full border shadow-sm transition-all ${
+                className={`relative inline-flex h-11 w-11 flex-none items-center justify-center rounded-full border shadow-sm transition-all sm:my-1.5 sm:h-9 sm:w-9 ${
                   hasPendingPickupPrint && pickupSoundEnabled
                     ? "animate-pulse border-red-300 bg-red-600 text-white"
                     : pickupSoundEnabled
@@ -3829,19 +3838,60 @@ export function OrdersScreen() {
                 {hasPendingPickupPrint && (
                   <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-white bg-amber-400" />
                 )}
-              </button>
+                </button>
+              </div>
             </div>
           )}
         </div>
         {/* Filters bar */}
-        <div className="bg-white border-b border-gray-200 px-4 py-3">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+        <div className="border-b border-gray-200 bg-white px-3 py-2.5 sm:px-4 sm:py-3">
+          <div className="flex items-center gap-2 md:hidden">
+            <button
+              type="button"
+              onClick={() => setMobileFiltersOpen((open) => !open)}
+              className="flex h-11 flex-1 items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-semibold text-gray-700"
+              aria-expanded={mobileFiltersOpen}
+              aria-controls="pedidos-filtros"
+            >
+              <span className="flex items-center gap-2">
+                <SlidersHorizontal className="h-4 w-4" />
+                Filtros e visualização
+                {activeFiltersCount > 0 && (
+                  <span
+                    className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white"
+                    style={{ backgroundColor: primaryColor }}
+                  >
+                    {activeFiltersCount}
+                  </span>
+                )}
+              </span>
+              <ChevronDown
+                className={`h-4 w-4 transition-transform ${mobileFiltersOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+            {canCreateManualOrder && (
+              <button
+                type="button"
+                onClick={() => setManualOrderOpen(true)}
+                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-white"
+                style={{ backgroundColor: primaryColor }}
+              >
+                <Plus className="h-4 w-4" />
+                Criar
+              </button>
+            )}
+          </div>
+
+          <div
+            id="pedidos-filtros"
+            className={`${mobileFiltersOpen ? "flex" : "hidden"} mt-3 flex-col gap-3 md:mt-0 md:flex xl:flex-row xl:items-end xl:justify-between`}
+          >
             <div className="flex min-w-0 flex-1 flex-col gap-3 lg:flex-row lg:items-end">
               {canCreateManualOrder && (
                 <button
                   type="button"
                   onClick={() => setManualOrderOpen(true)}
-                  className="h-10 shrink-0 rounded-lg px-3 py-2 text-sm font-semibold text-white"
+                  className="hidden h-10 shrink-0 rounded-lg px-3 py-2 text-sm font-semibold text-white md:block"
                   style={{ backgroundColor: primaryColor }}
                 >
                   + Criar pedido
@@ -3973,10 +4023,10 @@ export function OrdersScreen() {
               )}
             </div>
 
-            <div className="flex shrink-0 self-start rounded-lg bg-gray-100 p-0.5 gap-0.5 xl:self-end">
+            <div className="grid w-full shrink-0 grid-cols-2 gap-0.5 self-start rounded-lg bg-gray-100 p-0.5 sm:flex sm:w-auto xl:self-end">
               <button
                 onClick={() => changeViewMode("lista")}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
+                className="flex min-h-11 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all sm:min-h-10"
                 style={
                   viewMode === "lista"
                     ? { backgroundColor: PRIMARY, color: "white" }
@@ -3988,7 +4038,7 @@ export function OrdersScreen() {
               {typeFilter === "Entrega" && (
                 <button
                   onClick={() => changeViewMode("bairros")}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
+                  className="flex min-h-11 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all sm:min-h-10"
                   style={
                     viewMode === "bairros"
                       ? { backgroundColor: PRIMARY, color: "white" }
@@ -4000,7 +4050,7 @@ export function OrdersScreen() {
               )}
               <button
                 onClick={() => changeViewMode("arquivados")}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
+                className="flex min-h-11 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all sm:min-h-10"
                 style={
                   viewMode === "arquivados"
                     ? { backgroundColor: PRIMARY, color: "white" }
@@ -4242,7 +4292,7 @@ export function OrdersScreen() {
               </div>
             )}
 
-            <div className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto bg-slate-50/50 p-4 space-y-4">
+            <div className="min-w-0 flex-1 space-y-3 overflow-x-hidden overflow-y-auto bg-slate-50/50 p-2.5 sm:space-y-4 sm:p-4">
               {loading && orders.length === 0 && (
                 <div className="flex min-h-[320px] flex-col items-center justify-center text-gray-400">
                   <div
@@ -4309,7 +4359,7 @@ export function OrdersScreen() {
                         }}
                         role="button"
                         tabIndex={0}
-                        className={`px-4 py-3.5 transition-colors border-l-2 ${rowBgClass} cursor-pointer hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-inset ${isSelectedForDelivery ? "" : "border-transparent"}`}
+                        className={`cursor-pointer border-l-2 px-3 py-3.5 transition-colors sm:px-4 ${rowBgClass} hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-inset ${isSelectedForDelivery ? "" : "border-transparent"}`}
                         style={
                           isSelectedForDelivery
                             ? {
@@ -4326,7 +4376,7 @@ export function OrdersScreen() {
                               } as any)
                         }
                       >
-                        <div className="flex items-start justify-between gap-2">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-2">
                           <div className="flex items-start gap-3 flex-1 min-w-0">
                             {canSelectForDelivery && (
                               <button
@@ -4342,7 +4392,7 @@ export function OrdersScreen() {
                                   event.stopPropagation();
                                   toggleOrderSelection(order.id);
                                 }}
-                                className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border"
+                                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border sm:mt-0.5 sm:h-5 sm:w-5 sm:rounded-md"
                                 style={{
                                   borderColor: isSelectedForDelivery
                                     ? primaryColor
@@ -4435,7 +4485,7 @@ export function OrdersScreen() {
                                   {failureReason ? `: ${failureReason}` : ""}
                                 </div>
                               )}
-                              <div className="flex items-center gap-3 mt-1">
+                              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                                 <span className="text-xs text-gray-400 flex items-center gap-1">
                                   <Clock className="w-3 h-3" />
                                   {viewMode === "arquivados"
@@ -4471,8 +4521,8 @@ export function OrdersScreen() {
                               </div>
                             </div>
                           </div>
-                          <div className="text-right flex-shrink-0">
-                            <div className="text-sm font-semibold text-gray-800">
+                          <div className="flex w-full flex-wrap items-center gap-2 border-t border-gray-100 pt-3 text-left sm:block sm:w-auto sm:flex-shrink-0 sm:border-0 sm:pt-0 sm:text-right">
+                            <div className="mr-auto text-base font-bold text-gray-800 sm:mr-0 sm:text-sm sm:font-semibold">
                               R${" "}
                               {parseFloat(order.valor_total || order.total || 0)
                                 .toFixed(2)
@@ -4483,7 +4533,7 @@ export function OrdersScreen() {
                                 e.stopPropagation();
                                 handleSelectOrder(order);
                               }}
-                              className="mt-1 text-xs flex items-center gap-1 ml-auto hover:underline"
+                              className="inline-flex min-h-11 items-center gap-1 rounded-lg border px-3 text-xs font-semibold hover:bg-gray-50 sm:ml-auto sm:mt-1 sm:min-h-0 sm:border-0 sm:px-0 sm:font-normal sm:hover:underline"
                               style={{ color: PRIMARY }}
                             >
                               <Eye className="w-3 h-3" /> Detalhes
@@ -4497,7 +4547,7 @@ export function OrdersScreen() {
                                     void toggleArchivedOrder(order);
                                   }}
                                   disabled={archivingOrderId === order.id}
-                                  className="mt-1 text-xs flex items-center gap-1 ml-auto font-semibold text-gray-600 hover:text-gray-900 hover:underline disabled:cursor-wait disabled:opacity-70"
+                                  className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-gray-200 px-3 text-xs font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 disabled:cursor-wait disabled:opacity-70 sm:ml-auto sm:mt-1 sm:min-h-0 sm:border-0 sm:px-0 sm:hover:underline"
                                 >
                                   {archivingOrderId === order.id ? (
                                     <Loader2 className="h-3 w-3 animate-spin" />
@@ -4514,7 +4564,7 @@ export function OrdersScreen() {
                                   openForceFinalizeConfirm(order, event)
                                 }
                                 disabled={forceFinalizingOrderId === order.id}
-                                className="mt-1 text-xs flex items-center gap-1 ml-auto font-semibold text-red-600 hover:underline disabled:cursor-wait disabled:opacity-70"
+                                className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-red-100 px-3 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:cursor-wait disabled:opacity-70 sm:ml-auto sm:mt-1 sm:min-h-0 sm:border-0 sm:px-0 sm:hover:underline"
                               >
                                 {forceFinalizingOrderId === order.id ? (
                                   <Loader2 className="h-3 w-3 animate-spin" />
@@ -4531,7 +4581,7 @@ export function OrdersScreen() {
                                   void takeSalaoOrderToTable(order, event)
                                 }
                                 disabled={takingToTable}
-                                className="mt-2 ml-auto inline-flex items-center justify-center gap-1 rounded-lg bg-green-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:cursor-wait disabled:opacity-70"
+                                className="inline-flex min-h-11 items-center justify-center gap-1 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700 disabled:cursor-wait disabled:opacity-70 sm:ml-auto sm:mt-2 sm:min-h-0 sm:px-2.5"
                               >
                                 {takingToTable ? (
                                   <Loader2 className="h-3 w-3 animate-spin" />
@@ -5262,16 +5312,17 @@ export function OrdersScreen() {
 
       {/* ── DETAIL PANEL ───────────────────────────────── */}
       {selected && (
-        <div className="flex-1 lg:border-l border-gray-200 overflow-y-auto bg-white">
+        <div className="min-w-0 flex-1 overflow-y-auto bg-white lg:border-l lg:border-gray-200">
           {/* Header */}
-          <div className="sticky top-0 bg-white border-b border-gray-100 px-5 py-3.5 flex items-center gap-3 z-10">
+          <div className="sticky top-0 z-10 flex items-start gap-2 border-b border-gray-100 bg-white px-3 py-2.5 sm:items-center sm:gap-3 sm:px-5 sm:py-3.5">
             <button
               onClick={() => setSelected(null)}
-              className="lg:hidden text-gray-500 hover:text-gray-700"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 lg:hidden"
+              aria-label="Voltar para a lista de pedidos"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <div className="flex-1">
+            <div className="min-w-0 flex-1 pt-0.5 sm:pt-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-gray-900 font-semibold">
                   Pedido {selected.numero_pedido || selected.id}
@@ -5316,7 +5367,7 @@ export function OrdersScreen() {
             </div>
             {!selectedIsSalao && <button
               onClick={() => handlePrintComanda(selectedForPrint)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-sm text-gray-600 transition-colors hover:bg-gray-50 sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3 sm:py-1.5"
               title="Imprimir comanda"
             >
               <Printer className="w-4 h-4" />
@@ -5324,7 +5375,7 @@ export function OrdersScreen() {
             </button>}
             {!selectedIsSalao && <button
               onClick={() => openItemsChecklist(selected)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-sm text-gray-600 transition-colors hover:bg-gray-50 sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3 sm:py-1.5"
               title="Ver produtos"
             >
               <Package className="w-4 h-4" />
@@ -5338,9 +5389,9 @@ export function OrdersScreen() {
             </button>
           </div>
 
-          <div className="p-5 space-y-5">
+          <div className="space-y-3 p-3 sm:space-y-5 sm:p-5">
             {/* Timeline */}
-            {!selectedIsSalao && <div className="bg-gray-50 rounded-xl p-4">
+            {!selectedIsSalao && <div className="rounded-xl bg-gray-50 p-3 sm:p-4">
               <div className="flex items-start gap-1 overflow-x-auto pb-1">
                 {(() => {
                   const baseFlow =
@@ -5585,7 +5636,7 @@ export function OrdersScreen() {
                               type="button"
                               onClick={() => setAdminEditItemTarget({ order: selected, item })}
                               disabled={!selectedCanAdminAddItems || selectedOrderUpdating || !item.id || !item.produto_loja_id || adminRemovingItemId === item.id}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-blue-100 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-blue-100 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50 sm:h-8 sm:w-8"
                               title="Editar produto"
                               aria-label={`Editar ${getOrderItemName(item)}`}
                             >
@@ -5595,7 +5646,7 @@ export function OrdersScreen() {
                               type="button"
                               onClick={() => void removeOrderItemFromSelectedOrder(item)}
                               disabled={!selectedCanAdminAddItems || selectedOrderUpdating || !item.id || adminRemovingItemId === item.id}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50 sm:h-8 sm:w-8"
                               title="Excluir produto"
                               aria-label={`Excluir ${getOrderItemName(item)}`}
                             >
