@@ -4124,13 +4124,13 @@ export function OrdersScreen() {
         {(viewMode === "lista" || viewMode === "arquivados") && (
           <>
             {listGroups.length > 0 && viewMode === "arquivados" && (
-              <div className="min-w-0 max-w-full overflow-hidden border-b border-gray-200 bg-white px-4 py-3">
-                <div className="flex min-w-0 max-w-full items-stretch gap-2">
+              <div className="min-w-0 max-w-full overflow-hidden border-b border-gray-200 bg-white px-2 py-2 sm:px-3">
+                <div className="flex min-w-0 max-w-full items-center gap-1.5">
                   <button
                     type="button"
                     onClick={() => handleArchivedDayStep(-1)}
                     disabled={!canGoToPreviousArchivedDay}
-                    className="flex w-10 flex-none items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-35"
+                    className="flex h-10 w-9 flex-none items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-35"
                     aria-label="Retroceder dia arquivado"
                     title="Retroceder"
                   >
@@ -4138,7 +4138,7 @@ export function OrdersScreen() {
                   </button>
                   <div
                     ref={archivedDaysCarouselRef}
-                    className="flex min-w-0 max-w-full flex-1 gap-2 overflow-x-auto overscroll-x-contain scroll-smooth pb-1"
+                    className="flex min-w-0 max-w-full flex-1 gap-1.5 overflow-x-auto overscroll-x-contain scroll-smooth pb-0.5"
                     role="tablist"
                     aria-label="Dias arquivados"
                   >
@@ -4155,7 +4155,7 @@ export function OrdersScreen() {
                           title={group.description}
                           onClick={() => void fetchArchivedDayOrders(group.key)}
                           disabled={loadingDay}
-                          className={`min-h-24 w-[210px] flex-none rounded-lg border p-3 text-left transition-all sm:w-[230px] ${
+                          className={`w-[180px] flex-none rounded-lg border p-2 text-left transition-all ${
                             active
                               ? "bg-white shadow-sm"
                               : "bg-gray-50 hover:bg-white hover:shadow-sm"
@@ -4171,32 +4171,32 @@ export function OrdersScreen() {
                         >
                           <div className="flex items-center justify-between gap-2">
                             <span
-                              className="text-base font-black"
+                              className="text-sm font-black"
                               style={{ color: active ? primaryColor : "#111827" }}
                             >
                               {group.title}
                             </span>
                             <span className="flex items-center gap-1.5">
                               <CalendarDays
-                                className="h-4 w-4"
+                                className="h-3.5 w-3.5"
                                 style={{ color: active ? primaryColor : "#94a3b8" }}
                               />
                               {loadingDay && (
                                 <Loader2
-                                  className="h-4 w-4 animate-spin"
+                                  className="h-3.5 w-3.5 animate-spin"
                                   style={{ color: primaryColor }}
                                 />
                               )}
                             </span>
                           </div>
-                          <div className="mt-1 line-clamp-2 text-xs capitalize text-gray-500">
+                          <div className="mt-0.5 truncate text-[11px] capitalize leading-4 text-gray-500">
                             {group.description}
                           </div>
-                          <div className="mt-3 flex items-center justify-between gap-2">
-                            <span className="rounded-md bg-gray-100 px-2 py-1 text-[11px] font-semibold text-gray-600">
+                          <div className="mt-1 flex items-center justify-between gap-2">
+                            <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-600">
                               {group.count} pedido{group.count !== 1 ? "s" : ""}
                             </span>
-                            <span className="text-xs font-bold text-gray-800">
+                            <span className="text-[11px] font-bold text-gray-800">
                               R$ {group.total.toFixed(2).replace(".", ",")}
                             </span>
                           </div>
@@ -4208,7 +4208,7 @@ export function OrdersScreen() {
                     type="button"
                     onClick={() => handleArchivedDayStep(1)}
                     disabled={!canGoToNextArchivedDay}
-                    className="flex w-10 flex-none items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-35"
+                    className="flex h-10 w-9 flex-none items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-35"
                     aria-label="Avançar dia arquivado"
                     title="Avançar"
                   >
