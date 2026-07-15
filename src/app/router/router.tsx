@@ -25,6 +25,7 @@ import { EntregadoresPage } from "@/pages/Entregadores/EntregadoresPage";
 import { MyDeliveriesPage } from "@/pages/Driver/MyDeliveriesPage";
 import { RouteDetailPage } from "@/pages/Driver/RouteDetailPage";
 import { SalaoPage } from "@/pages/Salao/SalaoPage";
+import { AuditLogsPage } from "@/pages/AuditLogs/AuditLogsPage";
 
 export const router = createBrowserRouter([
   {
@@ -73,6 +74,7 @@ export const router = createBrowserRouter([
           { path: "fiados", Component: FiadosPage },
           { path: "reports", Component: ReportsPage },
           { path: "users", Component: UsersPage },
+          { path: "activities", Component: AuditLogsPage },
           { path: "permissions", Component: SystemPermissionsPage },
           { path: "settings", Component: SettingsPage },
           { path: "configuracoes", Component: SettingsPage },

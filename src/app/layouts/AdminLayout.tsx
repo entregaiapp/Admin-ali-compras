@@ -3,7 +3,7 @@ import { Outlet, useNavigate, useLocation, Navigate } from 'react-router';
 import {
   LayoutDashboard, ShoppingCart, Package,  Grid3X3, Tag, Image, Users, Truck, User,
   Ticket, CreditCard, BarChart3, UserCog, Settings, Bell, Menu, X, LogOut,
-  ChevronRight, Key, Bike, UtensilsCrossed, Wallet, PanelLeftClose, PanelLeftOpen
+  ChevronRight, Key, Bike, UtensilsCrossed, Wallet, PanelLeftClose, PanelLeftOpen, ClipboardList
 } from 'lucide-react';
 import api from '@/shared/lib/api';
 import logo from '@/assets/logo.png';
@@ -31,6 +31,7 @@ const navItems = [
   { label: 'Fiados', icon: Wallet, path: '/fiados', slug: 'fiados' },
   { label: 'Relatórios', icon: BarChart3, path: '/reports', slug: 'financeiro' },
   { label: 'Usuários', icon: UserCog, path: '/users', slug: 'usuarios' },
+  { label: 'Atividades', icon: ClipboardList, path: '/activities', slug: 'auditoria_operacional' },
   { label: 'Configurações', icon: Settings, path: '/settings', slug: 'configuracoes' },
 ];
 
@@ -41,7 +42,7 @@ const navGroups = [
   { title: 'Marketing e vendas', paths: ['/promotions', '/coupons', '/banners', '/notifications'] },
   { title: 'Clientes', paths: ['/customers'] },
   { title: 'Financeiro', paths: ['/payments', '/cash', '/fiados', '/reports'] },
-  { title: 'Administração', paths: ['/users', '/settings'] },
+  { title: 'Administração', paths: ['/users', '/activities', '/settings'] },
 ];
 
 const superAdminItems = [
@@ -103,8 +104,7 @@ export function AdminLayout() {
     }
   });
   const [storeName, setStoreName] = useState('Carregando...');
-  const [salaoEnabled, setSalaoEnabled] = useState<boolean | null>(null);
-  const [fiadoEnabled, setFiadoEnabled] = useState<boolean | null>(null);
+  const [enabledStoreModules, setEnabledStoreModules] = useState<Set<string> | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();
@@ -164,13 +164,15 @@ export function AdminLayout() {
         const modules = modulesResult.status === 'fulfilled'
           ? (modulesResult.value.data?.data ?? modulesResult.value.data)
           : [];
-        setSalaoEnabled(Array.isArray(modules) && modules.some(module => module.slug === 'salao' && module.enabled === true));
-        setFiadoEnabled(Array.isArray(modules) && modules.some(module => module.slug === 'fiado' && module.enabled === true));
+        setEnabledStoreModules(new Set(
+          Array.isArray(modules)
+            ? modules.filter((module) => module.enabled === true).map((module) => module.slug)
+            : []
+        ));
       });
     } else {
       setStoreName('Admin Master');
-      setSalaoEnabled(false);
-      setFiadoEnabled(false);
+      setEnabledStoreModules(new Set());
     }
   }, [user?.loja_id]);
 
@@ -239,8 +241,11 @@ export function AdminLayout() {
     if (user?.perfil === 'entregador') return item.path === '/driver';
     // Hide "Minhas Entregas" from non-drivers to keep sidebar clean
     if (item.path === '/driver') return false;
-    if (item.path === '/salao' && salaoEnabled !== true) return false;
-    if (item.path === '/fiados' && fiadoEnabled !== true) return false;
+    if (item.path === '/salao' && !enabledStoreModules?.has('salao')) return false;
+    if (item.path === '/fiados' && !enabledStoreModules?.has('fiado')) return false;
+    if (item.path === '/activities') {
+      return user?.perfil === 'administrador' && enabledStoreModules?.has('auditoria_operacional') === true;
+    }
     if (user?.perfil === 'superadmin' || user?.perfil === 'administrador') return true;
     return user?.permissions?.includes(item.slug);
   };
@@ -275,8 +280,7 @@ export function AdminLayout() {
 
   const currentNavItem = resolveNavItemForPath(location.pathname);
   const currentRouteModuleLoading =
-    (currentNavItem?.path === '/salao' && salaoEnabled === null) ||
-    (currentNavItem?.path === '/fiados' && fiadoEnabled === null);
+    enabledStoreModules === null && ['/salao', '/fiados', '/activities'].includes(currentNavItem?.path || '');
   const currentRouteAccessDenied =
     !currentRouteModuleLoading &&
     (
