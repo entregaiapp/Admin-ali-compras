@@ -182,7 +182,7 @@ const printCashClosingReceipt = (
           .divider{border-top:1px dashed #000;margin:8px 0}
           .row{display:flex;justify-content:space-between;gap:8px;font-size:12px;line-height:1.25;margin:3px 0}
           .row span:first-child{flex:1}
-          .row strong{font-weight:700;white-space:nowrap}
+          .row strong{font-weight:900;color:#000;white-space:nowrap}
           .total{font-size:14px;font-weight:700}
           .note{font-size:11px;margin-top:8px;white-space:pre-wrap}
           @page{size:80mm auto;margin:0}
