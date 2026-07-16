@@ -281,6 +281,8 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
   const [themePrimary, setThemePrimary] = useState(primaryColor);
   const [acceptedPaymentMethods, setAcceptedPaymentMethods] = useState<string[]>(DEFAULT_PAYMENT_METHODS);
   const [payment, setPayment] = useState("dinheiro");
+  const [adminPixAvailable, setAdminPixAvailable] = useState(false);
+  const [adminPixSelected, setAdminPixSelected] = useState(false);
   const [semTroco, setSemTroco] = useState(true);
   const [trocoPara, setTrocoPara] = useState("");
   const quickNameRef = useRef<HTMLInputElement | null>(null);
@@ -367,6 +369,11 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
         : [];
       setDeliveryAreas(areas);
       setApplyTaxToAdminOrders(config?.aplicar_taxa_pedidos_admin === true);
+      const permissions = Array.isArray(loggedUser?.permissions) ? loggedUser.permissions : [];
+      setAdminPixAvailable(
+        config?.pix_pedido_admin_habilitado === true &&
+        (permissions.includes("*") || permissions.includes("cobrancas_pix_admin")),
+      );
       setThemePrimary(config?.cor_primaria || primaryColor);
       const methods = Array.isArray(config?.formas_pagamento) && config.formas_pagamento.length
         ? config.formas_pagamento
@@ -375,7 +382,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
       setAcceptedPaymentMethods(nextMethods);
       setPayment(PAYMENT_METHOD_VALUES[nextMethods[0]] || String(nextMethods[0]).toLowerCase());
     });
-  }, [fiadoEnabled, lojaId, primaryColor]);
+  }, [fiadoEnabled, lojaId, loggedUser, primaryColor]);
 
   useEffect(() => {
     if (!configuring) return;
@@ -720,7 +727,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
         city: address.cidade, state: address.estado, zipCode: address.cep,
         complement: address.complemento, tenantId: lojaId,
       }));
-      const result = unwrap(await api.post("/pedidos/admin-delivery", {
+      const orderPayload = {
         tipo_pedido: pickupAtStore ? "retirada" : "entrega",
         contato: { nome: contact.nome, telefone: contact.telefone },
         itens: lines.map(({ nome, detalhe, preco, ...line }) => line),
@@ -730,12 +737,16 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
           geocoding_provider: geo.geocodingProvider, geocoding_source: geo.geocodingSource,
           formatted_address: geo.formattedAddress, google_place_id: geo.placeId,
         },
-        pagamento: {
+        pagamento: adminPixSelected ? undefined : {
           forma_pagamento: payment,
           sem_troco: payment === "dinheiro" ? semTroco : undefined,
           troco_para: payment === "dinheiro" && !semTroco ? Number(trocoPara.replace(",", ".")) : undefined,
         },
-      }));
+      };
+      const result = unwrap(await api.post(
+        adminPixSelected ? "/admin-pix-charges/orders" : "/pedidos/admin-delivery",
+        orderPayload,
+      ));
       await onCreated(result);
       onClose();
     } catch (caught) { setError(apiError(caught)); } finally { setBusy(false); }
@@ -1037,6 +1048,14 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
               <section className="rounded-xl border bg-white p-5">
                 <h3 className="font-bold">Forma de pagamento</h3>
                 <p className="mt-1 text-xs text-slate-500">Apenas para controle. Cartão e dinheiro serão cobrados na entrega.</p>
+                {adminPixAvailable && (
+                  <button type="button" onClick={() => setAdminPixSelected((current) => !current)} className="mt-4 flex w-full items-center gap-3 rounded-xl border-2 p-3 text-left" style={adminPixSelected ? { borderColor: primary, backgroundColor: primarySoft } : { borderColor: "#e2e8f0" }}>
+                    <CreditCard style={{ color: adminPixSelected ? primary : "#94a3b8" }} />
+                    <span className="flex-1"><b className="block">Gerar cobrança Pix para o cliente</b><small className="text-slate-500">Cria um link seguro para o cliente informar os dados e pagar.</small></span>
+                    {adminPixSelected && <Check className="h-5 w-5" style={{ color: primary }} />}
+                  </button>
+                )}
+                {!adminPixSelected && <>
                 <div className="mt-4 space-y-2">
                   {acceptedPaymentMethods.map((method) => {
                     const value = PAYMENT_METHOD_VALUES[method] || String(method).toLowerCase();
@@ -1056,6 +1075,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
                     {!semTroco && <label className="mt-3 block text-sm font-medium">Troco para<input value={trocoPara} onChange={(e) => setTrocoPara(e.target.value)} placeholder="0,00" inputMode="decimal" className="mt-1 w-full rounded-lg border p-2.5" /></label>}
                   </>
                 )}
+                </>}
               </section>
               <section className="rounded-xl border bg-white p-5">
                 <h3 className="font-bold">Conferência</h3>
@@ -1079,7 +1099,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
           {nextStep ? (
             <button disabled={contactStepBlocked || (step === STEP_PRODUCTS && !lines.length) || (step === STEP_ADDRESS && !pickupAtStore && (!address.rua || !address.numero || !address.area_entrega_id || !address.bairro || !address.cidade || !address.estado))} onClick={() => { setError(""); setStep(nextStep); }} className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-white disabled:opacity-40" style={buttonStyle}>Continuar <ArrowRight className="h-4 w-4" /></button>
           ) : (
-            <button disabled={busy || (payment === "dinheiro" && !semTroco && !trocoPara)} onClick={submit} className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-white disabled:opacity-50" style={buttonStyle}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Criar pedido e imprimir</button>
+            <button disabled={busy || (!adminPixSelected && payment === "dinheiro" && !semTroco && !trocoPara)} onClick={submit} className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-white disabled:opacity-50" style={buttonStyle}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {adminPixSelected ? "Criar pedido e gerar link" : "Criar pedido e imprimir"}</button>
           )}
         </footer>
       </div>

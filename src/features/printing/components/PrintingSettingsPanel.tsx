@@ -21,6 +21,7 @@ const SOURCE_OPTIONS: Array<{ value: PrintSource; label: string; description: st
 const AUTOMATION_LABELS: Record<PrintAutomationSetting["source"], string> = {
   delivery: "Delivery",
   retirada: "Retirada",
+  admin: "Pix por link administrativo",
 };
 
 type PrintingSettingsPanelProps = {
@@ -169,7 +170,7 @@ export function PrintingSettingsPanel({ printMode, onPrintModeChange }: Printing
 
   const updateAutomation = async (source: PrintAutomationSetting["source"], patch: Partial<PrintAutomationSetting>) => {
     try {
-      const nextSettings = ["delivery", "retirada"].map((candidate) => {
+      const nextSettings = ["delivery", "retirada", "admin"].map((candidate) => {
         const current = automationSettings.find((item) => item.source === candidate) || {
           source: candidate as PrintAutomationSetting["source"],
           auto_print_paid: false,

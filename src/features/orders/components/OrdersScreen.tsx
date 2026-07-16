@@ -109,6 +109,9 @@ import {
   ordersTenantTopic,
 } from "@/features/orders/services/ordersRealtime";
 import { printingService } from "@/features/printing/services/printingService";
+import { AdminPixChargePanel } from "@/features/adminPixCharges/components/AdminPixChargePanel";
+import { adminPixChargeService } from "@/features/adminPixCharges/services/adminPixChargeService";
+import type { AdminPixCharge } from "@/features/adminPixCharges/types/adminPixCharge";
 import {
   useAlertSoundPreference,
   usePersistentAttentionSound,
@@ -748,6 +751,7 @@ export function OrdersScreen() {
     selectionItems: KitchenPrintSelectionItem[];
   } | null>(null);
   const [manualOrderOpen, setManualOrderOpen] = useState(false);
+  const [selectedAdminPixCharge, setSelectedAdminPixCharge] = useState<AdminPixCharge | null>(null);
   const [adminAddItemsOrder, setAdminAddItemsOrder] = useState<any | null>(null);
   const [adminEditItemTarget, setAdminEditItemTarget] = useState<{ order: any; item: any } | null>(null);
   const [adminRemovingItemId, setAdminRemovingItemId] = useState("");
@@ -1772,10 +1776,28 @@ export function OrdersScreen() {
         ...current.filter((order) => order.id !== printableOrder.id),
       ]);
       setSelected(printableOrder);
-      setPrintOrder(printableOrder);
+      if (result?.link) {
+        setSelectedAdminPixCharge(result as AdminPixCharge);
+      } else {
+        setPrintOrder(printableOrder);
+      }
     }
     await fetchOrders(1, true, { silent: true });
   };
+
+  useEffect(() => {
+    let active = true;
+    const orderId = selected?.id;
+    const adminOrder = String(selected?.origem_checkout || "").toLowerCase() === "admin_dashboard";
+    if (!orderId || !adminOrder) {
+      setSelectedAdminPixCharge(null);
+      return () => { active = false; };
+    }
+    adminPixChargeService.get(orderId)
+      .then((charge) => { if (active) setSelectedAdminPixCharge(charge); })
+      .catch((error) => { if (active && error?.response?.status === 404) setSelectedAdminPixCharge(null); });
+    return () => { active = false; };
+  }, [selected?.id, selected?.origem_checkout]);
 
   const loadOrderItems = async (orderId: string) => {
     try {
@@ -3383,7 +3405,8 @@ export function OrdersScreen() {
     !selected ||
     getBackendStatus(selected.status || "") === "cancelado" ||
     selectedHasActiveRefund ||
-    selectedHasReversedPayment;
+    selectedHasReversedPayment ||
+    Boolean(selectedAdminPixCharge && !["aprovado", "cancelado"].includes(selectedAdminPixCharge.estado));
   const selectedRefundableAmount = Math.max(
     0,
     Number(
@@ -3497,16 +3520,17 @@ export function OrdersScreen() {
     Boolean(selected?.id) &&
     selectedIsAdminDashboardOrder &&
     selectedIsDelivery &&
+    !selectedAdminPixCharge &&
     !["cancelado", "entregue", "saiu_para_entrega"].includes(
       getBackendStatus(selected?.status || ""),
     );
   const selectedCanProceed =
     selectedIsPaid ||
     selectedIsFiado ||
-    selectedIsAdminDashboardOrder ||
+    (selectedIsAdminDashboardOrder && !selectedAdminPixCharge) ||
     (selectedIsPendingCash && !selectedIsFiado);
   const selectedPaymentKeepsConfirmationPending =
-    !selectedIsPaid && !selectedIsFiado && (selectedIsPendingCash || selectedIsAdminDashboardOrder);
+    !selectedIsPaid && !selectedIsFiado && (selectedIsPendingCash || (selectedIsAdminDashboardOrder && !selectedAdminPixCharge));
   const selectedCanAdminAddItems = Boolean(selected?.id) && !selectedBlocksAdminAdjustment;
   const selectedCanChangePendingPayment =
     Boolean(selected?.id) &&
@@ -5875,7 +5899,8 @@ export function OrdersScreen() {
             </div>
             {!selectedIsSalao && <button
               onClick={() => handlePrintComanda(selectedForPrint)}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-sm text-gray-600 transition-colors hover:bg-gray-50 sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3 sm:py-1.5"
+              disabled={Boolean(selectedAdminPixCharge && selectedAdminPixCharge.estado !== "aprovado")}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-sm text-gray-600 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3 sm:py-1.5"
               title="Imprimir comanda"
             >
               <Printer className="w-4 h-4" />
@@ -5985,6 +6010,14 @@ export function OrdersScreen() {
                 })}
               </div>
             </div>}
+
+            {selectedAdminPixCharge && (
+              <AdminPixChargePanel
+                initialCharge={selectedAdminPixCharge}
+                customerName={selected?.cliente?.nome || selected?.customer}
+                onChange={setSelectedAdminPixCharge}
+              />
+            )}
 
             {!selectedIsSalao && selected.status === "nao_entregue" && (
               <div className="rounded-xl border border-red-200 bg-red-50 p-4">

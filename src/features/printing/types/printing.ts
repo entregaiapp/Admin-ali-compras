@@ -28,7 +28,7 @@ export type Printer = {
 export type PrintSource = "delivery" | "retirada" | "salao" | "admin" | "mesa";
 
 export type PrintAutomationSetting = {
-  source: "delivery" | "retirada";
+  source: "delivery" | "retirada" | "admin";
   auto_print_paid: boolean;
   move_to_preparation: boolean;
 };

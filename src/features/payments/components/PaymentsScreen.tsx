@@ -119,6 +119,9 @@ export function PaymentsScreen() {
                 ? `Troco para R$ ${Number(p.troco_para || 0).toFixed(2).replace('.', ',')}`
                 : ''
             : '',
+          origin: p.metadata?.origem_pagamento === 'ADMIN_LINK_PIX'
+            ? 'Pix por link administrativo'
+            : '',
         };
       });
 
@@ -302,6 +305,7 @@ export function PaymentsScreen() {
                           {payment.cashChange}
                         </div>
                       )}
+                      {payment.origin && <div className="mt-1 text-xs font-medium text-blue-700">{payment.origin}</div>}
                     </td>
                     <td className="px-4 py-3 text-right font-semibold text-gray-800">
                       R$ {payment.value.toFixed(2).replace('.', ',')}
