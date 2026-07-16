@@ -174,7 +174,7 @@ const printCashClosingReceipt = (
         <title>Fechamento de caixa</title>
         <style>
           *{box-sizing:border-box}
-          body{font-family:'Courier New',Courier,monospace;margin:0;background:#fff;color:#000}
+          body{font-family:'Courier New',Courier,monospace;font-weight:900;margin:0;background:#fff;color:#000}
           main{width:80mm;margin:0 auto;padding:4mm}
           h1{font-size:16px;margin:0 0 4px;text-align:center;text-transform:uppercase}
           .center{text-align:center}
