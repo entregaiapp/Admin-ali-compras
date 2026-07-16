@@ -35,6 +35,13 @@ export type CashSummary = {
   pedidos_total_bruto: number;
 };
 
+export type CashFinancialSummary = {
+  resumo_vendas?: {
+    fiado_criado?: number;
+    fiado_recebido?: number;
+  };
+};
+
 export type CashRegister = {
   id: string;
   loja_id: string;
@@ -68,6 +75,7 @@ export type CashRegister = {
   fechamento_observacao?: string | null;
   divergencia_justificativa?: string | null;
   resumo?: CashSummary;
+  financeiro?: CashFinancialSummary;
 };
 
 export type CurrentCashResponse = {
@@ -76,6 +84,14 @@ export type CurrentCashResponse = {
   filial_nome: string;
   pedidos_disponiveis?: number;
   caixa?: CashRegister;
+};
+
+export type CashDetailsResponse = {
+  status: CashStatus;
+  loja_id: string;
+  filial_nome: string;
+  caixa: CashRegister;
+  financeiro: CashFinancialSummary;
 };
 
 export type AvailableCashOrder = {
@@ -135,6 +151,10 @@ export const cashService = {
 
   async movements(cashId: string) {
     return unwrap<CashMovement[]>(await api.get(`/caixa-operacional/${cashId}/movimentacoes`));
+  },
+
+  async details(cashId: string) {
+    return unwrap<CashDetailsResponse>(await api.get(`/financeiro/admin/caixas/${cashId}`));
   },
 
   async createMovement(cashId: string, payload: {

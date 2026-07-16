@@ -140,9 +140,13 @@ const paymentDetailRows = (summary: CashRegister['resumo']) => [
   },
 ];
 
-const printCashClosingReceipt = (cash: CashRegister, movements: CashMovement[] = []) => {
+const printCashClosingReceipt = (
+  cash: CashRegister,
+  movements: CashMovement[] = [],
+  targetWindow?: Window,
+) => {
   const resolvedSummary = buildCashSummary(cash, movements);
-  const printWindow = window.open('', '_blank', 'width=420,height=650');
+  const printWindow = targetWindow || window.open('', '_blank', 'width=420,height=650');
 
   if (!printWindow) {
     showSystemNotice('Não foi possível abrir a janela de impressão. Verifique se o navegador bloqueou pop-ups.');
@@ -160,6 +164,8 @@ const printCashClosingReceipt = (cash: CashRegister, movements: CashMovement[] =
   const cardSales = (resolvedSummary.vendas_cartao_debito || 0) + (resolvedSummary.vendas_cartao_credito || 0);
   const cardExpected = (resolvedSummary.saldo_cartao_debito_esperado || 0) + (resolvedSummary.saldo_cartao_credito_esperado || 0);
   const cardInformed = Number(cash.informado_cartao_debito || 0) + Number(cash.informado_cartao_credito || 0);
+  const creditTabCreated = Number(cash.financeiro?.resumo_vendas?.fiado_criado || 0);
+  const creditTabReceived = Number(cash.financeiro?.resumo_vendas?.fiado_recebido || 0);
 
   printWindow.document.write(`<!doctype html>
     <html lang="pt-BR">
@@ -192,22 +198,24 @@ const printCashClosingReceipt = (cash: CashRegister, movements: CashMovement[] =
           <div class="row"><span>Pedidos</span><strong>${escapePrintHtml(resolvedSummary.pedidos_rastreados || 0)}</strong></div>
           <div class="row"><span>Dinheiro esperado</span><strong>${escapePrintHtml(currency(resolvedSummary.saldo_dinheiro_esperado))}</strong></div>
           <div class="row"><span>PIX esperado</span><strong>${escapePrintHtml(currency(resolvedSummary.saldo_pix_esperado))}</strong></div>
-          <div class="row"><span>Cartao esperado</span><strong>${escapePrintHtml(currency(cardExpected))}</strong></div>
+          <div class="row"><span>Cartão esperado</span><strong>${escapePrintHtml(currency(cardExpected))}</strong></div>
           <div class="row"><span>Vendas dinheiro</span><strong>${escapePrintHtml(currency(resolvedSummary.vendas_dinheiro))}</strong></div>
           <div class="row"><span>Vendas PIX</span><strong>${escapePrintHtml(currency(resolvedSummary.vendas_pix))}</strong></div>
-          <div class="row"><span>Vendas cartao</span><strong>${escapePrintHtml(currency(cardSales))}</strong></div>
+          <div class="row"><span>Vendas cartão</span><strong>${escapePrintHtml(currency(cardSales))}</strong></div>
+          <div class="row"><span>Fiado criado</span><strong>${escapePrintHtml(currency(creditTabCreated))}</strong></div>
+          <div class="row"><span>Fiado recebido</span><strong>${escapePrintHtml(currency(creditTabReceived))}</strong></div>
           <div class="divider"></div>
           <div class="row"><span>Suprimentos</span><strong>${escapePrintHtml(currency(resolvedSummary.suprimentos_total))}</strong></div>
           <div class="row"><span>Sangrias</span><strong>-${escapePrintHtml(currency(resolvedSummary.sangrias_total))}</strong></div>
           <div class="row"><span>Despesas</span><strong>-${escapePrintHtml(currency(resolvedSummary.despesas_total))}</strong></div>
-          <div class="row"><span>Mov. liquida</span><strong>${escapePrintHtml(currency(totalMovements))}</strong></div>
+          <div class="row"><span>Mov. líquida</span><strong>${escapePrintHtml(currency(totalMovements))}</strong></div>
           <div class="divider"></div>
           <div class="row"><span>Dinheiro informado</span><strong>${escapePrintHtml(currency(cash.informado_dinheiro))}</strong></div>
           <div class="row"><span>PIX informado</span><strong>${escapePrintHtml(currency(cash.informado_pix))}</strong></div>
-          <div class="row"><span>Cartao informado</span><strong>${escapePrintHtml(currency(cardInformed))}</strong></div>
+          <div class="row"><span>Cartão informado</span><strong>${escapePrintHtml(currency(cardInformed))}</strong></div>
           <div class="row total"><span>Total esperado</span><strong>${escapePrintHtml(currency(resolvedSummary.total_esperado))}</strong></div>
           <div class="row"><span>Total informado</span><strong>${escapePrintHtml(currency(cash.total_informado))}</strong></div>
-          <div class="row total"><span>Diferenca</span><strong>${escapePrintHtml(currency(cash.diferenca_total))}</strong></div>
+          <div class="row total"><span>Diferença</span><strong>${escapePrintHtml(currency(cash.diferenca_total))}</strong></div>
           ${cash.fechamento_observacao ? `<div class="note"><strong>Observação:</strong> ${escapePrintHtml(cash.fechamento_observacao)}</div>` : ''}
           <div class="divider"></div>
           <div class="center muted">Impresso em ${escapePrintHtml(formatBrasiliaDate(new Date().toISOString()))}</div>
@@ -217,6 +225,25 @@ const printCashClosingReceipt = (cash: CashRegister, movements: CashMovement[] =
     </html>`);
   printWindow.document.close();
   return true;
+};
+
+const printCashClosingWithDetails = async (cash: CashRegister, movements: CashMovement[] = []) => {
+  if (cash.financeiro) return printCashClosingReceipt(cash, movements);
+
+  const printWindow = window.open('', '_blank', 'width=420,height=650');
+  if (!printWindow) {
+    showSystemNotice('Não foi possível abrir a janela de impressão. Verifique se o navegador bloqueou pop-ups.');
+    return false;
+  }
+
+  try {
+    const details = await cashService.details(cash.id);
+    return printCashClosingReceipt(details.caixa, movements, printWindow);
+  } catch (error) {
+    printWindow.close();
+    showSystemNotice('Não foi possível carregar os valores de fiado para a impressão.');
+    return false;
+  }
 };
 
 const buildCashSummary = (cash: CashRegister, movements: CashMovement[] = []): CashSummary => {
@@ -878,8 +905,12 @@ export function CashScreen() {
     setDetailsMovements([]);
     setDetailsLoading(true);
     try {
-      const data = await cashService.movements(cashRegister.id);
-      setDetailsMovements(data);
+      const [movementsData, detailsData] = await Promise.all([
+        cashService.movements(cashRegister.id),
+        cashService.details(cashRegister.id),
+      ]);
+      setDetailsCash(detailsData.caixa);
+      setDetailsMovements(movementsData);
     } catch (error) {
       showSystemNotice('Não foi possível carregar o fluxo do caixa.');
     } finally {
@@ -1043,7 +1074,7 @@ export function CashScreen() {
                     type="button"
                     title="Imprimir fechamento"
                     aria-label="Imprimir fechamento"
-                    onClick={() => printCashClosingReceipt(item)}
+                    onClick={() => void printCashClosingWithDetails(item)}
                     className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
                   >
                     <Printer className="h-4 w-4" />
@@ -1098,7 +1129,7 @@ export function CashScreen() {
             type="button"
             title="Imprimir fechamento"
             aria-label="Imprimir fechamento"
-            onClick={() => printCashClosingReceipt(item)}
+            onClick={() => void printCashClosingWithDetails(item)}
             className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-red-100 bg-white text-gray-600 hover:bg-red-50"
           >
             <Printer className="h-4 w-4" />
@@ -1174,7 +1205,7 @@ export function CashScreen() {
           cash={detailsCash}
           movements={detailsMovements}
           loadingMovements={detailsLoading}
-          onPrint={() => printCashClosingReceipt(detailsCash, detailsMovements)}
+          onPrint={() => void printCashClosingWithDetails(detailsCash, detailsMovements)}
           onClose={() => setDetailsCash(null)}
         />
       )}
