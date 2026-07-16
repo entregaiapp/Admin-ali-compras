@@ -357,6 +357,7 @@ const isPendingCardPaymentForDelivery = (order: any, payments: any[] = []) => {
 };
 const hasPendingPaymentForDisplay = (order: any, payments: any[] = []) => {
   if (isOrderPaid(order, payments)) return false;
+  if (order?.has_admin_pix_charge === true) return true;
 
   const payment = getPreferredOrderPayment(order, payments);
   return (
