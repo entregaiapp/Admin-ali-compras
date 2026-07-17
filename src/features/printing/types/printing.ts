@@ -10,28 +10,6 @@ export type PrintAgent = {
   online?: boolean;
 };
 
-export type ConfigurableItemsPrintLayout = {
-  uppercase_product: boolean;
-  show_variation: boolean;
-  variation_label: string;
-  uppercase_variation: boolean;
-  show_group_titles: boolean;
-  uppercase_group_titles: boolean;
-  uppercase_options: boolean;
-  show_fractions: boolean;
-  fraction_format: "symbol";
-  show_option_quantities: boolean;
-  show_configuration_divider: boolean;
-  observation_style: "box" | "highlight" | "plain";
-  observation_title: string;
-  uppercase_observation: boolean;
-  font_scale: "compact" | "normal" | "large";
-};
-
-export type PrinterLayoutSettings = {
-  configurable_items?: Partial<ConfigurableItemsPrintLayout>;
-};
-
 export type Printer = {
   id: string;
   loja_id: string;
@@ -41,7 +19,6 @@ export type Printer = {
   description?: string | null;
   paper_width_mm: 58 | 80;
   sector: "COZINHA" | "BAR" | "CAIXA" | "EXPEDICAO" | "GERAL";
-  layout_settings?: PrinterLayoutSettings;
   channels?: PrintSource[];
   is_default: boolean;
   active: boolean;

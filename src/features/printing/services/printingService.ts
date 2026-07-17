@@ -24,7 +24,7 @@ export const printingService = {
     return unwrap<Printer[]>(await api.get("/printing/printers"));
   },
 
-  async updatePrinter(id: string, data: Partial<Pick<Printer, "display_name" | "paper_width_mm" | "sector" | "channels" | "layout_settings" | "is_default" | "active">>) {
+  async updatePrinter(id: string, data: Partial<Pick<Printer, "display_name" | "paper_width_mm" | "sector" | "channels" | "is_default" | "active">>) {
     return unwrap<Printer>(await api.patch(`/printing/printers/${id}`, data));
   },
 

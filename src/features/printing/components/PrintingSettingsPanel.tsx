@@ -4,7 +4,7 @@ import { showSystemNotice } from "@/shared/components/SystemToast";
 import { formatBrasiliaDate } from "@/shared/lib/dateTime";
 import api from "@/shared/lib/api";
 import { printingService } from "@/features/printing/services/printingService";
-import type { ConfigurableItemsPrintLayout, PairingCode, PrintAgent, PrintAutomationSetting, Printer as PrinterType, PrintSource, UserPrinterPreference } from "@/features/printing/types/printing";
+import type { PairingCode, PrintAgent, PrintAutomationSetting, Printer as PrinterType, PrintSource, UserPrinterPreference } from "@/features/printing/types/printing";
 import { PrintStatusBadge } from "./PrintStatusBadge";
 
 const PRIMARY = "#122a4c";
@@ -22,24 +22,6 @@ const AUTOMATION_LABELS: Record<PrintAutomationSetting["source"], string> = {
   delivery: "Delivery",
   retirada: "Retirada",
   admin: "Pix por link administrativo",
-};
-
-const DEFAULT_CONFIGURABLE_ITEMS_LAYOUT: ConfigurableItemsPrintLayout = {
-  uppercase_product: true,
-  show_variation: true,
-  variation_label: "TAMANHO",
-  uppercase_variation: true,
-  show_group_titles: true,
-  uppercase_group_titles: true,
-  uppercase_options: true,
-  show_fractions: true,
-  fraction_format: "symbol",
-  show_option_quantities: true,
-  show_configuration_divider: true,
-  observation_style: "box",
-  observation_title: "OBSERVAÇÃO",
-  uppercase_observation: true,
-  font_scale: "normal",
 };
 
 type PrintingSettingsPanelProps = {
@@ -207,27 +189,6 @@ export function PrintingSettingsPanel({ printMode, onPrintModeChange }: Printing
     if (checked) current.add(source);
     else current.delete(source);
     await updatePrinter(printer, { channels: Array.from(current) as PrintSource[] } as any);
-  };
-
-  const configurableItemsLayout = (printer: PrinterType): ConfigurableItemsPrintLayout => ({
-    ...DEFAULT_CONFIGURABLE_ITEMS_LAYOUT,
-    ...(printer.layout_settings?.configurable_items || {}),
-    fraction_format: "symbol",
-  });
-
-  const updateConfigurableItemsLayout = async (
-    printer: PrinterType,
-    patch: Partial<ConfigurableItemsPrintLayout>,
-  ) => {
-    await updatePrinter(printer, {
-      layout_settings: {
-        ...(printer.layout_settings || {}),
-        configurable_items: {
-          ...configurableItemsLayout(printer),
-          ...patch,
-        },
-      },
-    });
   };
 
   const updateUserPreference = async (usuarioId: string, printerId: string | null) => {
@@ -557,100 +518,6 @@ export function PrintingSettingsPanel({ printMode, onPrintModeChange }: Printing
                       </div>
                     </div>
 
-                    <div className="mt-4 rounded-lg border border-gray-100 bg-gray-50 p-4">
-                      <p className="text-sm font-bold text-gray-900">Apresentação dos itens configuráveis</p>
-                      <p className="mt-1 text-xs font-medium text-gray-500">
-                        Personalize tamanhos, grupos, frações e observações nesta impressora.
-                      </p>
-
-                      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                        <label className="text-xs font-bold uppercase text-gray-500">
-                          Rótulo da variação
-                          <input
-                            key={`${printer.id}-${configurableItemsLayout(printer).variation_label}`}
-                            defaultValue={configurableItemsLayout(printer).variation_label}
-                            maxLength={40}
-                            onBlur={(event) => {
-                              const value = event.target.value.trim();
-                              if (value && value !== configurableItemsLayout(printer).variation_label) {
-                                void updateConfigurableItemsLayout(printer, { variation_label: value });
-                              }
-                            }}
-                            className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium normal-case text-gray-700"
-                          />
-                        </label>
-
-                        <label className="text-xs font-bold uppercase text-gray-500">
-                          Tamanho do texto
-                          <select
-                            value={configurableItemsLayout(printer).font_scale}
-                            onChange={(event) => void updateConfigurableItemsLayout(printer, { font_scale: event.target.value as ConfigurableItemsPrintLayout["font_scale"] })}
-                            className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium normal-case text-gray-700"
-                          >
-                            <option value="compact">Compacto</option>
-                            <option value="normal">Normal</option>
-                            <option value="large">Grande</option>
-                          </select>
-                        </label>
-
-                        <label className="text-xs font-bold uppercase text-gray-500">
-                          Título da observação
-                          <input
-                            key={`${printer.id}-${configurableItemsLayout(printer).observation_title}`}
-                            defaultValue={configurableItemsLayout(printer).observation_title}
-                            maxLength={40}
-                            onBlur={(event) => {
-                              const value = event.target.value.trim();
-                              if (value && value !== configurableItemsLayout(printer).observation_title) {
-                                void updateConfigurableItemsLayout(printer, { observation_title: value });
-                              }
-                            }}
-                            className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium normal-case text-gray-700"
-                          />
-                        </label>
-
-                        <label className="text-xs font-bold uppercase text-gray-500">
-                          Estilo da observação
-                          <select
-                            value={configurableItemsLayout(printer).observation_style}
-                            onChange={(event) => void updateConfigurableItemsLayout(printer, { observation_style: event.target.value as ConfigurableItemsPrintLayout["observation_style"] })}
-                            className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium normal-case text-gray-700"
-                          >
-                            <option value="box">Caixa com borda</option>
-                            <option value="highlight">Destaque lateral</option>
-                            <option value="plain">Texto simples</option>
-                          </select>
-                        </label>
-                      </div>
-
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                        {([
-                          ["uppercase_product", "Nome do produto em maiúsculas"],
-                          ["show_variation", "Exibir variação/tamanho"],
-                          ["uppercase_variation", "Variação/tamanho em maiúsculas"],
-                          ["show_group_titles", "Exibir títulos dos grupos"],
-                          ["uppercase_group_titles", "Títulos dos grupos em maiúsculas"],
-                          ["uppercase_options", "Nomes das opções em maiúsculas"],
-                          ["show_fractions", "Exibir frações"],
-                          ["show_option_quantities", "Exibir quantidades das opções"],
-                          ["show_configuration_divider", "Separar detalhes com divisor"],
-                          ["uppercase_observation", "Observação em maiúsculas"],
-                        ] as Array<[keyof ConfigurableItemsPrintLayout, string]>).map(([field, label]) => (
-                          <label key={field} className="flex items-start gap-2 text-sm font-semibold text-gray-700">
-                            <input
-                              type="checkbox"
-                              checked={Boolean(configurableItemsLayout(printer)[field])}
-                              onChange={(event) => void updateConfigurableItemsLayout(
-                                printer,
-                                { [field]: event.target.checked } as Partial<ConfigurableItemsPrintLayout>,
-                              )}
-                              className="mt-1"
-                            />
-                            <span>{label}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
                   </div>
                 ))}
               </div>
