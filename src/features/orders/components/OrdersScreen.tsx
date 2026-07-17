@@ -30,6 +30,7 @@ import {
   RefreshCw,
   AlertTriangle,
   RotateCcw,
+  Store,
   Plus,
   Pencil,
   Trash2,
@@ -94,6 +95,7 @@ import { AddOrderItemsModal } from "@/features/orders/components/AddOrderItemsMo
 import { EditOrderItemModal } from "@/features/orders/components/EditOrderItemModal";
 import { PendingPaymentMethodModal } from "@/features/orders/components/PendingPaymentMethodModal";
 import { RetryDeliveryFeeModal } from "@/features/orders/components/RetryDeliveryFeeModal";
+import { DeliveryToPickupModal } from "@/features/orders/components/DeliveryToPickupModal";
 import { CompactOrderStatusTimeline } from "@/features/orders/components/CompactOrderStatusTimeline";
 import {
   ComandaPrintModeModal,
@@ -788,6 +790,7 @@ export function OrdersScreen() {
   const [adminEditItemTarget, setAdminEditItemTarget] = useState<{ order: any; item: any } | null>(null);
   const [adminRemovingItemId, setAdminRemovingItemId] = useState("");
   const [pendingPaymentMethodOrder, setPendingPaymentMethodOrder] = useState<any | null>(null);
+  const [deliveryToPickupOrder, setDeliveryToPickupOrder] = useState<any | null>(null);
   const [receivingPayment, setReceivingPayment] = useState<{ order: any; payments: any[] } | null>(null);
   const [retryDeliveryOrder, setRetryDeliveryOrder] = useState<any | null>(null);
   const [addressEditOrder, setAddressEditOrder] = useState<any | null>(null);
@@ -1984,6 +1987,20 @@ export function OrdersScreen() {
     setPendingPaymentMethodOrder(null);
     setReceivingPayment(null);
     showSystemNotice(message);
+  };
+
+  const handleDeliveryToPickupDone = async (result: any) => {
+    const nextOrder = result?.pedido || result?.order || selected;
+    if (nextOrder?.id) {
+      invalidateOperationalOrderCaches(nextOrder.id, "entrega");
+      invalidateOperationalOrderCaches(nextOrder.id, "retirada");
+    }
+    setCurrentDelivery(null);
+    setDeliveryToPickupOrder(null);
+    await refreshSelectedOrderAfterAdminAdjustment(
+      result,
+      "Pedido alterado para retirada com sucesso.",
+    );
   };
 
   const removeOrderItemFromSelectedOrder = async (item: any) => {
@@ -4225,6 +4242,14 @@ export function OrdersScreen() {
           primaryColor={primaryColor}
           onClose={() => setRetryDeliveryOrder(null)}
           onDone={(result) => void applyRetryDeliveryResult(result)}
+        />
+      )}
+      {deliveryToPickupOrder && (
+        <DeliveryToPickupModal
+          order={deliveryToPickupOrder}
+          primaryColor={primaryColor}
+          onClose={() => setDeliveryToPickupOrder(null)}
+          onDone={(result) => void handleDeliveryToPickupDone(result)}
         />
       )}
       {printOrder && (
@@ -6748,6 +6773,15 @@ export function OrdersScreen() {
               >
                 <Plus className="w-4 h-4" /> Adicionar produtos
               </button>
+              {selectedIsDelivery && (
+                <button
+                  onClick={() => setDeliveryToPickupOrder(selected)}
+                  disabled={selectedOrderUpdating}
+                  className="w-full py-2.5 rounded-lg text-emerald-700 text-sm font-medium border border-emerald-200 hover:bg-emerald-50 transition-colors disabled:cursor-not-allowed disabled:opacity-60 flex items-center justify-center gap-2"
+                >
+                  <Store className="w-4 h-4" /> Alterar para retirada
+                </button>
+              )}
               {!selectedIsSalao && <button
                 onClick={() => openItemsChecklist(selected)}
                 className="w-full py-2.5 rounded-lg text-gray-700 text-sm font-medium border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
