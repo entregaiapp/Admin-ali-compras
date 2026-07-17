@@ -63,6 +63,7 @@ import {
 } from "@/features/orders/utils/kitchenPrintTracking";
 import {
   canChangeDeliveryCourier,
+  ADMIN_PIX_LINK_PAYMENT_LABEL,
   getApiErrorMessage,
   getApiList,
   getBackendStatus,
@@ -753,6 +754,8 @@ export function OrdersScreen() {
   } | null>(null);
   const [manualOrderOpen, setManualOrderOpen] = useState(false);
   const [selectedAdminPixCharge, setSelectedAdminPixCharge] = useState<AdminPixCharge | null>(null);
+  const [selectedAdminPixChargeLoading, setSelectedAdminPixChargeLoading] = useState(false);
+  const [adminPixAvailable, setAdminPixAvailable] = useState(false);
   const [adminAddItemsOrder, setAdminAddItemsOrder] = useState<any | null>(null);
   const [adminEditItemTarget, setAdminEditItemTarget] = useState<{ order: any; item: any } | null>(null);
   const [adminRemovingItemId, setAdminRemovingItemId] = useState("");
@@ -807,6 +810,7 @@ export function OrdersScreen() {
       return null;
     }
   })();
+  const userPermissionsKey = Array.isArray(user?.permissions) ? user.permissions.join("|") : "";
   const realtimeRefreshTimeoutRef = useRef<number | null>(null);
   const pendingPrintAlertRequestRef = useRef(false);
   const operationalCacheRef = useRef<Record<string, OperationalTabCache>>({});
@@ -1254,6 +1258,7 @@ export function OrdersScreen() {
       setAverageDeliveryTimeMinutes(30);
       setStorePrintData(null);
       setManualOrderCreationAllowed(false);
+      setAdminPixAvailable(false);
       setManualOrderOpen(false);
       return;
     }
@@ -1286,6 +1291,11 @@ export function OrdersScreen() {
           : 30,
       );
       setManualOrderCreationAllowed(config.permitir_criacao_pedidos_delivery_admin === true);
+      const permissions = Array.isArray(user?.permissions) ? user.permissions : [];
+      setAdminPixAvailable(
+        config.pix_pedido_admin_habilitado === true &&
+        (permissions.includes("*") || permissions.includes("cobrancas_pix_admin")),
+      );
       if (config.permitir_criacao_pedidos_delivery_admin !== true) {
         setManualOrderOpen(false);
       }
@@ -1300,7 +1310,7 @@ export function OrdersScreen() {
     return () => {
       active = false;
     };
-  }, [user?.loja_id]);
+  }, [user?.loja_id, userPermissionsKey]);
 
   useEffect(() => {
     const shortcutRequest = searchParams.get(CREATE_ORDER_SHORTCUT_PARAM);
@@ -1792,11 +1802,15 @@ export function OrdersScreen() {
     const adminOrder = String(selected?.origem_checkout || "").toLowerCase() === "admin_dashboard";
     if (!orderId || !adminOrder) {
       setSelectedAdminPixCharge(null);
+      setSelectedAdminPixChargeLoading(false);
       return () => { active = false; };
     }
+    setSelectedAdminPixCharge((current) => current?.pedido_id === orderId ? current : null);
+    setSelectedAdminPixChargeLoading(true);
     adminPixChargeService.get(orderId)
       .then((charge) => { if (active) setSelectedAdminPixCharge(charge); })
-      .catch((error) => { if (active && error?.response?.status === 404) setSelectedAdminPixCharge(null); });
+      .catch((error) => { if (active && error?.response?.status === 404) setSelectedAdminPixCharge(null); })
+      .finally(() => { if (active) setSelectedAdminPixChargeLoading(false); });
     return () => { active = false; };
   }, [selected?.id, selected?.origem_checkout]);
 
@@ -3438,14 +3452,16 @@ export function OrdersScreen() {
   const selectedForPrint = selected
     ? { ...selected, pagamento: selectedPayment }
     : selected;
-  const selectedPaymentMethod = selectedSplitPayments.length > 1
-    ? selectedSplitPayments
-        .map((payment) => getOrderPaymentMethod({ pagamento: payment }, payment))
-        .join(" + ")
-    : getOrderPaymentMethod(
-        selected,
-        selectedPayment,
-      );
+  const selectedPaymentMethod = selectedAdminPixCharge && selectedAdminPixCharge.estado !== "cancelado"
+    ? ADMIN_PIX_LINK_PAYMENT_LABEL
+    : selectedSplitPayments.length > 1
+      ? selectedSplitPayments
+          .map((payment) => getOrderPaymentMethod({ pagamento: payment }, payment))
+          .join(" + ")
+      : getOrderPaymentMethod(
+          selected,
+          selectedPayment,
+        );
   const selectedPaymentStatus = getOrderPaymentStatus(
     selected,
     selectedPayment,
@@ -3544,7 +3560,16 @@ export function OrdersScreen() {
     canTakeSalaoOrderToTable(selected) &&
     selectedCanProceed &&
     !selectedCancellationPending;
-  const selectedCanForceFinalize = canForceFinalizeOrder(selected);
+  const selectedCanForceFinalize =
+    canForceFinalizeOrder(selected) &&
+    !selectedAdminPixChargeLoading &&
+    (!selectedAdminPixCharge || ["aprovado", "cancelado"].includes(selectedAdminPixCharge.estado));
+  const selectedCanGenerateAdminPixLink =
+    adminPixAvailable &&
+    selectedIsAdminDashboardOrder &&
+    getBackendStatus(selected?.status || "") === "pendente" &&
+    !selectedAdminPixChargeLoading &&
+    !selectedAdminPixCharge;
   const selectedIsTerminal = ["Entregue", "Cancelado", "Não entregue"].includes(
     selectedStatusLabel,
   );
@@ -4141,8 +4166,16 @@ export function OrdersScreen() {
           order={pendingPaymentMethodOrder}
           currentMethod={getCurrentPaymentMethodValue(selectedPayment)}
           primaryColor={primaryColor}
+          canGeneratePixLink={selectedCanGenerateAdminPixLink}
           onClose={() => setPendingPaymentMethodOrder(null)}
           onUpdated={(result) => void refreshSelectedOrderAfterAdminAdjustment(result, "Forma de pagamento pendente atualizada.")}
+          onPixLinkGenerated={(charge) => {
+            setSelectedAdminPixCharge(charge);
+            void refreshSelectedOrderAfterAdminAdjustment(
+              { pedido: selected },
+              "Link de pagamento PIX gerado com sucesso.",
+            );
+          }}
         />
       )}
       {printOrder && (

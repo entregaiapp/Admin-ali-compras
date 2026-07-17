@@ -4,6 +4,7 @@ import type { AdminPixCharge } from "../types/adminPixCharge";
 const unwrap = (response: any) => response?.data?.data ?? response?.data;
 
 export const adminPixChargeService = {
+  createForOrder: async (pedidoId: string): Promise<AdminPixCharge> => unwrap(await api.post(`/admin-pix-charges/orders/${pedidoId}`)),
   get: async (pedidoId: string): Promise<AdminPixCharge> => unwrap(await api.get(`/admin-pix-charges/orders/${pedidoId}`)),
   refresh: async (pedidoId: string): Promise<AdminPixCharge> => unwrap(await api.post(`/admin-pix-charges/orders/${pedidoId}/refresh`)),
   regenerate: async (pedidoId: string): Promise<AdminPixCharge> => unwrap(await api.post(`/admin-pix-charges/orders/${pedidoId}/regenerate`)),

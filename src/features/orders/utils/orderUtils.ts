@@ -250,6 +250,8 @@ const ACTIVE_PAYMENT_STATUSES = new Set(["pendente", "em_processamento", "proces
 const getEmbeddedOrderPayments = (order: any) =>
   Array.isArray(order?.pagamentos) ? order.pagamentos : [];
 
+export const ADMIN_PIX_LINK_PAYMENT_LABEL = "Cobrança por Link de Pagamento - PIX";
+
 export const isCurrentPaymentRecord = (payment: any) => {
   const status = cleanText(payment?.status || payment?.payment_status || payment?.paymentStatus).toLowerCase();
   return (
@@ -306,6 +308,10 @@ export const isOrderPendingCash = (order: any, payments: any[] = []) =>
   isPendingCashPayment(order);
 
 export const getOrderPaymentMethod = (order: any, payment?: any) => {
+  if (payment?.metadata?.origem_pagamento === "ADMIN_LINK_PIX") {
+    return ADMIN_PIX_LINK_PAYMENT_LABEL;
+  }
+
   const paymentOnDeliveryMethod = cleanText(
     getPaymentOnDeliveryMethod(payment) ||
       getPaymentOnDeliveryMethod(order?.pagamento) ||

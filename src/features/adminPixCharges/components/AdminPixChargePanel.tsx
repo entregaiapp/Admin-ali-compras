@@ -46,7 +46,7 @@ export function AdminPixChargePanel({ initialCharge, customerName, onChange }: {
   return (
     <section className="rounded-xl border border-blue-200 bg-blue-50/50 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><p className="text-xs font-bold uppercase text-blue-700">Pix por link administrativo</p><h3 className="font-semibold text-gray-900">{labels[charge.estado] || charge.estado}</h3></div>
+        <div><p className="text-xs font-bold uppercase text-blue-700">Cobrança por Link de Pagamento - PIX</p><h3 className="font-semibold text-gray-900">{labels[charge.estado] || charge.estado}</h3></div>
         <span className="rounded-full bg-white px-3 py-1 text-sm font-bold text-gray-800">{money(charge.total)}</span>
       </div>
       {payment?.qr_code_base64 && <img src={`data:image/png;base64,${payment.qr_code_base64}`} alt="QR Code Pix" className="mx-auto mt-4 h-44 w-44 rounded-lg bg-white p-2" />}

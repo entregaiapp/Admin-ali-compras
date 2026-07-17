@@ -120,7 +120,7 @@ export function PaymentsScreen() {
                 : ''
             : '',
           origin: p.metadata?.origem_pagamento === 'ADMIN_LINK_PIX'
-            ? 'Pix por link administrativo'
+            ? 'Cobrança por Link de Pagamento - PIX'
             : '',
         };
       });

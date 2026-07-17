@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { Check, Loader2, Plus, Trash2, X } from "lucide-react";
+import { Check, Link2, Loader2, Plus, Trash2, X } from "lucide-react";
 import api from "@/shared/lib/api";
+import { adminPixChargeService } from "@/features/adminPixCharges/services/adminPixChargeService";
+import type { AdminPixCharge } from "@/features/adminPixCharges/types/adminPixCharge";
 
 const unwrap = (response: any) => response?.data?.data ?? response?.data;
 const apiError = (error: any) =>
@@ -35,14 +37,18 @@ export function PendingPaymentMethodModal({
   order,
   currentMethod,
   primaryColor = "#2563eb",
+  canGeneratePixLink = false,
   onClose,
   onUpdated,
+  onPixLinkGenerated,
 }: {
   order: any;
   currentMethod?: string;
   primaryColor?: string;
+  canGeneratePixLink?: boolean;
   onClose: () => void;
   onUpdated: (result: any) => void;
+  onPixLinkGenerated?: (charge: AdminPixCharge) => void;
 }) {
   const total = Number(order?.valor_total || order?.total || 0);
   const totalCents = toCents(total);
@@ -53,6 +59,7 @@ export function PendingPaymentMethodModal({
   const [cashNeedsChange, setCashNeedsChange] = useState(false);
   const [cashChangeFor, setCashChangeFor] = useState("");
   const [busy, setBusy] = useState(false);
+  const [generatingPixLink, setGeneratingPixLink] = useState(false);
   const [error, setError] = useState("");
 
   const paidCents = lines.reduce((sum, line) => sum + parseCurrencyInputCents(line.valor), 0);
@@ -150,6 +157,19 @@ export function PendingPaymentMethodModal({
     }
   };
 
+  const generatePixLink = async () => {
+    if (!order?.id || !onPixLinkGenerated) return;
+    setGeneratingPixLink(true);
+    setError("");
+    try {
+      onPixLinkGenerated(await adminPixChargeService.createForOrder(order.id));
+    } catch (caught) {
+      setError(apiError(caught));
+    } finally {
+      setGeneratingPixLink(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
       <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
@@ -164,6 +184,24 @@ export function PendingPaymentMethodModal({
         </header>
         <main className="space-y-4 p-5">
           {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+
+          {canGeneratePixLink && (
+            <section className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+              <div className="text-sm font-bold text-blue-950">Cobrança por link de pagamento</div>
+              <p className="mt-1 text-xs text-blue-800">
+                Substitui a forma pendente atual e cria um link seguro para o cliente pagar via PIX.
+              </p>
+              <button
+                type="button"
+                onClick={() => void generatePixLink()}
+                disabled={busy || generatingPixLink}
+                className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-wait disabled:opacity-60"
+              >
+                {generatingPixLink ? <Loader2 className="h-4 w-4 animate-spin" /> : <Link2 className="h-4 w-4" />}
+                {generatingPixLink ? "Gerando link..." : "Gerar link - PIX"}
+              </button>
+            </section>
+          )}
 
           <div className="space-y-2">
             {lines.map((line, index) => {
@@ -290,10 +328,10 @@ export function PendingPaymentMethodModal({
           />
         </main>
         <footer className="flex justify-end gap-2 border-t px-5 py-4">
-          <button onClick={onClose} className="rounded-lg border px-4 py-2 text-sm font-semibold text-slate-700">Cancelar</button>
+          <button onClick={onClose} disabled={busy || generatingPixLink} className="rounded-lg border px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-50">Cancelar</button>
           <button
             onClick={submit}
-            disabled={busy || !isComplete || hasInvalidLine || cashChangeInvalid}
+            disabled={busy || generatingPixLink || !isComplete || hasInvalidLine || cashChangeInvalid}
             className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
             style={{ backgroundColor: primaryColor }}
           >

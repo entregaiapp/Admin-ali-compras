@@ -199,9 +199,15 @@ const normalizeDeliveryArea = (area: any) => ({
 });
 
 const getStoreAddressDefaults = (store: any) => ({
+  rua: String(store?.endereco_rua || store?.rua || "").trim(),
+  numero: String(store?.endereco_numero || store?.numero || "").trim(),
+  complemento: String(store?.endereco_complemento || store?.complemento || "").trim(),
+  bairro: String(store?.endereco_bairro || store?.bairro || "").trim(),
   cidade: String(store?.endereco_cidade || store?.cidade || "").trim(),
   estado: String(store?.endereco_estado || store?.estado || "").trim().toUpperCase(),
   cep: String(store?.endereco_cep || store?.cep || "").trim(),
+  latitude: store?.latitude ?? null,
+  longitude: store?.longitude ?? null,
 });
 
 const getAreaLabel = (area: any) =>
@@ -732,11 +738,13 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
         contato: { nome: contact.nome, telefone: contact.telefone },
         itens: lines.map(({ nome, detalhe, preco, ...line }) => line),
         taxa_entrega: deliveryFee,
-        endereco: pickupAtStore ? null : {
-          ...address, latitude: geo.latitude, longitude: geo.longitude,
-          geocoding_provider: geo.geocodingProvider, geocoding_source: geo.geocodingSource,
-          formatted_address: geo.formattedAddress, google_place_id: geo.placeId,
-        },
+        endereco: pickupAtStore
+          ? getStoreAddressDefaults(store)
+          : {
+              ...address, latitude: geo.latitude, longitude: geo.longitude,
+              geocoding_provider: geo.geocodingProvider, geocoding_source: geo.geocodingSource,
+              formatted_address: geo.formattedAddress, google_place_id: geo.placeId,
+            },
         pagamento: adminPixSelected ? undefined : {
           forma_pagamento: payment,
           sem_troco: payment === "dinheiro" ? semTroco : undefined,
