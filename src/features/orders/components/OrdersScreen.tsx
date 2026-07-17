@@ -191,6 +191,20 @@ const getReceiptInitialMethods = (payments: any[]) => [...new Set(
     .map((method) => String(method || "").toLowerCase())
     .filter((method) => RECEIPT_PAYMENT_METHODS.has(method))
 )];
+const getOrderPaymentMethodsLabel = (order: any, payments: any[], preferredPayment: any) => {
+  const splitGroupId = getPaymentSplitGroupId(preferredPayment);
+  const splitPayments = splitGroupId
+    ? payments.filter((payment) =>
+        getPaymentSplitGroupId(payment) === splitGroupId && isCurrentPaymentRecord(payment)
+      )
+    : [];
+
+  return splitPayments.length > 1
+    ? splitPayments
+        .map((payment) => getOrderPaymentMethod({ pagamento: payment }, payment))
+        .join(" + ")
+    : getOrderPaymentMethod(order, preferredPayment);
+};
 const getDailyTicketNumber = (order: any) => {
   const formatted = String(order?.numero_comanda_codigo || "").trim();
   if (formatted) return formatted;
@@ -511,6 +525,7 @@ const getTransparentRgb = (color: string, opacity: number) =>
 const OrderCustomerSummary = ({
   order,
   payment,
+  paymentLabel,
   timestamp,
   cashChangeStatusLabel,
   nowMs,
@@ -518,6 +533,7 @@ const OrderCustomerSummary = ({
 }: {
   order: any;
   payment: any;
+  paymentLabel?: string;
   timestamp: Date | string;
   cashChangeStatusLabel?: string;
   nowMs: number;
@@ -563,7 +579,7 @@ const OrderCustomerSummary = ({
       )}
       <span className="text-gray-300" aria-hidden="true">|</span>
       <span className="whitespace-nowrap text-gray-400">
-        {getOrderPaymentMethod(order, payment)}
+        {paymentLabel || getOrderPaymentMethod(order, payment)}
       </span>
       {isDeliveryOrder(order) && (
         <>
@@ -1936,14 +1952,25 @@ export function OrdersScreen() {
   const refreshSelectedOrderAfterAdminAdjustment = async (result: any, message: string) => {
     const nextOrder = result?.pedido || result?.order || selected;
     if (nextOrder?.id) {
-      setSelected((previous: any) => previous?.id === nextOrder.id ? { ...previous, ...nextOrder } : nextOrder);
-      setOrders((previous) =>
-        previous.map((order) => order.id === nextOrder.id ? { ...order, ...nextOrder } : order),
-      );
       await fetchOrderItems(nextOrder.id);
       const payments = Array.isArray(result?.pagamentos)
         ? result.pagamentos
         : await fetchOrderPayments(nextOrder.id);
+      const preferredPayment = getPreferredOrderPayment(nextOrder, payments);
+      const synchronizedOrder = {
+        ...nextOrder,
+        pagamento: preferredPayment || nextOrder.pagamento,
+        pagamentos: payments,
+        payment_status: preferredPayment?.status || nextOrder.payment_status,
+      };
+      setSelected((previous: any) => previous?.id === nextOrder.id
+        ? { ...previous, ...synchronizedOrder }
+        : synchronizedOrder);
+      setOrders((previous) =>
+        previous.map((order) => order.id === nextOrder.id
+          ? { ...order, ...synchronizedOrder }
+          : order),
+      );
       if (Array.isArray(result?.pagamentos)) {
         setSelectedPayments(result.pagamentos);
       }
@@ -4889,6 +4916,11 @@ export function OrdersScreen() {
                       order,
                       orderPayments,
                     );
+                    const orderPaymentLabel = getOrderPaymentMethodsLabel(
+                      order,
+                      orderPayments,
+                      orderPayment,
+                    );
                     const orderPaymentIsPending =
                       hasPendingPaymentForDisplay(order, orderPayments);
                     const cashChangeStatusLabel = getCashChangeStatusLabel(
@@ -5055,6 +5087,7 @@ export function OrdersScreen() {
                               <OrderCustomerSummary
                                 order={order}
                                 payment={orderPayment}
+                                paymentLabel={orderPaymentLabel}
                                 nowMs={currentTimeMs}
                                 averageDeliveryMinutes={averageDeliveryTimeMinutes}
                                 timestamp={
@@ -5353,6 +5386,11 @@ export function OrdersScreen() {
                           order,
                           orderPayments,
                         );
+                        const orderPaymentLabel = getOrderPaymentMethodsLabel(
+                          order,
+                          orderPayments,
+                          orderPayment,
+                        );
                         const orderPaymentIsPending =
                           hasPendingPaymentForDisplay(order, orderPayments);
                         const cashChangeStatusLabel = getCashChangeStatusLabel(
@@ -5478,6 +5516,7 @@ export function OrdersScreen() {
                               <OrderCustomerSummary
                                 order={order}
                                 payment={orderPayment}
+                                paymentLabel={orderPaymentLabel}
                                 nowMs={currentTimeMs}
                                 averageDeliveryMinutes={averageDeliveryTimeMinutes}
                                 timestamp={
