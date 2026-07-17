@@ -312,6 +312,12 @@ export const getOrderPaymentMethod = (order: any, payment?: any) => {
     return ADMIN_PIX_LINK_PAYMENT_LABEL;
   }
 
+  const plannedMethods = payment?.metadata?.formas_pagamento_planejadas
+    || order?.pagamento?.metadata?.formas_pagamento_planejadas;
+  if (Array.isArray(plannedMethods) && plannedMethods.length > 1) {
+    return plannedMethods.map(formatPaymentMethod).join(" + ");
+  }
+
   const paymentOnDeliveryMethod = cleanText(
     getPaymentOnDeliveryMethod(payment) ||
       getPaymentOnDeliveryMethod(order?.pagamento) ||

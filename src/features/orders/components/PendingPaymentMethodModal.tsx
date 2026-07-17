@@ -36,6 +36,8 @@ type PaymentLine = {
 export function PendingPaymentMethodModal({
   order,
   currentMethod,
+  initialMethods = [],
+  mode = "edit",
   primaryColor = "#2563eb",
   canGeneratePixLink = false,
   onClose,
@@ -44,6 +46,8 @@ export function PendingPaymentMethodModal({
 }: {
   order: any;
   currentMethod?: string;
+  initialMethods?: string[];
+  mode?: "edit" | "receive";
   primaryColor?: string;
   canGeneratePixLink?: boolean;
   onClose: () => void;
@@ -52,9 +56,16 @@ export function PendingPaymentMethodModal({
 }) {
   const total = Number(order?.valor_total || order?.total || 0);
   const totalCents = toCents(total);
-  const [lines, setLines] = useState<PaymentLine[]>([
-    { forma_pagamento: currentMethod || "dinheiro", valor: totalCents ? formatCents(totalCents) : "" },
-  ]);
+  const [lines, setLines] = useState<PaymentLine[]>(() => {
+    const uniqueInitialMethods = [...new Set(initialMethods.filter((method) =>
+      PAYMENT_METHODS.some((availableMethod) => availableMethod.value === method)
+    ))];
+    if (mode === "receive") {
+      return (uniqueInitialMethods.length ? uniqueInitialMethods : [currentMethod || "dinheiro"])
+        .map((forma_pagamento) => ({ forma_pagamento, valor: "" }));
+    }
+    return [{ forma_pagamento: currentMethod || "dinheiro", valor: totalCents ? formatCents(totalCents) : "" }];
+  });
   const [observacao, setObservacao] = useState("");
   const [cashNeedsChange, setCashNeedsChange] = useState(false);
   const [cashChangeFor, setCashChangeFor] = useState("");
@@ -137,7 +148,7 @@ export function PendingPaymentMethodModal({
     setError("");
     try {
       const payload =
-        pagamentos.length > 1
+        mode === "receive" || pagamentos.length > 1
           ? { pagamentos, observacao: observacao.trim() || undefined }
           : {
               forma_pagamento: pagamentos[0]?.forma_pagamento,
@@ -148,7 +159,18 @@ export function PendingPaymentMethodModal({
                   : null,
               observacao: observacao.trim() || undefined,
             };
-      const response = await api.patch(`/pedidos/${order.id}/pagamento-pendente`, payload);
+      const endpoint = mode === "receive"
+        ? `/pedidos/${order.id}/receber-pagamento`
+        : `/pedidos/${order.id}/pagamento-pendente`;
+      const response = await api.patch(endpoint, {
+        ...payload,
+        ...(mode === "receive" && singleCashPayment
+          ? {
+              sem_troco: !cashNeedsChange,
+              troco_para: cashNeedsChange ? parseCurrencyInput(cashChangeFor) : null,
+            }
+          : {}),
+      });
       onUpdated(unwrap(response));
     } catch (caught) {
       setError(apiError(caught));
@@ -175,7 +197,9 @@ export function PendingPaymentMethodModal({
       <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
         <header className="flex items-start justify-between gap-4 border-b px-5 py-4">
           <div>
-            <h2 className="text-lg font-bold text-slate-900">Alterar forma de pagamento</h2>
+            <h2 className="text-lg font-bold text-slate-900">
+              {mode === "receive" ? "Confirmar recebimento" : "Alterar forma de pagamento"}
+            </h2>
             <p className="text-sm text-slate-500">Pedido {order?.numero_pedido || order?.numero || ""}</p>
           </div>
           <button onClick={onClose} className="rounded-full p-2 text-slate-500 hover:bg-slate-100">
@@ -185,7 +209,13 @@ export function PendingPaymentMethodModal({
         <main className="space-y-4 p-5">
           {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
-          {canGeneratePixLink && (
+          {mode === "receive" && (
+            <p className="text-sm text-slate-600">
+              Informe o valor recebido em cada forma de pagamento. Você pode remover ou adicionar formas, mas o saldo precisa chegar a zero.
+            </p>
+          )}
+
+          {mode === "edit" && canGeneratePixLink && (
             <section className="rounded-xl border border-blue-200 bg-blue-50 p-3">
               <div className="text-sm font-bold text-blue-950">Cobrança por link de pagamento</div>
               <p className="mt-1 text-xs text-blue-800">
@@ -336,7 +366,7 @@ export function PendingPaymentMethodModal({
             style={{ backgroundColor: primaryColor }}
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-            Alterar forma de pagamento
+            {mode === "receive" ? "Confirmar recebimento" : "Alterar forma de pagamento"}
           </button>
         </footer>
       </div>

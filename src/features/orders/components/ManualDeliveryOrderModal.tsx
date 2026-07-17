@@ -286,7 +286,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
   const [applyTaxToAdminOrders, setApplyTaxToAdminOrders] = useState(false);
   const [themePrimary, setThemePrimary] = useState(primaryColor);
   const [acceptedPaymentMethods, setAcceptedPaymentMethods] = useState<string[]>(DEFAULT_PAYMENT_METHODS);
-  const [payment, setPayment] = useState("dinheiro");
+  const [paymentMethods, setPaymentMethods] = useState<string[]>(["dinheiro"]);
   const [adminPixAvailable, setAdminPixAvailable] = useState(false);
   const [adminPixSelected, setAdminPixSelected] = useState(false);
   const [semTroco, setSemTroco] = useState(true);
@@ -386,7 +386,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
         : DEFAULT_PAYMENT_METHODS;
       const nextMethods = fiadoEnabled && !methods.includes("Fiado") ? [...methods, "Fiado"] : methods;
       setAcceptedPaymentMethods(nextMethods);
-      setPayment(PAYMENT_METHOD_VALUES[nextMethods[0]] || String(nextMethods[0]).toLowerCase());
+      setPaymentMethods([PAYMENT_METHOD_VALUES[nextMethods[0]] || String(nextMethods[0]).toLowerCase()]);
     });
   }, [fiadoEnabled, lojaId, loggedUser, primaryColor]);
 
@@ -707,12 +707,31 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
       }
     }
     const variation = (configuring.variacoes || []).find((item: any) => item.id === selectedVariation);
+    const configurationSummary = {
+      variacao: variation?.nome || null,
+      grupos: (configuring.grupos || []).map((group: any) => {
+        const groupSelections = selectedOptions.filter((selection) => selection.grupo_id === group.id);
+        return {
+          nome: group.nome,
+          opcoes: groupSelections.map((selection) => {
+            const option = (group.opcoes || []).find((item: any) => item.id === selection.opcao_id);
+            return {
+              nome: option?.nome || "Opção selecionada",
+              quantidade: group.permite_quantidade ? Number(selection.quantidade || 1) : 1,
+              fracao: group.tipo_selecao === "fracionada" && groupSelections.length > 1
+                ? `1/${groupSelections.length}`
+                : null,
+            };
+          }),
+        };
+      }).filter((group: any) => group.opcoes.length > 0),
+    };
     addOrIncrementLine({
       client_line_id: crypto.randomUUID(), produto_loja_id: product.id,
       variacao_produto_loja_id: selectedVariation || null, quantidade: 1,
       selecoes: selectedOptions.map((selection) => ({ ...selection })), nome: product.nome,
       observacoes: configurationNotes.trim() || undefined,
-      detalhe: [variation?.nome, selectedOptions.length ? `${selectedOptions.length} opção(ões)` : ""].filter(Boolean).join(" · "),
+      configuracao_resumo: configurationSummary,
       preco: configuredUnitPrice,
     });
     setConfiguring(null); setSelectedOptions([]); setConfigurationNotes(""); setError("");
@@ -720,6 +739,18 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
   const changeLineQuantity = (index: number, delta: number) => setLines((current) => current
     .map((line, currentIndex) => currentIndex === index ? { ...line, quantidade: Math.max(0, Number(line.quantidade) + delta) } : line)
     .filter((line) => line.quantidade > 0));
+
+  const togglePaymentMethod = (value: string) => {
+    setPaymentMethods((current) => {
+      if (value === "fiado") return ["fiado"];
+      const withoutFiado = current.filter((method) => method !== "fiado");
+      return withoutFiado.includes(value)
+        ? withoutFiado.filter((method) => method !== value)
+        : [...withoutFiado, value];
+    });
+    setSemTroco(true);
+    setTrocoPara("");
+  };
 
   const submit = async () => {
     if (!contact || !lines.length) return;
@@ -736,7 +767,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
       const orderPayload = {
         tipo_pedido: pickupAtStore ? "retirada" : "entrega",
         contato: { nome: contact.nome, telefone: contact.telefone },
-        itens: lines.map(({ nome, detalhe, preco, ...line }) => line),
+        itens: lines.map(({ nome, detalhe, configuracao_resumo, preco, ...line }) => line),
         taxa_entrega: deliveryFee,
         endereco: pickupAtStore
           ? getStoreAddressDefaults(store)
@@ -746,9 +777,12 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
               formatted_address: geo.formattedAddress, google_place_id: geo.placeId,
             },
         pagamento: adminPixSelected ? undefined : {
-          forma_pagamento: payment,
-          sem_troco: payment === "dinheiro" ? semTroco : undefined,
-          troco_para: payment === "dinheiro" && !semTroco ? Number(trocoPara.replace(",", ".")) : undefined,
+          forma_pagamento: paymentMethods[0],
+          formas_pagamento: paymentMethods,
+          sem_troco: paymentMethods.length === 1 && paymentMethods[0] === "dinheiro" ? semTroco : undefined,
+          troco_para: paymentMethods.length === 1 && paymentMethods[0] === "dinheiro" && !semTroco
+            ? Number(trocoPara.replace(",", "."))
+            : undefined,
         },
       };
       const result = unwrap(await api.post(
@@ -961,6 +995,39 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
                         </span>
                         <button onClick={() => setLines(lines.filter((_, current) => current !== index))} className="text-red-500"><Trash2 className="h-4 w-4" /></button>
                       </div>
+                      {line.configuracao_resumo && (
+                        <div className="mt-2 space-y-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                          {line.configuracao_resumo.variacao && (
+                            <div>
+                              <span className="font-semibold text-slate-500">Variação: </span>
+                              <span className="font-medium text-slate-700">{line.configuracao_resumo.variacao}</span>
+                            </div>
+                          )}
+                          {line.configuracao_resumo.grupos.map((group: any, groupIndex: number) => (
+                            <div key={`${group.nome}-${groupIndex}`}>
+                              <div className="font-semibold text-slate-700">{group.nome}</div>
+                              <ul className="mt-0.5 space-y-0.5 pl-3">
+                                {group.opcoes.map((option: any, optionIndex: number) => (
+                                  <li key={`${option.nome}-${optionIndex}`} className="flex items-start gap-1.5">
+                                    <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-slate-400" />
+                                    <span>
+                                      {option.quantidade > 1 ? `${option.quantidade}x ` : ""}
+                                      {option.nome}
+                                      {option.fracao ? ` (${option.fracao})` : ""}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ))}
+                          {line.observacoes && (
+                            <div className="border-t border-slate-200 pt-1.5">
+                              <span className="font-semibold text-slate-500">Observação: </span>
+                              <span className="text-slate-700">{line.observacoes}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <div className="mt-2 flex items-center justify-between">
                         <div className="flex items-center rounded-lg border">
                           <button onClick={() => changeLineQuantity(index, -1)} className="p-1.5"><Minus className="h-3 w-3" /></button>
@@ -1055,7 +1122,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
             <div className="mx-auto grid max-w-3xl gap-5 md:grid-cols-2">
               <section className="rounded-xl border bg-white p-5">
                 <h3 className="font-bold">Forma de pagamento</h3>
-                <p className="mt-1 text-xs text-slate-500">Apenas para controle. Cartão e dinheiro serão cobrados na entrega.</p>
+                <p className="mt-1 text-xs text-slate-500">Selecione uma ou mais formas. Os valores serão informados somente ao confirmar o recebimento.</p>
                 {adminPixAvailable && (
                   <button type="button" onClick={() => setAdminPixSelected((current) => !current)} className="mt-4 flex w-full items-center gap-3 rounded-xl border-2 p-3 text-left" style={adminPixSelected ? { borderColor: primary, backgroundColor: primarySoft } : { borderColor: "#e2e8f0" }}>
                     <CreditCard style={{ color: adminPixSelected ? primary : "#94a3b8" }} />
@@ -1067,9 +1134,9 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
                 <div className="mt-4 space-y-2">
                   {acceptedPaymentMethods.map((method) => {
                     const value = PAYMENT_METHOD_VALUES[method] || String(method).toLowerCase();
-                    const selected = payment === value;
+                    const selected = paymentMethods.includes(value);
                     return (
-                      <button type="button" key={method} onClick={() => setPayment(value)} className="flex w-full items-center gap-3 rounded-xl border-2 p-3 text-left" style={selected ? { borderColor: primary, backgroundColor: primarySoft } : { borderColor: "#e2e8f0" }}>
+                      <button type="button" key={method} onClick={() => togglePaymentMethod(value)} className="flex w-full items-center gap-3 rounded-xl border-2 p-3 text-left" style={selected ? { borderColor: primary, backgroundColor: primarySoft } : { borderColor: "#e2e8f0" }}>
                         <CreditCard style={{ color: selected ? primary : "#94a3b8" }} />
                         <span className="flex-1"><b className="block">{method}</b><small className="text-slate-500">{paymentMethodCaption(value)}</small></span>
                         {selected && <Check className="h-5 w-5" style={{ color: primary }} />}
@@ -1077,7 +1144,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
                     );
                   })}
                 </div>
-                {payment === "dinheiro" && (
+                {paymentMethods.length === 1 && paymentMethods[0] === "dinheiro" && (
                   <>
                     <label className="mt-4 flex cursor-pointer items-center gap-2 text-sm"><input type="checkbox" checked={semTroco} onChange={(e) => setSemTroco(e.target.checked)} className="h-4 w-4" /> Não precisa de troco</label>
                     {!semTroco && <label className="mt-3 block text-sm font-medium">Troco para<input value={trocoPara} onChange={(e) => setTrocoPara(e.target.value)} placeholder="0,00" inputMode="decimal" className="mt-1 w-full rounded-lg border p-2.5" /></label>}
@@ -1107,7 +1174,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
           {nextStep ? (
             <button disabled={contactStepBlocked || (step === STEP_PRODUCTS && !lines.length) || (step === STEP_ADDRESS && !pickupAtStore && (!address.rua || !address.numero || !address.area_entrega_id || !address.bairro || !address.cidade || !address.estado))} onClick={() => { setError(""); setStep(nextStep); }} className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-white disabled:opacity-40" style={buttonStyle}>Continuar <ArrowRight className="h-4 w-4" /></button>
           ) : (
-            <button disabled={busy || (!adminPixSelected && payment === "dinheiro" && !semTroco && !trocoPara)} onClick={submit} className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-white disabled:opacity-50" style={buttonStyle}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {adminPixSelected ? "Criar pedido e gerar link" : "Criar pedido e imprimir"}</button>
+            <button disabled={busy || (!adminPixSelected && paymentMethods.length === 0) || (!adminPixSelected && paymentMethods.length === 1 && paymentMethods[0] === "dinheiro" && !semTroco && !trocoPara)} onClick={submit} className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-white disabled:opacity-50" style={buttonStyle}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {adminPixSelected ? "Criar pedido e gerar link" : "Criar pedido e imprimir"}</button>
           )}
         </footer>
       </div>

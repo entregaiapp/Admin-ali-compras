@@ -178,6 +178,19 @@ const formatCurrency = (value: unknown) =>
     .replace(".", ",")}`;
 const getPaymentSplitGroupId = (payment: any) =>
   payment?.metadata?.grupo_pagamento_admin || payment?.grupo_pagamento_admin || "";
+const RECEIPT_PAYMENT_METHODS = new Set(["pix", "cartao_credito", "cartao_debito", "dinheiro"]);
+const getReceiptInitialMethods = (payments: any[]) => [...new Set(
+  payments
+    .filter(isCurrentPaymentRecord)
+    .flatMap((payment) => {
+      const plannedMethods = payment?.metadata?.formas_pagamento_planejadas;
+      return Array.isArray(plannedMethods) && plannedMethods.length
+        ? plannedMethods
+        : [getCurrentPaymentMethodValue(payment)];
+    })
+    .map((method) => String(method || "").toLowerCase())
+    .filter((method) => RECEIPT_PAYMENT_METHODS.has(method))
+)];
 const getDailyTicketNumber = (order: any) => {
   const formatted = String(order?.numero_comanda_codigo || "").trim();
   if (formatted) return formatted;
@@ -720,8 +733,6 @@ export function OrdersScreen() {
   const [assigningCourier, setAssigningCourier] = useState(false);
   const [unassigningDeliveryId, setUnassigningDeliveryId] = useState("");
   const [updatingStatusOrderId, setUpdatingStatusOrderId] = useState("");
-  const [confirmingCashPaymentId, setConfirmingCashPaymentId] = useState("");
-  const [confirmingPaymentOrderId, setConfirmingPaymentOrderId] = useState("");
   const [updatingCashChangePaymentId, setUpdatingCashChangePaymentId] = useState("");
   const [forceFinalizingOrderId, setForceFinalizingOrderId] = useState("");
   const [forceFinalizeCandidate, setForceFinalizeCandidate] = useState<any | null>(null);
@@ -760,6 +771,7 @@ export function OrdersScreen() {
   const [adminEditItemTarget, setAdminEditItemTarget] = useState<{ order: any; item: any } | null>(null);
   const [adminRemovingItemId, setAdminRemovingItemId] = useState("");
   const [pendingPaymentMethodOrder, setPendingPaymentMethodOrder] = useState<any | null>(null);
+  const [receivingPayment, setReceivingPayment] = useState<{ order: any; payments: any[] } | null>(null);
   const [addressEditOrder, setAddressEditOrder] = useState<any | null>(null);
   const [addressEditForm, setAddressEditForm] = useState<any>({ ...EMPTY_ADMIN_ORDER_ADDRESS });
   const [addressEditSaving, setAddressEditSaving] = useState(false);
@@ -1941,6 +1953,7 @@ export function OrdersScreen() {
     setAdminAddItemsOrder(null);
     setAdminEditItemTarget(null);
     setPendingPaymentMethodOrder(null);
+    setReceivingPayment(null);
     showSystemNotice(message);
   };
 
@@ -2768,65 +2781,7 @@ export function OrdersScreen() {
       );
       return;
     }
-
-    try {
-      setConfirmingPaymentOrderId(order.id);
-      setConfirmingCashPaymentId(preferredPayment.id);
-      const splitGroupId = getPaymentSplitGroupId(preferredPayment);
-      const paymentsToConfirm = splitGroupId
-        ? payments.filter((payment) =>
-            getPaymentSplitGroupId(payment) === splitGroupId &&
-            isCurrentPaymentRecord(payment) &&
-            ["pendente", "em_processamento", "processando"].includes(
-              normalizePaymentText(payment?.status),
-            )
-          )
-        : [preferredPayment];
-      const responses = await Promise.all(
-        paymentsToConfirm.map((payment) =>
-          api.patch(`/pagamentos/${payment.id}/status`, {
-            status: "aprovado",
-            observacao: "Pagamento recebido pelo caixa",
-          }),
-        ),
-      );
-      const updatedPayments = responses.map((response) => response.data.data || response.data);
-      const updatedPayment = updatedPayments[0];
-
-      if (selected?.id === order.id) {
-        setSelectedPayments((previous) =>
-          previous.map((payment) =>
-            updatedPayments.find((updated) => updated.id === payment.id) || payment,
-          ),
-        );
-        setSelected((previous: any) =>
-          previous ? { ...previous, pagamento: updatedPayment } : previous,
-        );
-      }
-      setOrders((previous) =>
-        previous.map((currentOrder) =>
-          currentOrder.id === order.id
-            ? { ...currentOrder, pagamento: updatedPayment, pagamentos: updatedPayments }
-            : currentOrder,
-        ),
-      );
-      await fetchOrders(1, true, { silent: true });
-      showSystemNotice(
-        updatedPayments.length > 1
-          ? "Pagamentos confirmados como recebidos."
-          : "Pagamento confirmado como recebido.",
-      );
-    } catch (error) {
-      showSystemNotice(
-        getApiErrorMessage(
-          error,
-          "Não foi possível confirmar o pagamento em dinheiro.",
-        ),
-      );
-    } finally {
-      setConfirmingCashPaymentId("");
-      setConfirmingPaymentOrderId("");
-    }
+    setReceivingPayment({ order, payments });
   };
 
   const confirmCashPayment = async () => {
@@ -3422,6 +3377,11 @@ export function OrdersScreen() {
     selectedHasActiveRefund ||
     selectedHasReversedPayment ||
     Boolean(selectedAdminPixCharge && !["aprovado", "cancelado"].includes(selectedAdminPixCharge.estado));
+  const selectedBlocksPaymentChange =
+    !selected ||
+    getBackendStatus(selected.status || "") === "cancelado" ||
+    selectedHasActiveRefund ||
+    selectedHasReversedPayment;
   const selectedRefundableAmount = Math.max(
     0,
     Number(
@@ -3551,7 +3511,7 @@ export function OrdersScreen() {
   const selectedCanAdminAddItems = Boolean(selected?.id) && !selectedBlocksAdminAdjustment;
   const selectedCanChangePendingPayment =
     Boolean(selected?.id) &&
-    !selectedBlocksAdminAdjustment &&
+    !selectedBlocksPaymentChange &&
     !selectedIsPaid &&
     !selectedIsFiado;
   const selectedPickupNeedsCashConfirmation = false;
@@ -4168,7 +4128,12 @@ export function OrdersScreen() {
           primaryColor={primaryColor}
           canGeneratePixLink={selectedCanGenerateAdminPixLink}
           onClose={() => setPendingPaymentMethodOrder(null)}
-          onUpdated={(result) => void refreshSelectedOrderAfterAdminAdjustment(result, "Forma de pagamento pendente atualizada.")}
+          onUpdated={(result) => {
+            setSelectedAdminPixCharge((current) => current && current.estado !== "aprovado"
+              ? { ...current, estado: "cancelado" }
+              : current);
+            void refreshSelectedOrderAfterAdminAdjustment(result, "Forma de pagamento pendente atualizada.");
+          }}
           onPixLinkGenerated={(charge) => {
             setSelectedAdminPixCharge(charge);
             void refreshSelectedOrderAfterAdminAdjustment(
@@ -4176,6 +4141,22 @@ export function OrdersScreen() {
               "Link de pagamento PIX gerado com sucesso.",
             );
           }}
+        />
+      )}
+      {receivingPayment && (
+        <PendingPaymentMethodModal
+          order={receivingPayment.order}
+          currentMethod={getCurrentPaymentMethodValue(
+            getPreferredOrderPayment(receivingPayment.order, receivingPayment.payments),
+          )}
+          initialMethods={getReceiptInitialMethods(receivingPayment.payments)}
+          mode="receive"
+          primaryColor={primaryColor}
+          onClose={() => setReceivingPayment(null)}
+          onUpdated={(result) => void refreshSelectedOrderAfterAdminAdjustment(
+            result,
+            "Pagamento confirmado como recebido.",
+          )}
         />
       )}
       {printOrder && (
@@ -4932,7 +4913,6 @@ export function OrdersScreen() {
                     );
                     const operationalActionBusy =
                       updatingStatusOrderId === order.id ||
-                      confirmingPaymentOrderId === order.id ||
                       resolvingCancellationOrderId === order.id;
                     const rowBgClass = isSelectedForDelivery
                       ? ""
@@ -6428,12 +6408,9 @@ export function OrdersScreen() {
                 <button
                   type="button"
                   onClick={confirmCashPayment}
-                  disabled={!selectedPayment?.id || confirmingCashPaymentId === selectedPayment.id}
+                  disabled={!selectedPayment?.id}
                   className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-green-700 px-3 py-2 text-xs font-semibold text-white hover:bg-green-800 disabled:cursor-wait disabled:opacity-70"
                 >
-                  {confirmingCashPaymentId === selectedPayment?.id && (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  )}
                   Marcar pagamento como recebido
                 </button>
               )}
