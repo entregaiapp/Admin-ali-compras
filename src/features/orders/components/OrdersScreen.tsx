@@ -93,6 +93,7 @@ import { ManualDeliveryOrderModal } from "@/features/orders/components/ManualDel
 import { AddOrderItemsModal } from "@/features/orders/components/AddOrderItemsModal";
 import { EditOrderItemModal } from "@/features/orders/components/EditOrderItemModal";
 import { PendingPaymentMethodModal } from "@/features/orders/components/PendingPaymentMethodModal";
+import { RetryDeliveryFeeModal } from "@/features/orders/components/RetryDeliveryFeeModal";
 import { CompactOrderStatusTimeline } from "@/features/orders/components/CompactOrderStatusTimeline";
 import {
   ComandaPrintModeModal,
@@ -788,6 +789,7 @@ export function OrdersScreen() {
   const [adminRemovingItemId, setAdminRemovingItemId] = useState("");
   const [pendingPaymentMethodOrder, setPendingPaymentMethodOrder] = useState<any | null>(null);
   const [receivingPayment, setReceivingPayment] = useState<{ order: any; payments: any[] } | null>(null);
+  const [retryDeliveryOrder, setRetryDeliveryOrder] = useState<any | null>(null);
   const [addressEditOrder, setAddressEditOrder] = useState<any | null>(null);
   const [addressEditForm, setAddressEditForm] = useState<any>({ ...EMPTY_ADMIN_ORDER_ADDRESS });
   const [addressEditSaving, setAddressEditSaving] = useState(false);
@@ -2582,6 +2584,8 @@ export function OrdersScreen() {
   const handleRetryDelivery = async (order: any, event?: MouseEvent) => {
     event?.stopPropagation();
     if (!order?.id) return;
+    setRetryDeliveryOrder(order);
+    return;
 
     try {
       setUpdatingStatusOrderId(order.id);
@@ -2619,6 +2623,35 @@ export function OrdersScreen() {
         currentId === order.id ? "" : currentId,
       );
     }
+  };
+
+  const applyRetryDeliveryResult = async (result: any) => {
+    const updatedOrder = result?.pedido || result || {};
+    if (!updatedOrder?.id) return;
+
+    setRetryDeliveryOrder(null);
+    setOrders((prev) =>
+      prev.map((item) =>
+        item.id === updatedOrder.id
+          ? { ...item, ...updatedOrder, status: "saiu_para_entrega" }
+          : item,
+      ),
+    );
+    if (selected?.id === updatedOrder.id) {
+      setSelected((prev: any) =>
+        prev
+          ? { ...prev, ...updatedOrder, status: "saiu_para_entrega" }
+          : prev,
+      );
+      if (Array.isArray(result?.pagamentos)) {
+        setSelectedPayments(result.pagamentos);
+      }
+      if (result?.cobranca_pix_admin) {
+        setSelectedAdminPixCharge(result.cobranca_pix_admin);
+      }
+    }
+    await fetchOrders(1, true, { silent: true });
+    showSystemNotice("Pedido enviado novamente para entrega.");
   };
 
   const advanceStatus = async (id: string, currentStatus: string) => {
@@ -4184,6 +4217,14 @@ export function OrdersScreen() {
             result,
             "Pagamento confirmado como recebido.",
           )}
+        />
+      )}
+      {retryDeliveryOrder && (
+        <RetryDeliveryFeeModal
+          order={retryDeliveryOrder}
+          primaryColor={primaryColor}
+          onClose={() => setRetryDeliveryOrder(null)}
+          onDone={(result) => void applyRetryDeliveryResult(result)}
         />
       )}
       {printOrder && (

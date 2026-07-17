@@ -5,6 +5,9 @@ export type AdminPixCharge = {
   numero_pedido: string;
   estado: AdminPixChargeState;
   total: number;
+  pedido_total?: number;
+  tipo_cobranca?: "pedido_integral" | "saldo_reentrega";
+  valor_cobranca?: number;
   token_expira_em: string;
   link: string;
   pagamento_atual?: {

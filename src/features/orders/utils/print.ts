@@ -355,6 +355,7 @@ export const printComanda = (
   const delivery = isDeliveryOrder(order)
     ? order.taxa_entrega ?? store?.taxa_entrega_padrao ?? 0
     : 0;
+  const redelivery = Number(order.taxa_reentrega_total || 0);
   const total = order.total ?? order.valor_total ?? 0;
   const orderDate = order.realizado_em || order.criado_em || order.created_at || new Date();
   const scheduledDate = order.agendado_para;
@@ -484,6 +485,7 @@ ${receiptStyles}
   <div class="divider"></div>
   <div class="row"><span>Subtotal</span><span>R$ ${formatMoney(itemsForPrint.length > 0 ? subtotal : order.subtotal)}</span></div>
   ${isDelivery ? `<div class="row"><span>Taxa de entrega</span><span>R$ ${formatMoney(delivery)}</span></div>` : '<div class="row"><span>Retirada na loja</span><span>Grátis</span></div>'}
+  ${redelivery > 0 ? `<div class="row"><span>Taxa de nova entrega</span><span>R$ ${formatMoney(redelivery)}</span></div>` : ""}
   <div class="row"><span>Desconto</span><span>R$ ${formatMoney(order.desconto)}</span></div>
   <div class="divider-solid"></div>
   <div class="row-total"><span>TOTAL A PAGAR</span><span>R$ ${formatMoney(total)}</span></div>
