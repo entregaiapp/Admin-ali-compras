@@ -7,6 +7,7 @@ import {
   CircleAlert,
   ChefHat,
   ClipboardList,
+  Clock3,
   CreditCard,
   Download,
   Printer,
@@ -40,6 +41,13 @@ import {
   formatSalaoQuantity,
   formatSalaoQuantityInput,
 } from "@/features/salao/utils/salaoQuantity";
+import {
+  formatMesaOpenDuration,
+  reconcileMesaOpenTimes,
+  registerMesaOpenTime,
+  removeMesaOpenTime,
+  type MesaOpenTimes,
+} from "@/features/salao/utils/mesaOpenTime";
 import { productsService } from "@/features/products";
 import { showSystemNotice } from "@/shared/components/SystemToast";
 import api from "@/shared/lib/api";
@@ -505,6 +513,8 @@ export function SalaoPage() {
   const user = useMemo(getUser, []);
   const [tab, setTab] = useState<"mesas" | "comandas" | "kds">("mesas");
   const [mesas, setMesas] = useState<any[]>([]);
+  const [mesaOpenTimes, setMesaOpenTimes] = useState<MesaOpenTimes>({});
+  const [openTimeNow, setOpenTimeNow] = useState(() => Date.now());
   const [comandas, setComandas] = useState<any[]>([]);
   const [kds, setKds] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
@@ -634,6 +644,14 @@ export function SalaoPage() {
   }, [selectedComanda?.id]);
 
   useEffect(() => {
+    if (Object.keys(mesaOpenTimes).length === 0) return;
+
+    setOpenTimeNow(Date.now());
+    const intervalId = window.setInterval(() => setOpenTimeNow(Date.now()), 30_000);
+    return () => window.clearInterval(intervalId);
+  }, [mesaOpenTimes]);
+
+  useEffect(() => {
     void loadCurrentStore().catch(() => undefined);
   }, [loadCurrentStore]);
 
@@ -745,7 +763,11 @@ export function SalaoPage() {
             ? salaoService.getComanda(selectedComandaId).catch(() => null)
             : Promise.resolve(null),
         ]);
-        setMesas(sortMesasByNumber(unwrapList(tablesPayload)));
+        const nextMesas = sortMesasByNumber(unwrapList(tablesPayload));
+        setMesaOpenTimes(
+          reconcileMesaOpenTimes(String(user.loja_id), nextMesas),
+        );
+        setMesas(nextMesas);
         setComandas(
           unwrapList(tabsPayload).filter(
             (item: any) => !["paga", "cancelada"].includes(item.status),
@@ -911,6 +933,15 @@ export function SalaoPage() {
         mesa_id: mesa.id,
         quantidade_pessoas: 1,
       });
+      if (result?.id) {
+        setMesaOpenTimes(
+          registerMesaOpenTime(
+            String(user.loja_id),
+            String(mesa.id),
+            String(result.id),
+          ),
+        );
+      }
       setSelectedComanda(result);
       setComandaModule("pedidos");
       if (result?.pin) {
@@ -1362,7 +1393,7 @@ export function SalaoPage() {
     }
   };
 
-  const closeAccount = async (comanda: any) => {
+  const closeAccount = async (comanda: any, mesaIdOverride?: string) => {
     setActionBusy(`close-${comanda.id}`);
     try {
       const result = await salaoService.closeAccount(comanda.id, {
@@ -1374,6 +1405,12 @@ export function SalaoPage() {
           ? "Mesa fechada. Novos pedidos foram bloqueados e o PIN anterior foi invalidado."
           : "Mesa fechada e liberada. O PIN anterior foi invalidado.",
       );
+      const mesaId = mesaIdOverride || comanda?.mesa_id || comanda?.mesa?.id;
+      if (mesaId) {
+        setMesaOpenTimes(
+          removeMesaOpenTime(String(user.loja_id), String(mesaId)),
+        );
+      }
       if (result?.mesa_liberada) {
         setSelectedComanda(null);
       } else {
@@ -1400,7 +1437,7 @@ export function SalaoPage() {
       showSystemNotice("Esta mesa não possui comanda aberta para fechar.");
       return;
     }
-    await closeAccount(comanda);
+    await closeAccount(comanda, String(mesa.id));
   };
 
   const removeItemFromComanda = async (item: any) => {
@@ -2541,6 +2578,7 @@ export function SalaoPage() {
               {visibleMesas.map((mesa) => {
                 const pendingAction = getMesaPendingAction(mesa);
                 const hasOpenComanda = Boolean(mesa.comanda_aberta);
+                const mesaOpenedAt = mesaOpenTimes[String(mesa.id)];
                 const statusLabel = String(mesa.status || "sem status").replace(
                   /_/g,
                   " ",
@@ -2641,6 +2679,27 @@ export function SalaoPage() {
                         >
                           R$ {formatMoney(mesa.comanda_aberta.total)}
                         </div>
+                        {mesaOpenedAt && (
+                          <div
+                            className="flex min-w-0 items-center font-semibold text-gray-600"
+                            style={{
+                              gap: 4 * tableCardScale,
+                              marginBottom: 6 * tableCardScale,
+                            }}
+                            title="Tempo desde a abertura da mesa neste navegador"
+                          >
+                            <Clock3
+                              className="shrink-0"
+                              style={{
+                                height: 13 * tableCardScale,
+                                width: 13 * tableCardScale,
+                              }}
+                            />
+                            <span className="min-w-0 break-words [overflow-wrap:anywhere]">
+                              Aberta há {formatMesaOpenDuration(mesaOpenedAt, openTimeNow)}
+                            </span>
+                          </div>
+                        )}
                         <button
                           type="button"
                           onClick={(event) => {
