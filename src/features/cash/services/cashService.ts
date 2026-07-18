@@ -4,6 +4,23 @@ export type CashStatus = 'aberto' | 'fechado';
 export type CashMovementType = 'sangria' | 'suprimento' | 'despesa_rapida';
 export type CashPaymentMethod = 'dinheiro' | 'pix' | 'cartao_debito' | 'cartao_credito';
 
+export type OperatingShift = {
+  id: string;
+  dia_semana: number;
+  aberto: boolean;
+  nome_turno: string;
+  horario_abertura: string;
+  horario_fechamento: string;
+};
+
+export type AvailableCashShifts = {
+  loja_id: string;
+  data_operacional: string;
+  turnos: OperatingShift[];
+  turno_sugerido_id: string | null;
+  permite_caixa_avulso: boolean;
+};
+
 export type CashSummary = {
   valor_inicial: number;
   vendas_dinheiro: number;
@@ -46,6 +63,13 @@ export type CashRegister = {
   id: string;
   loja_id: string;
   operador_nome?: string | null;
+  turno?: {
+    id: string | null;
+    nome: string;
+    dia_semana: number | null;
+    horario_abertura: string | null;
+    horario_fechamento: string | null;
+  } | null;
   status: CashStatus;
   valor_inicial: number;
   observacao_abertura?: string | null;
@@ -140,7 +164,12 @@ export const cashService = {
     return unwrap<AvailableCashOrder[]>(await api.get('/caixa-operacional/pedidos-disponiveis'));
   },
 
+  async availableShifts() {
+    return unwrap<AvailableCashShifts>(await api.get('/caixa-operacional/turnos-disponiveis'));
+  },
+
   async open(payload: {
+    turno_id?: string | null;
     valor_inicial: number;
     observacao?: string | null;
     pedido_ids?: string[];

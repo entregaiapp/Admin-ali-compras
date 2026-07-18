@@ -17,6 +17,7 @@ import { formatBrasiliaDate } from '@/shared/lib/dateTime';
 import { showSystemNotice } from '@/shared/components/SystemToast';
 import {
   type AvailableCashOrder,
+  type OperatingShift,
   type CashMovement,
   type CashMovementType,
   type CashPaymentMethod,
@@ -29,6 +30,15 @@ import {
 const PRIMARY = '#122a4c';
 const GREEN = '#059669';
 const PINK = '#e91e63';
+const weekDays = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+
+const cashShiftLabel = (cash: Pick<CashRegister, 'turno' | 'aberto_em'>) => {
+  if (cash.turno?.nome && cash.turno.horario_abertura && cash.turno.horario_fechamento) {
+    return `${cash.turno.nome} · ${cash.turno.horario_abertura.slice(0, 5)} às ${cash.turno.horario_fechamento.slice(0, 5)}`;
+  }
+  if (cash.turno?.nome) return cash.turno.nome;
+  return cash.aberto_em ? 'Sem turno — registro legado' : 'Caixa avulso';
+};
 
 const tabs = [
   { key: 'atual', label: 'Caixa atual' },
@@ -193,6 +203,7 @@ const printCashClosingReceipt = (
         <main>
           <h1>Fechamento de caixa</h1>
           <div class="center muted">${escapePrintHtml(cash.operador_nome || cash.fechado_por_nome || 'Operador')} - Matriz</div>
+          <div class="center muted">${escapePrintHtml(cashShiftLabel(cash))}</div>
           ${period ? `<div class="center muted">${escapePrintHtml(period)}</div>` : ''}
           <div class="divider"></div>
           <div class="row"><span>Pedidos</span><strong>${escapePrintHtml(resolvedSummary.pedidos_rastreados || 0)}</strong></div>
@@ -401,6 +412,8 @@ function MoneyField({
 
 function OpenCashModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const [orders, setOrders] = useState<AvailableCashOrder[]>([]);
+  const [shifts, setShifts] = useState<OperatingShift[]>([]);
+  const [selectedShift, setSelectedShift] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [selectAll, setSelectAll] = useState(false);
   const [initialValue, setInitialValue] = useState('');
@@ -409,9 +422,13 @@ function OpenCashModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    cashService.availableOrders()
-      .then(setOrders)
-      .catch(() => showSystemNotice('Não foi possível carregar os pedidos disponíveis.'))
+    Promise.all([cashService.availableOrders(), cashService.availableShifts()])
+      .then(([availableOrders, availableShifts]) => {
+        setOrders(availableOrders);
+        setShifts(availableShifts.turnos || []);
+        setSelectedShift(availableShifts.turno_sugerido_id || null);
+      })
+      .catch(() => showSystemNotice('Não foi possível carregar os dados para abertura do caixa.'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -423,6 +440,7 @@ function OpenCashModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
     try {
       setSaving(true);
       await cashService.open({
+        turno_id: selectedShift,
         valor_inicial: parseMoney(initialValue),
         observacao: note || null,
         pedido_ids: selectAll ? [] : selected,
@@ -440,6 +458,26 @@ function OpenCashModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
   return (
     <Modal title="Abrir caixa" onClose={onClose}>
       <div className="space-y-4">
+        <label className="block">
+          <span className="mb-1.5 block text-sm font-medium text-gray-700">Turno da data operacional</span>
+          {shifts.length > 0 ? (
+            <select
+              value={selectedShift || ''}
+              onChange={(event) => setSelectedShift(event.target.value || null)}
+              className="h-12 w-full rounded-xl border border-gray-200 bg-white px-4 text-sm outline-none focus:border-emerald-500"
+            >
+              {shifts.map((shift) => (
+                <option key={shift.id} value={shift.id}>
+                  {shift.nome_turno} · {weekDays[shift.dia_semana]} · {shift.horario_abertura.slice(0, 5)} às {shift.horario_fechamento.slice(0, 5)}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+              Caixa avulso — não há turno configurado para esta data operacional.
+            </div>
+          )}
+        </label>
         <MoneyField label="Valor inicial em caixa" value={initialValue} onChange={setInitialValue} />
         <TextField label="Observação" value={note} onChange={setNote} placeholder="Opcional" />
 
@@ -491,7 +529,7 @@ function OpenCashModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
 
         <div className="grid grid-cols-2 gap-3 pt-2">
           <button onClick={onClose} className="h-12 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700">Cancelar</button>
-          <button onClick={submit} disabled={saving} className="h-12 rounded-xl bg-emerald-600 text-sm font-semibold text-white disabled:opacity-60">
+          <button onClick={submit} disabled={saving || loading || (shifts.length > 0 && !selectedShift)} className="h-12 rounded-xl bg-emerald-600 text-sm font-semibold text-white disabled:opacity-60">
             {saving ? 'Abrindo...' : 'Abrir caixa'}
           </button>
         </div>
@@ -613,6 +651,9 @@ function CashDetailsModal({
             Fluxo: {period}
           </div>
         )}
+        <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-800">
+          Turno: {cashShiftLabel(cash)}
+        </div>
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="rounded-xl border border-gray-200 p-4">
             <div className="text-xs text-gray-500">Pedidos rastreados</div>
@@ -760,6 +801,9 @@ function CloseCashModal({
   return (
     <Modal title="Fechar caixa" onClose={onClose}>
       <div className="space-y-4">
+        <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-800">
+          Fechamento do turno: {cashShiftLabel(cash)}
+        </div>
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm text-gray-500">Informe os valores contados por forma de pagamento:</p>
           <button onClick={() => setDetailsOpen(true)} className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700">
@@ -963,6 +1007,7 @@ export function CashScreen() {
             <div>
               <div className="font-semibold text-emerald-900">Caixa aberto desde {formatBrasiliaDate(cash.aberto_em, { hour: '2-digit', minute: '2-digit' })}</div>
               <div className="text-sm text-emerald-700">{cash.operador_nome || 'Operador'} · Matriz</div>
+              <div className="mt-1 text-xs font-semibold text-emerald-800">{cashShiftLabel(cash)}</div>
             </div>
           </div>
         </div>
@@ -1047,6 +1092,7 @@ export function CashScreen() {
             <th className="px-4 py-3">Data</th>
             <th className="px-4 py-3">Operador</th>
             <th className="px-4 py-3">Filial</th>
+            <th className="px-4 py-3">Turno</th>
             <th className="px-4 py-3">Esperado</th>
             <th className="px-4 py-3">Informado</th>
             <th className="px-4 py-3">Diferença</th>
@@ -1060,6 +1106,7 @@ export function CashScreen() {
               <td className="px-4 py-4">{item.fechado_em ? formatBrasiliaDate(item.fechado_em, { day: '2-digit', month: '2-digit' }) : '-'}</td>
               <td className="px-4 py-4">{item.operador_nome || '-'}</td>
               <td className="px-4 py-4"><span className="rounded-full bg-gray-100 px-2 py-1 text-xs">Matriz</span></td>
+              <td className="px-4 py-4 text-xs font-semibold text-indigo-700">{cashShiftLabel(item)}</td>
               <td className="px-4 py-4 font-semibold">{currency(item.total_esperado)}</td>
               <td className="px-4 py-4">{currency(item.total_informado)}</td>
               <td className={`px-4 py-4 font-bold ${item.diferenca_total < 0 ? 'text-pink-600' : item.diferenca_total > 0 ? 'text-emerald-600' : 'text-gray-500'}`}>{currency(item.diferenca_total)}</td>
@@ -1108,6 +1155,7 @@ export function CashScreen() {
             <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-gray-900">
               {item.fechado_em ? formatBrasiliaDate(item.fechado_em, { day: '2-digit', month: '2-digit' }) : '-'} · {item.operador_nome || '-'}
               <span className="rounded-full bg-white px-2 py-1 text-xs text-gray-600">Matriz</span>
+              <span className="rounded-full bg-indigo-100 px-2 py-1 text-xs text-indigo-700">{cashShiftLabel(item)}</span>
               <span className="rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-700">{item.divergencia_status === 'justificada' ? 'Justificada' : 'Pendente'}</span>
             </div>
             <div className="mt-1 text-base font-bold text-pink-700">Diferença: {currency(item.diferenca_total)}</div>

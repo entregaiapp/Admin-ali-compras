@@ -26,6 +26,42 @@ import { PrintingSettingsPanel, type StorePrintMode } from '@/features/printing/
 
 const PRIMARY = "#122a4c";
 const TENANT_ROOT_DOMAIN = import.meta.env.VITE_TENANT_ROOT_DOMAIN || "entregaiapp.com.br";
+const WEEK_MINUTES = 7 * 24 * 60;
+
+const parseScheduleTime = (value: string) => {
+  const [hours, minutes] = String(value || "").split(":").map(Number);
+  return Number.isInteger(hours) && hours >= 0 && hours <= 23 && Number.isInteger(minutes) && minutes >= 0 && minutes <= 59
+    ? hours * 60 + minutes
+    : null;
+};
+
+const validateScheduleDraft = (schedules: any[]) => {
+  const names = new Set<string>();
+  const intervals: Array<{ start: number; end: number; name: string }> = [];
+  for (const schedule of schedules) {
+    const name = String(schedule.nome_turno || "").trim();
+    const opening = parseScheduleTime(schedule.horario_abertura);
+    const closing = parseScheduleTime(schedule.horario_fechamento);
+    if (!name) return "Informe o nome de todos os turnos.";
+    const nameKey = `${schedule.dia_semana}:${name.toLocaleLowerCase("pt-BR")}`;
+    if (names.has(nameKey)) return `O nome do turno “${name}” está repetido no mesmo dia.`;
+    names.add(nameKey);
+    if (opening === null || closing === null || opening === closing) return `Revise o horário do turno “${name}”.`;
+    if (schedule.aberto !== false) {
+      const start = Number(schedule.dia_semana) * 1440 + opening;
+      intervals.push({ start, end: Number(schedule.dia_semana) * 1440 + closing + (closing <= opening ? 1440 : 0), name });
+    }
+  }
+  for (let first = 0; first < intervals.length; first += 1) {
+    for (let second = first + 1; second < intervals.length; second += 1) {
+      const overlaps = [-WEEK_MINUTES, 0, WEEK_MINUTES].some((offset) =>
+        Math.max(intervals[first].start, intervals[second].start + offset)
+          < Math.min(intervals[first].end, intervals[second].end + offset));
+      if (overlaps) return `Os turnos “${intervals[first].name}” e “${intervals[second].name}” possuem horários sobrepostos.`;
+    }
+  }
+  return null;
+};
 
 const emptyPagarmeRecipientForm = {
   type: "individual",
@@ -275,10 +311,14 @@ export function SettingsScreen() {
           config.impressao_pedido_modo || prev.impressao_pedido_modo || "agent_com_fallback",
         horarios:
           horarios.length > 0
-            ? horarios
+            ? horarios.map((horario: any, index: number) => ({
+                ...horario,
+                nome_turno: horario.nome_turno || "Turno 1",
+              }))
             : Array.from({ length: 7 }, (_, i) => ({
                 dia_semana: i,
                 aberto: true,
+                nome_turno: "Turno 1",
                 horario_abertura: store.horario_abertura || "08:00",
                 horario_fechamento: store.horario_fechamento || "22:00",
               })),
@@ -324,6 +364,8 @@ export function SettingsScreen() {
       setIsSaving(true);
       setShowSuccess(false);
       setError("");
+      const scheduleError = validateScheduleDraft(formData.horarios);
+      if (scheduleError) throw new Error(scheduleError);
       const storeData = {
         nome: formData.nome,
         razao_social: formData.razao_social,
@@ -381,7 +423,7 @@ export function SettingsScreen() {
       setTimeout(() => setSaved(false), 2500);
     } catch (err: any) {
       console.error("Erro ao salvar:", err);
-      const apiMessage = err?.response?.data?.message || err?.response?.data?.error?.message || err?.response?.data?.error;
+      const apiMessage = err?.response?.data?.message || err?.response?.data?.error?.message || err?.response?.data?.error || err?.message;
       setError(typeof apiMessage === "string" ? apiMessage : "Não foi possível salvar as configurações.");
       setIsSaving(false);
     }
@@ -401,6 +443,29 @@ export function SettingsScreen() {
       newHorarios[index] = { ...newHorarios[index], [field]: value };
       return { ...prev, horarios: newHorarios };
     });
+  };
+
+  const addSchedule = (day: number) => {
+    setFormData((prev: any) => {
+      const count = prev.horarios.filter((schedule: any) => Number(schedule.dia_semana) === day).length;
+      return {
+        ...prev,
+        horarios: [...prev.horarios, {
+          dia_semana: day,
+          aberto: true,
+          nome_turno: `Turno ${count + 1}`,
+          horario_abertura: "08:00",
+          horario_fechamento: "12:00",
+        }],
+      };
+    });
+  };
+
+  const removeSchedule = (index: number) => {
+    setFormData((prev: any) => ({
+      ...prev,
+      horarios: prev.horarios.filter((_: any, scheduleIndex: number) => scheduleIndex !== index),
+    }));
   };
 
   const daysOfWeek = [
@@ -952,71 +1017,72 @@ export function SettingsScreen() {
                 </h3>
               </div>
 
-              <div className="space-y-3">
-                {formData.horarios.map((h: any, idx: number) => (
-                  <div
-                    key={idx}
-                    className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border border-gray-100 rounded-xl bg-gray-50/50 hover:bg-white hover:border-gray-200 transition-all gap-4"
-                  >
-                    <div className="flex items-center gap-3 min-w-[120px]">
-                      <div
-                        className={`w-2 h-2 rounded-full ${h.aberto ? "bg-green-500" : "bg-gray-300"}`}
-                      />
-                      <span className="font-medium text-gray-700">
-                        {daysOfWeek[h.dia_semana]}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-6">
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="time"
-                          disabled={!h.aberto}
-                          value={h.horario_abertura || "08:00"}
-                          onChange={(e) =>
-                            handleScheduleChange(
-                              idx,
-                              "horario_abertura",
-                              e.target.value,
-                            )
-                          }
-                          className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm bg-white disabled:opacity-50 focus:outline-none focus:ring-1 focus:ring-primary/20"
-                        />
-                        <span className="text-gray-400">às</span>
-                        <input
-                          type="time"
-                          disabled={!h.aberto}
-                          value={h.horario_fechamento || "22:00"}
-                          onChange={(e) =>
-                            handleScheduleChange(
-                              idx,
-                              "horario_fechamento",
-                              e.target.value,
-                            )
-                          }
-                          className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm bg-white disabled:opacity-50 focus:outline-none focus:ring-1 focus:ring-primary/20"
-                        />
+              <div className="space-y-4">
+                {daysOfWeek.map((dayName, day) => {
+                  const daySchedules = formData.horarios
+                    .map((schedule: any, index: number) => ({ schedule, index }))
+                    .filter(({ schedule }: any) => Number(schedule.dia_semana) === day)
+                    .sort(({ schedule: first }: any, { schedule: second }: any) =>
+                      String(first.horario_abertura || "").localeCompare(String(second.horario_abertura || "")));
+                  return (
+                    <div key={day} className="rounded-xl border border-gray-200 bg-gray-50/50 p-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div>
+                          <div className="font-semibold text-gray-800">{dayName}</div>
+                          <div className="text-xs text-gray-500">
+                            {daySchedules.filter(({ schedule }: any) => schedule.aberto).length} turno(s) ativo(s)
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => addSchedule(day)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:border-gray-300"
+                        >
+                          <Plus className="h-3.5 w-3.5" /> Adicionar turno
+                        </button>
                       </div>
 
-                      <button
-                        onClick={() =>
-                          handleScheduleChange(idx, "aberto", !h.aberto)
-                        }
-                        className={`relative inline-flex h-5 w-9 rounded-full transition-colors flex-shrink-0`}
-                        style={{
-                          backgroundColor: h.aberto ? PRIMARY : "#d1d5db",
-                        }}
-                      >
-                        <span
-                          className="inline-block w-4 h-4 bg-white rounded-full shadow transition-transform mt-0.5"
-                          style={{
-                            transform: `translateX(${h.aberto ? 18 : 2}px)`,
-                          }}
-                        />
-                      </button>
+                      {daySchedules.length === 0 ? (
+                        <div className="rounded-lg border border-dashed border-gray-200 bg-white px-4 py-5 text-center text-sm text-gray-500">
+                          Fechado — nenhum turno configurado.
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {daySchedules.map(({ schedule: h, index: idx }: any) => (
+                            <div key={h.id || `${day}-${idx}`} className="grid gap-3 rounded-lg border border-gray-100 bg-white p-3 md:grid-cols-[minmax(150px,1fr)_auto_auto_auto] md:items-end">
+                              <label className="block">
+                                <span className="mb-1 block text-xs font-medium text-gray-500">Nome do turno</span>
+                                <input
+                                  value={h.nome_turno || ""}
+                                  onChange={(event) => handleScheduleChange(idx, "nome_turno", event.target.value)}
+                                  maxLength={80}
+                                  className="h-10 w-full rounded-lg border border-gray-200 px-3 text-sm outline-none focus:border-[#122a4c]"
+                                  placeholder="Ex.: Almoço"
+                                />
+                              </label>
+                              <label className="block">
+                                <span className="mb-1 block text-xs font-medium text-gray-500">Abertura</span>
+                                <input type="time" value={h.horario_abertura || "08:00"} onChange={(event) => handleScheduleChange(idx, "horario_abertura", event.target.value)} className="h-10 rounded-lg border border-gray-200 px-2 text-sm" />
+                              </label>
+                              <label className="block">
+                                <span className="mb-1 block text-xs font-medium text-gray-500">Fechamento</span>
+                                <input type="time" value={h.horario_fechamento || "12:00"} onChange={(event) => handleScheduleChange(idx, "horario_fechamento", event.target.value)} className="h-10 rounded-lg border border-gray-200 px-2 text-sm" />
+                              </label>
+                              <div className="flex h-10 items-center justify-end gap-2">
+                                <button type="button" onClick={() => handleScheduleChange(idx, "aberto", !h.aberto)} className={`rounded-lg px-3 py-2 text-xs font-semibold ${h.aberto ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"}`}>
+                                  {h.aberto ? "Ativo" : "Inativo"}
+                                </button>
+                                <button type="button" onClick={() => removeSchedule(idx)} title="Remover turno" className="rounded-lg p-2 text-red-500 hover:bg-red-50">
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               <p className="text-xs text-gray-500 italic">
