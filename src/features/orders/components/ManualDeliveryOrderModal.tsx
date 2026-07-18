@@ -36,6 +36,13 @@ const apiError = (error: any) =>
   error?.message ||
   "Não foi possível concluir a operação.";
 const money = (value: any) => Number(value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const parseMoneyInput = (value: string) => {
+  const raw = String(value || "").trim().replace(/^R\$\s*/i, "").replace(/\s/g, "");
+  if (!raw) return 0;
+  const normalized = raw.includes(",") ? raw.replace(/\./g, "").replace(",", ".") : raw;
+  const numeric = Number(normalized);
+  return Number.isFinite(numeric) ? numeric : Number.NaN;
+};
 const normalizeSearchText = (value: string) =>
   value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR");
 const getSearchMatchRank = (
@@ -291,6 +298,8 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
   const [adminPixSelected, setAdminPixSelected] = useState(false);
   const [semTroco, setSemTroco] = useState(true);
   const [trocoPara, setTrocoPara] = useState("");
+  const [adjustmentType, setAdjustmentType] = useState<"nenhum" | "desconto" | "acrescimo">("nenhum");
+  const [adjustmentValue, setAdjustmentValue] = useState("");
   const quickNameRef = useRef<HTMLInputElement | null>(null);
   const quickPhoneRef = useRef<HTMLInputElement | null>(null);
   const firstOptionSearchRef = useRef<HTMLInputElement | null>(null);
@@ -319,7 +328,14 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
     [address.area_entrega_id, deliveryAreas],
   );
   const deliveryFee = pickupAtStore ? 0 : Math.max(0, Number(selectedDeliveryArea?.taxa_entrega || 0));
-  const estimatedTotal = estimatedSubtotal + deliveryFee;
+  const parsedAdjustmentValue = parseMoneyInput(adjustmentValue);
+  const adjustmentAmount = Number.isFinite(parsedAdjustmentValue) ? Math.max(0, parsedAdjustmentValue) : 0;
+  const discountAmount = adjustmentType === "desconto" ? adjustmentAmount : 0;
+  const surchargeAmount = adjustmentType === "acrescimo" ? adjustmentAmount : 0;
+  const adjustmentInvalid = adjustmentType !== "nenhum" && (
+    !Number.isFinite(parsedAdjustmentValue) || parsedAdjustmentValue <= 0 || discountAmount > estimatedSubtotal
+  );
+  const estimatedTotal = Math.max(0, estimatedSubtotal - discountAmount + surchargeAmount + deliveryFee);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedProductSearch(productSearch.trim()), 300);
@@ -752,12 +768,25 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
     setTrocoPara("");
   };
 
+  const toggleAdjustment = (type: "desconto" | "acrescimo") => {
+    setAdjustmentType((current) => current === type ? "nenhum" : type);
+    setAdjustmentValue("");
+    setError("");
+  };
+
   const submit = async () => {
     if (!contact || !lines.length) return;
     setBusy(true); setError("");
     try {
       if (!pickupAtStore && !selectedDeliveryArea) {
         throw new Error("Selecione um bairro atendido pela loja.");
+      }
+      if (adjustmentInvalid) {
+        throw new Error(
+          discountAmount > estimatedSubtotal
+            ? "O desconto não pode ser maior que o subtotal dos produtos."
+            : "Informe um valor válido para o ajuste.",
+        );
       }
       const geo = pickupAtStore ? null : unwrap(await api.post("/geocode-address", {
         street: address.rua, number: address.numero, neighborhood: address.bairro,
@@ -769,6 +798,8 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
         contato: { nome: contact.nome, telefone: contact.telefone },
         itens: lines.map(({ nome, detalhe, configuracao_resumo, preco, ...line }) => line),
         taxa_entrega: deliveryFee,
+        desconto: discountAmount || undefined,
+        acrescimo: surchargeAmount || undefined,
         endereco: pickupAtStore
           ? getStoreAddressDefaults(store)
           : {
@@ -1151,6 +1182,43 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
                   </>
                 )}
                 </>}
+                <div className="mt-5 border-t pt-4">
+                  <h4 className="text-sm font-bold text-slate-900">Ajuste no valor do pedido</h4>
+                  <p className="mt-1 text-xs text-slate-500">Aplique um desconto ou acréscimo em valor fixo.</p>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleAdjustment("desconto")}
+                      className="flex items-center justify-center gap-2 rounded-lg border-2 px-3 py-2.5 text-sm font-semibold"
+                      style={adjustmentType === "desconto" ? { borderColor: primary, backgroundColor: primarySoft, color: primary } : { borderColor: "#e2e8f0", color: "#475569" }}
+                    >
+                      <Minus className="h-4 w-4" /> Desconto
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleAdjustment("acrescimo")}
+                      className="flex items-center justify-center gap-2 rounded-lg border-2 px-3 py-2.5 text-sm font-semibold"
+                      style={adjustmentType === "acrescimo" ? { borderColor: primary, backgroundColor: primarySoft, color: primary } : { borderColor: "#e2e8f0", color: "#475569" }}
+                    >
+                      <Plus className="h-4 w-4" /> Acréscimo
+                    </button>
+                  </div>
+                  {adjustmentType !== "nenhum" && (
+                    <label className="mt-3 block text-sm font-medium">
+                      Valor do {adjustmentType === "desconto" ? "desconto" : "acréscimo"}
+                      <input
+                        value={adjustmentValue}
+                        onChange={(event) => setAdjustmentValue(event.target.value)}
+                        placeholder="0,00"
+                        inputMode="decimal"
+                        className={`mt-1 w-full rounded-lg border p-2.5 ${adjustmentInvalid && adjustmentValue ? "border-red-400" : ""}`}
+                      />
+                      {discountAmount > estimatedSubtotal && (
+                        <span className="mt-1 block text-xs text-red-600">O desconto máximo é {money(estimatedSubtotal)}.</span>
+                      )}
+                    </label>
+                  )}
+                </div>
               </section>
               <section className="rounded-xl border bg-white p-5">
                 <h3 className="font-bold">Conferência</h3>
@@ -1162,6 +1230,8 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
                   {!pickupAtStore && <div className="flex justify-between"><dt>Bairro</dt><dd className="max-w-[190px] text-right">{address.bairro || "-"}</dd></div>}
                   {!pickupAtStore && <div className="flex justify-between"><dt>Taxa de entrega</dt><dd>{money(deliveryFee)}</dd></div>}
                   <div className="flex justify-between border-t pt-3"><dt>Subtotal estimado</dt><dd>{money(estimatedSubtotal)}</dd></div>
+                  {discountAmount > 0 && <div className="flex justify-between text-emerald-700"><dt>Desconto</dt><dd>- {money(discountAmount)}</dd></div>}
+                  {surchargeAmount > 0 && <div className="flex justify-between text-amber-700"><dt>Acréscimo</dt><dd>+ {money(surchargeAmount)}</dd></div>}
                   <div className="flex justify-between text-base font-bold"><dt>Total estimado</dt><dd>{money(estimatedTotal)}</dd></div>
                 </dl>
               </section>
@@ -1174,7 +1244,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
           {nextStep ? (
             <button disabled={contactStepBlocked || (step === STEP_PRODUCTS && !lines.length) || (step === STEP_ADDRESS && !pickupAtStore && (!address.rua || !address.numero || !address.area_entrega_id || !address.bairro || !address.cidade || !address.estado))} onClick={() => { setError(""); setStep(nextStep); }} className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-white disabled:opacity-40" style={buttonStyle}>Continuar <ArrowRight className="h-4 w-4" /></button>
           ) : (
-            <button disabled={busy || (!adminPixSelected && paymentMethods.length === 0) || (!adminPixSelected && paymentMethods.length === 1 && paymentMethods[0] === "dinheiro" && !semTroco && !trocoPara)} onClick={submit} className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-white disabled:opacity-50" style={buttonStyle}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {adminPixSelected ? "Criar pedido e gerar link" : "Criar pedido e imprimir"}</button>
+            <button disabled={busy || adjustmentInvalid || (!adminPixSelected && paymentMethods.length === 0) || (!adminPixSelected && paymentMethods.length === 1 && paymentMethods[0] === "dinheiro" && !semTroco && !trocoPara)} onClick={submit} className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-white disabled:opacity-50" style={buttonStyle}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {adminPixSelected ? "Criar pedido e gerar link" : "Criar pedido e imprimir"}</button>
           )}
         </footer>
       </div>

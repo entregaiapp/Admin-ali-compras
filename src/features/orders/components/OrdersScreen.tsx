@@ -6353,15 +6353,28 @@ export function OrdersScreen() {
                     <span className="text-green-600">Grátis</span>
                   </div>
                 )}
-                <div className="flex justify-between text-sm text-gray-500">
-                  <span>Desconto</span>
-                  <span className="text-green-600">
-                    -R${" "}
-                    {parseFloat(selected.desconto || 0)
-                      .toFixed(2)
-                      .replace(".", ",")}
-                  </span>
-                </div>
+                {parseFloat(selected.desconto || 0) > 0 && (
+                  <div className="flex justify-between text-sm text-gray-500">
+                    <span>Desconto</span>
+                    <span className="text-green-600">
+                      -R${" "}
+                      {parseFloat(selected.desconto || 0)
+                        .toFixed(2)
+                        .replace(".", ",")}
+                    </span>
+                  </div>
+                )}
+                {parseFloat(selected.acrescimo || 0) > 0 && (
+                  <div className="flex justify-between text-sm text-gray-500">
+                    <span>Acréscimo</span>
+                    <span className="text-amber-600">
+                      +R${" "}
+                      {parseFloat(selected.acrescimo || 0)
+                        .toFixed(2)
+                        .replace(".", ",")}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between font-semibold text-gray-800">
                   <span>Total</span>
                   <span>

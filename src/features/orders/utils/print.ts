@@ -486,7 +486,8 @@ ${receiptStyles}
   <div class="row"><span>Subtotal</span><span>R$ ${formatMoney(itemsForPrint.length > 0 ? subtotal : order.subtotal)}</span></div>
   ${isDelivery ? `<div class="row"><span>Taxa de entrega</span><span>R$ ${formatMoney(delivery)}</span></div>` : '<div class="row"><span>Retirada na loja</span><span>Grátis</span></div>'}
   ${redelivery > 0 ? `<div class="row"><span>Taxa de nova entrega</span><span>R$ ${formatMoney(redelivery)}</span></div>` : ""}
-  <div class="row"><span>Desconto</span><span>R$ ${formatMoney(order.desconto)}</span></div>
+  ${Number(order.desconto || 0) > 0 ? `<div class="row"><span>Desconto</span><span>- R$ ${formatMoney(order.desconto)}</span></div>` : ""}
+  ${Number(order.acrescimo || 0) > 0 ? `<div class="row"><span>Acréscimo</span><span>+ R$ ${formatMoney(order.acrescimo)}</span></div>` : ""}
   <div class="divider-solid"></div>
   <div class="row-total"><span>TOTAL A PAGAR</span><span>R$ ${formatMoney(total)}</span></div>
   <div class="payment-box">
