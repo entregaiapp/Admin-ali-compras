@@ -11,6 +11,7 @@ import {
 import api from '@/shared/lib/api';
 import { dateInputInBrasilia, formatBrasiliaTime, hourInBrasilia } from '@/shared/lib/dateTime';
 import { Tooltip as UiTooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/shared/components/ui/tooltip';
+import { ClosedCashWelcome } from './ClosedCashWelcome';
 
 const PRIMARY = '#122a4c';
 
@@ -248,6 +249,8 @@ const todayDateInput = () => {
   return dateInputInBrasilia();
 };
 
+const DASHBOARD_STARTED_STORAGE_KEY = 'entregai_admin_dashboard_started_on';
+
 export function DashboardScreen() {
   const navigate = useNavigate();
   const [metrics, setMetrics] = useState<any>(null);
@@ -257,6 +260,13 @@ export function DashboardScreen() {
 
   const [selectedDate, setSelectedDate] = useState(todayDateInput);
   const [salesIntervalMinutes, setSalesIntervalMinutes] = useState(60);
+  const [dashboardStartedToday, setDashboardStartedToday] = useState(() => {
+    try {
+      return localStorage.getItem(DASHBOARD_STARTED_STORAGE_KEY) === todayDateInput();
+    } catch {
+      return false;
+    }
+  });
 
   const user = (() => {
     try {
@@ -375,6 +385,28 @@ export function DashboardScreen() {
   const primaryColor = storeConfig?.cor_primaria || PRIMARY;
   const secondaryColor = storeConfig?.cor_secundaria || '#16a34a';
   const slogan = storeConfig?.slogan;
+  const firstName = String(user?.nome || '').trim().split(/\s+/)[0] || 'Administrador';
+  const dashboardStorageDate = todayDateInput();
+
+  const handleStartDashboard = () => {
+    try {
+      localStorage.setItem(DASHBOARD_STARTED_STORAGE_KEY, dashboardStorageDate);
+    } catch {
+      // A tela ainda pode ser fechada nesta sessão se o armazenamento estiver indisponível.
+    }
+    setDashboardStartedToday(true);
+  };
+
+  if (hasCashFinanceResponse && !financeUnavailable && !cashIsOpen && !dashboardStartedToday) {
+    return (
+      <ClosedCashWelcome
+        firstName={firstName}
+        primaryColor={primaryColor}
+        storageDate={dashboardStorageDate}
+        onStart={handleStartDashboard}
+      />
+    );
+  }
 
   return (
     <div className="w-full max-w-none p-4 sm:p-5 lg:p-6 overflow-y-auto flex-1 h-full">
@@ -388,7 +420,7 @@ export function DashboardScreen() {
             {cashIsOpen ? 'Caixa operacional aberto' : 'Resumo financeiro do caixa'}
           </div>
           <h2 className="text-white font-semibold">
-            {greeting}, {user?.nome?.split(' ')[0] || 'Administrador'}. Boas vindas!
+            {greeting}, {firstName}. Boas-vindas novamente!
           </h2>
           {slogan && (
             <div className="text-white/80 text-sm mt-1 flex items-center gap-2">

@@ -1,0 +1,21 @@
+@keyframes entregai-start-logo-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-2deg) scale(1);
+  }
+
+  50% {
+    transform: translateY(-14px) rotate(2deg) scale(1.04);
+  }
+}
+
+.entregai-start-logo {
+  animation: entregai-start-logo-float 2s ease-in-out infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .entregai-start-logo {
+    animation: none;
+  }
+}
