@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Armchair,
+  ArrowRightLeft,
   Bell,
   BellOff,
   CircleAlert,
@@ -58,6 +59,7 @@ import { productsService } from "@/features/products";
 import { showSystemNotice } from "@/shared/components/SystemToast";
 import api from "@/shared/lib/api";
 import { SalaoProductConfiguratorModal } from "./SalaoProductConfiguratorModal";
+import { MesaTransferModal } from "./MesaTransferModal";
 import type { ComandaPrintMode } from "@/features/orders/utils/print";
 import {
   ComandaPrintModeModal,
@@ -579,6 +581,10 @@ export function SalaoPage() {
   const [deleteMesaTarget, setDeleteMesaTarget] = useState<any | null>(null);
   const [deleteItemTarget, setDeleteItemTarget] = useState<any | null>(null);
   const [closeMesaTarget, setCloseMesaTarget] = useState<any | null>(null);
+  const [transferMesaTarget, setTransferMesaTarget] = useState<{
+    mesa: any;
+    comanda: any;
+  } | null>(null);
   const [paymentTarget, setPaymentTarget] = useState<any | null>(null);
   const [paymentMethod, setPaymentMethod] = useState("dinheiro");
   const [paymentLines, setPaymentLines] = useState<SalaoPaymentLine[]>([]);
@@ -798,9 +804,14 @@ export function SalaoPage() {
     return runSingleFlight("selectedComanda", async () => {
       const selectedComandaId = selectedComandaIdRef.current;
       if (!selectedComandaId) return;
-      const payload = await salaoService
+      let payload = await salaoService
         .getComanda(selectedComandaId)
         .catch(() => null);
+      if (payload?.mesclada_na_comanda_id) {
+        payload = await salaoService
+          .getComanda(payload.mesclada_na_comanda_id)
+          .catch(() => payload);
+      }
       if (
         payload &&
         selectedComandaIdRef.current === selectedComandaId
@@ -1268,6 +1279,35 @@ export function SalaoPage() {
         error?.response?.data?.message ||
           error?.message ||
           "Não foi possível excluir a mesa.",
+      );
+    } finally {
+      setActionBusy("");
+    }
+  };
+
+  const transferMesa = async (destination: any, reason: string) => {
+    const target = transferMesaTarget;
+    if (!target?.comanda?.id || !destination?.id) return;
+    const isUnion = Boolean(destination.comanda_aberta);
+    setActionBusy(`transfer-${target.comanda.id}`);
+    try {
+      const finalComanda = await salaoService.transferTable(target.comanda.id, {
+        mesa_destino_id: destination.id,
+        motivo: reason || undefined,
+      });
+      setSelectedComanda(finalComanda);
+      setLatestPin(finalComanda?.pin_atual || finalComanda?.pin || "");
+      setComandaModule("mesa");
+      setTransferMesaTarget(null);
+      showSystemNotice(
+        isUnion
+          ? `Comandas unidas na mesa ${destination.numero}. A comanda do destino foi mantida.`
+          : `Comanda transferida para a mesa ${destination.numero}.`,
+      );
+      await loadAll({ manual: true });
+    } catch (error: any) {
+      showSystemNotice(
+        getApiErrorMessage(error, "Não foi possível transferir a mesa."),
       );
     } finally {
       setActionBusy("");
@@ -1808,6 +1848,7 @@ export function SalaoPage() {
     if (
       paymentTarget ||
       closeMesaTarget ||
+      transferMesaTarget ||
       qrDownloadMesa ||
         deleteMesaTarget ||
         deleteItemTarget ||
@@ -1896,6 +1937,7 @@ export function SalaoPage() {
       kdsFullscreen,
     navigateKdsSelection,
     paymentTarget,
+    transferMesaTarget,
     printComandaTarget,
     qrDownloadMesa,
     tab,
@@ -2804,7 +2846,7 @@ export function SalaoPage() {
                               gap: 4 * tableCardScale,
                               marginBottom: 6 * tableCardScale,
                             }}
-                            title="Tempo desde a abertura da mesa neste navegador"
+                            title="Tempo desde a abertura da comanda"
                           >
                             <Clock3
                               className="shrink-0"
@@ -2818,40 +2860,49 @@ export function SalaoPage() {
                             </span>
                           </div>
                         )}
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setCloseMesaTarget(mesa);
-                          }}
-                          disabled={actionBusy === `close-${mesa.comanda_aberta.id}`}
-                          className="inline-flex w-full items-center justify-center rounded-lg bg-[#122a4c] font-bold text-white disabled:opacity-60"
-                          style={{
-                            minHeight: 28 * tableCardScale,
-                            gap: 4 * tableCardScale,
-                            padding: `${3 * tableCardScale}px ${5 * tableCardScale}px`,
-                            fontSize: 10.5 * tableCardScale,
-                          }}
-                        >
-                          {actionBusy === `close-${mesa.comanda_aberta.id}` ? (
-                            <Loader2
-                              className="animate-spin"
-                              style={{
-                                height: 14 * tableCardScale,
-                                width: 14 * tableCardScale,
-                              }}
-                            />
-                          ) : (
-                            <Receipt
-                              style={{
-                                height: 14 * tableCardScale,
-                                width: 14 * tableCardScale,
-                              }}
-                            />
-                          )}
-                          <span className="hidden sm:inline">Fechar mesa</span>
-                          <span className="sm:hidden">Fechar</span>
-                        </button>
+                        <div className="grid grid-cols-2" style={{ gap: 4 * tableCardScale }}>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setTransferMesaTarget({ mesa, comanda: mesa.comanda_aberta });
+                            }}
+                            disabled={Boolean(actionBusy)}
+                            className="inline-flex items-center justify-center rounded-lg border border-blue-200 bg-white font-bold text-blue-800 disabled:opacity-60"
+                            style={{
+                              minHeight: 28 * tableCardScale,
+                              gap: 4 * tableCardScale,
+                              padding: `${3 * tableCardScale}px ${4 * tableCardScale}px`,
+                              fontSize: 10 * tableCardScale,
+                            }}
+                          >
+                            <ArrowRightLeft style={{ height: 13 * tableCardScale, width: 13 * tableCardScale }} />
+                            <span className="hidden sm:inline">Transferir</span>
+                            <span className="sm:hidden">Mover</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setCloseMesaTarget(mesa);
+                            }}
+                            disabled={actionBusy === `close-${mesa.comanda_aberta.id}`}
+                            className="inline-flex items-center justify-center rounded-lg bg-[#122a4c] font-bold text-white disabled:opacity-60"
+                            style={{
+                              minHeight: 28 * tableCardScale,
+                              gap: 4 * tableCardScale,
+                              padding: `${3 * tableCardScale}px ${4 * tableCardScale}px`,
+                              fontSize: 10 * tableCardScale,
+                            }}
+                          >
+                            {actionBusy === `close-${mesa.comanda_aberta.id}` ? (
+                              <Loader2 className="animate-spin" style={{ height: 13 * tableCardScale, width: 13 * tableCardScale }} />
+                            ) : (
+                              <Receipt style={{ height: 13 * tableCardScale, width: 13 * tableCardScale }} />
+                            )}
+                            Fechar
+                          </button>
+                        </div>
                       </div>
                     )}
                     {!mesa.comanda_aberta && (
@@ -3188,6 +3239,39 @@ export function SalaoPage() {
                               {actionBusy === `print-qr-${selectedMesa?.id}`
                                 ? "Preparando..."
                                 : "Imprimir"}
+                            </button>
+                          </div>
+                        </div>
+                        <div
+                          className={
+                            comandaModule === "mesa"
+                              ? "order-2 rounded-lg border border-blue-100 bg-blue-50/70 p-2.5 md:col-span-2 sm:p-3"
+                              : "hidden"
+                          }
+                        >
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 text-sm font-semibold text-blue-950">
+                                <ArrowRightLeft className="h-4 w-4 shrink-0" />
+                                Transferência de mesa
+                              </div>
+                              <p className="mt-1 text-xs leading-snug text-blue-800">
+                                Move esta comanda para uma mesa livre ou une com a comanda aberta do destino.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                selectedMesa && setTransferMesaTarget({
+                                  mesa: selectedMesa,
+                                  comanda: selectedComanda,
+                                })
+                              }
+                              disabled={!selectedMesa || Boolean(actionBusy)}
+                              className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-[#122a4c] px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
+                            >
+                              <ArrowRightLeft className="h-4 w-4" />
+                              Transferir mesa
                             </button>
                           </div>
                         </div>
@@ -3843,6 +3927,20 @@ export function SalaoPage() {
             })}
           </div>
         </nav>
+      )}
+      {transferMesaTarget && (
+        <MesaTransferModal
+          sourceMesa={transferMesaTarget.mesa}
+          sourceComanda={transferMesaTarget.comanda}
+          mesas={mesas}
+          busy={actionBusy === `transfer-${transferMesaTarget.comanda.id}`}
+          onClose={() => {
+            if (!actionBusy) setTransferMesaTarget(null);
+          }}
+          onConfirm={(destination, reason) =>
+            void transferMesa(destination, reason)
+          }
+        />
       )}
       {paymentTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">

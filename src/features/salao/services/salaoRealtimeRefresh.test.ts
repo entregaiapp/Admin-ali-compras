@@ -56,7 +56,7 @@ describe("Salao Realtime refresh", () => {
     expect(loaders.loadSelectedComanda).not.toHaveBeenCalled();
   });
 
-  it.each(["GARCOM_SOLICITADO", "CONTA_SOLICITADA"])(
+  it.each(["GARCOM_SOLICITADO", "CONTA_SOLICITADA", "COMANDAS_UNIDAS"])(
     "%s does not update KDS",
     async (event) => {
       vi.useFakeTimers();
@@ -72,7 +72,7 @@ describe("Salao Realtime refresh", () => {
       expect(loaders.loadKds).not.toHaveBeenCalled();
       expect(loaders.loadMesas).toHaveBeenCalledTimes(1);
       expect(loaders.loadComandas).toHaveBeenCalledTimes(
-        event === "CONTA_SOLICITADA" ? 1 : 0,
+        ["CONTA_SOLICITADA", "COMANDAS_UNIDAS"].includes(event) ? 1 : 0,
       );
     },
   );

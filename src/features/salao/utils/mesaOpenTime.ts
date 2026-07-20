@@ -12,6 +12,7 @@ type MesaOpenTimeCandidate = {
   comanda_aberta?: {
     id?: string | number | null;
     status?: unknown;
+    aberta_em?: unknown;
   } | null;
 };
 
@@ -68,6 +69,19 @@ const isActiveComanda = (comanda: MesaOpenTimeCandidate["comanda_aberta"]) =>
     String(comanda?.status || "").toLowerCase(),
   );
 
+export const parseMesaOpenedAt = (value: unknown): number | null => {
+  if (value instanceof Date) {
+    const timestamp = value.getTime();
+    return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : null;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }
+  if (typeof value !== "string" || !value.trim()) return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : null;
+};
+
 export const registerMesaOpenTime = (
   lojaId: string,
   mesaId: string,
@@ -108,10 +122,15 @@ export const reconcileMesaOpenTimes = (
 
     const comandaId = String(comanda.id);
     const storedEntry = storedEntries[mesaId];
-    activeEntries[mesaId] =
-      storedEntry?.comandaId === comandaId
-        ? storedEntry
-        : { comandaId, openedAt: observedAt };
+    const serverOpenedAt = parseMesaOpenedAt(comanda.aberta_em);
+    activeEntries[mesaId] = {
+      comandaId,
+      openedAt:
+        serverOpenedAt ||
+        (storedEntry?.comandaId === comandaId
+          ? storedEntry.openedAt
+          : observedAt),
+    };
   });
 
   writeStorage(lojaId, activeEntries);

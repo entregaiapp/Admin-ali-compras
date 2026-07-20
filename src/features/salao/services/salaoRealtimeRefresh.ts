@@ -101,6 +101,7 @@ const COMANDA_EVENTS = new Set([
   "CONTA_FECHADA",
   "PAGAMENTO_CONFIRMADO",
   "MESA_TRANSFERIDA",
+  "COMANDAS_UNIDAS",
 ]);
 
 const matchesSelectedComanda = (
