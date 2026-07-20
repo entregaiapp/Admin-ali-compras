@@ -150,34 +150,72 @@ const reportOriginLabel = (value?: string | null) => {
   return labels[String(value || '').toLowerCase()] || String(value || 'Indefinido');
 };
 
+const financialDimensionLabels: Record<string, string> = {
+  CUSTOMER_APP: 'App ou link do cliente',
+  ADMIN: 'Painel administrativo',
+  SALON: 'Salão',
+  UNKNOWN: 'Origem desconhecida',
+  ONLINE_GATEWAY: 'Gateway online',
+  EXTERNAL_OR_OFFLINE: 'Externo ou offline',
+  CREDIT_TAB: 'Fiado',
+  PIX: 'Pix',
+  CARD: 'Cartão',
+  CASH: 'Dinheiro',
+  RECEIVED: 'Recebido',
+  PENDING: 'Pendente',
+  REFUNDED: 'Estornado',
+  CANCELED: 'Cancelado',
+  REJECTED: 'Rejeitado',
+  EXPIRED: 'Expirado',
+  UNDEFINED: 'Indefinido',
+  DELIVERY: 'Entrega',
+  PICKUP: 'Retirada',
+  DINE_IN: 'Salão',
+};
+
+const dimensionListLabel = (values?: string[] | null) => (
+  (values || []).map((value) => financialDimensionLabels[value] || value).join(', ') || 'Todas'
+);
+
 const buildDeliveryPaymentReportCsv = (report: DeliveryPaymentBillingReport) => {
+  const platform = report.resumo.taxa_plataforma;
   const rows = [
     ['Relatório', report.loja?.nome || 'Estabelecimento'],
     ['Período', `${formatDate(report.periodo.data_inicio)} até ${formatDate(report.periodo.data_fim)}`],
+    ['Referência', report.periodo.referencia === 'payment' ? 'Data do pagamento' : 'Data do pedido'],
+    ['Origens', dimensionListLabel(report.filtros?.order_source)],
+    ['Canais', dimensionListLabel(report.filtros?.payment_capture_channel)],
+    ['Formas de pagamento', dimensionListLabel(report.filtros?.payment_method)],
+    ['Situações', dimensionListLabel(report.filtros?.financial_status)],
     ['Gerado em', formatDateTime(report.gerado_em)],
-    ['Valor final da cobrança', report.resumo.valor_final_cobranca],
-    ['Pedidos de clientes', report.resumo.quantidade_pedidos_clientes],
-    ['Pedidos manuais', report.resumo.quantidade_pedidos_manuais],
-    ['Pedidos fiado', report.resumo.quantidade_pedidos_fiados || 0],
-    ['Pedidos salão', report.resumo.quantidade_pedidos_salao || 0],
+    ['Valor registrado', report.resumo.valor_bruto_total],
+    ['Base elegível', platform?.base_elegivel ?? ''],
+    ['Taxa calculada', platform?.taxa_calculada ?? ''],
+    ['Taxa estornada', platform?.taxa_estornada ?? ''],
+    ['Taxa líquida', platform?.taxa_liquida ?? ''],
+    ['Split recebido', platform?.split_recebido ?? ''],
+    ['Split pendente', platform?.split_pendente ?? ''],
+    ['Valor a cobrar', report.resumo.valor_final_cobranca],
+    ['Diferença de conciliação', platform?.diferenca_conciliacao ?? ''],
     [],
-    ['Número', 'Data', 'Origem', 'Categoria', 'Status', 'Forma de pagamento', 'Fiado', 'Taxa registrada', 'Total do pedido', 'Valor de cobrança'],
+    ['Número', 'Data de referência', 'Origem', 'Tipo', 'Formas', 'Canais', 'Situações', 'Valor selecionado', 'Taxa calculada', 'Taxa estornada', 'Taxa líquida', 'Split recebido', 'Split pendente', 'Valor a cobrar', 'Diferença'],
     ...report.pedidos.map((pedido) => [
       pedido.numero_pedido || pedido.id,
-      formatDate(pedido.data),
-      reportOriginLabel(pedido.origem_relatorio),
-      pedido.categoria_cobranca_label || pedido.categoria_cobranca || '',
-      pedido.status,
-      pedido.forma_pagamento,
-      pedido.pedido_fiado ? 'sim' : 'não',
-      pedido.aplicado_taxa ? 'sim' : 'não',
-      pedido.total,
-      pedido.valor_cobranca
+      formatDateTime(pedido.data_referencia || pedido.realizado_em),
+      financialDimensionLabels[pedido.order_source || ''] || reportOriginLabel(pedido.origem_relatorio),
+      financialDimensionLabels[pedido.fulfillment_type || ''] || pedido.categoria_cobranca_label || pedido.categoria_cobranca || '',
+      pedido.payment_methods?.length ? dimensionListLabel(pedido.payment_methods) : pedido.forma_pagamento,
+      pedido.payment_capture_channels?.length ? dimensionListLabel(pedido.payment_capture_channels) : '',
+      pedido.financial_statuses?.length ? dimensionListLabel(pedido.financial_statuses) : pedido.status,
+      pedido.valor_pagamentos_selecionados ?? pedido.total,
+      pedido.taxa_calculada ?? 0,
+      pedido.taxa_estornada ?? 0,
+      pedido.taxa_liquida ?? 0,
+      pedido.split_recebido ?? 0,
+      pedido.split_pendente ?? 0,
+      pedido.valor_a_cobrar ?? pedido.valor_cobranca,
+      pedido.diferenca_conciliacao ?? 0,
     ]),
-    [],
-    ['Resumo final'],
-    ['Valor bruto total', report.resumo.valor_bruto_total],
-    ['Valor final da cobrança', report.resumo.valor_final_cobranca],
   ];
 
   return rows.map((row) => row.map(csvCell).join(';')).join('\n');
@@ -197,20 +235,25 @@ const downloadDeliveryPaymentReportCsv = (report: DeliveryPaymentBillingReport) 
 };
 
 const printDeliveryPaymentReport = (report: DeliveryPaymentBillingReport) => {
-  const title = `Relatório de pagamentos na entrega`;
+  const title = `Relatório de cobrança e auditoria financeira`;
+  const platform = report.resumo.taxa_plataforma;
   const body = `
-    <h1>Relatório de pagamentos na entrega</h1>
+    <h1>Relatório de cobrança e auditoria financeira</h1>
     <div class="muted">${escapePrintHtml(report.loja?.nome || 'Estabelecimento')}</div>
     <div class="muted">Período: ${escapePrintHtml(formatDate(report.periodo.data_inicio))} até ${escapePrintHtml(formatDate(report.periodo.data_fim))}</div>
+    <div class="muted">Referência: ${report.periodo.referencia === 'payment' ? 'data do pagamento' : 'data do pedido'}</div>
+    <div class="muted">Canais: ${escapePrintHtml(dimensionListLabel(report.filtros?.payment_capture_channel))}</div>
+    <div class="muted">Formas: ${escapePrintHtml(dimensionListLabel(report.filtros?.payment_method))}</div>
+    <div class="muted">Situações: ${escapePrintHtml(dimensionListLabel(report.filtros?.financial_status))}</div>
     <div class="muted">Gerado em ${escapePrintHtml(formatDateTime(report.gerado_em))}${report.gerado_por?.nome ? ` por ${escapePrintHtml(report.gerado_por.nome)}` : ''}</div>
 
     <section class="grid no-break">
-      <div class="card"><div class="label">Valor da cobrança</div><div class="value">${escapePrintHtml(formatCurrency(report.resumo.valor_final_cobranca))}</div></div>
-      <div class="card"><div class="label">Valor bruto total</div><div class="value">${escapePrintHtml(formatCurrency(report.resumo.valor_bruto_total))}</div></div>
-      <div class="card"><div class="label">Pedidos de clientes</div><div class="value">${escapePrintHtml(report.resumo.quantidade_pedidos_clientes || 0)}</div></div>
-      <div class="card"><div class="label">Pedidos manuais</div><div class="value">${escapePrintHtml(report.resumo.quantidade_pedidos_manuais || 0)}</div></div>
-      <div class="card"><div class="label">Pedidos fiado</div><div class="value">${escapePrintHtml(report.resumo.quantidade_pedidos_fiados || 0)}</div></div>
-      <div class="card"><div class="label">Pedidos salão</div><div class="value">${escapePrintHtml(report.resumo.quantidade_pedidos_salao || 0)}</div></div>
+      <div class="card"><div class="label">Valor a cobrar</div><div class="value">${escapePrintHtml(formatCurrency(report.resumo.valor_final_cobranca))}</div></div>
+      <div class="card"><div class="label">Taxa calculada</div><div class="value">${escapePrintHtml(formatCurrency(platform?.taxa_calculada || 0))}</div></div>
+      <div class="card"><div class="label">Taxa líquida</div><div class="value">${escapePrintHtml(formatCurrency(platform?.taxa_liquida || 0))}</div></div>
+      <div class="card"><div class="label">Taxa estornada</div><div class="value">${escapePrintHtml(formatCurrency(platform?.taxa_estornada || 0))}</div></div>
+      <div class="card"><div class="label">Split recebido</div><div class="value">${escapePrintHtml(formatCurrency(platform?.split_recebido || 0))}</div></div>
+      <div class="card"><div class="label">Split pendente</div><div class="value">${escapePrintHtml(formatCurrency(platform?.split_pendente || 0))}</div></div>
     </section>
 
     <h2>Resumo diário</h2>
@@ -218,52 +261,54 @@ const printDeliveryPaymentReport = (report: DeliveryPaymentBillingReport) => {
       <thead>
         <tr>
           <th>Data</th>
-          <th class="num">Clientes</th>
-          <th class="num">Manuais</th>
-          <th class="num">Fiados</th>
-          <th class="num">Salão</th>
-          <th class="num">Valor bruto</th>
-          <th class="num">A receber</th>
+          <th class="num">Pedidos</th>
+          <th class="num">Valor selecionado</th>
+          <th class="num">Taxa líquida</th>
+          <th class="num">Split recebido</th>
+          <th class="num">Split pendente</th>
+          <th class="num">A cobrar</th>
         </tr>
       </thead>
       <tbody>
         ${report.dias.map((day) => `
           <tr>
             <td>${escapePrintHtml(formatDate(day.data))}</td>
-            <td class="num">${escapePrintHtml(day.quantidade_pedidos_clientes || 0)}</td>
-            <td class="num">${escapePrintHtml(day.quantidade_pedidos_manuais || 0)}</td>
-            <td class="num">${escapePrintHtml(day.quantidade_pedidos_fiados || 0)}</td>
-            <td class="num">${escapePrintHtml(day.quantidade_pedidos_salao || 0)}</td>
+            <td class="num">${escapePrintHtml(day.quantidade_pedidos_total || 0)}</td>
             <td class="num">${escapePrintHtml(formatCurrency(day.valor_bruto_total))}</td>
+            <td class="num">${escapePrintHtml(formatCurrency(day.taxa_liquida || 0))}</td>
+            <td class="num">${escapePrintHtml(formatCurrency(day.split_recebido || 0))}</td>
+            <td class="num">${escapePrintHtml(formatCurrency(day.split_pendente || 0))}</td>
             <td class="num">${escapePrintHtml(formatCurrency(day.valor_a_receber))}</td>
           </tr>
         `).join('')}
       </tbody>
     </table>
 
-    <h2>Pedidos do relatório</h2>
+    <h2>Auditoria por pedido</h2>
     <table>
       <thead>
         <tr>
           <th>Pedido</th>
-          <th>Data</th>
+          <th>Referência</th>
           <th>Origem</th>
-          <th>Categoria</th>
-          <th>Status</th>
-          <th class="num">Total</th>
-          <th class="num">Cobrança</th>
+          <th>Formas / canais</th>
+          <th>Situações</th>
+          <th class="num">Selecionado</th>
+          <th class="num">Taxa líquida</th>
+          <th class="num">A cobrar</th>
         </tr>
       </thead>
       <tbody>
         ${report.pedidos.map((pedido) => `
           <tr>
             <td>${escapePrintHtml(pedido.numero_pedido || pedido.id)}</td>
-            <td>${escapePrintHtml(formatDate(pedido.data))}</td>
-            <td>${escapePrintHtml(reportOriginLabel(pedido.origem_relatorio))}</td>
-            <td>${escapePrintHtml(pedido.categoria_cobranca_label || pedido.categoria_cobranca || '-')}</td>
-            <td>${escapePrintHtml(pedido.status)}</td>
-            <td class="num">${escapePrintHtml(formatCurrency(pedido.total))}</td>
-            <td class="num">${escapePrintHtml(formatCurrency(pedido.valor_cobranca))}</td>
+            <td>${escapePrintHtml(formatDateTime(pedido.data_referencia || pedido.realizado_em))}</td>
+            <td>${escapePrintHtml(financialDimensionLabels[pedido.order_source || ''] || reportOriginLabel(pedido.origem_relatorio))}</td>
+            <td>${escapePrintHtml(`${pedido.payment_methods?.length ? dimensionListLabel(pedido.payment_methods) : pedido.forma_pagamento || '-'} / ${pedido.payment_capture_channels?.length ? dimensionListLabel(pedido.payment_capture_channels) : '-'}`)}</td>
+            <td>${escapePrintHtml(pedido.financial_statuses?.length ? dimensionListLabel(pedido.financial_statuses) : pedido.status)}</td>
+            <td class="num">${escapePrintHtml(formatCurrency(pedido.valor_pagamentos_selecionados ?? pedido.total))}</td>
+            <td class="num">${escapePrintHtml(formatCurrency(pedido.taxa_liquida || 0))}</td>
+            <td class="num">${escapePrintHtml(formatCurrency(pedido.valor_a_cobrar ?? pedido.valor_cobranca))}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -701,6 +746,14 @@ export function ReportsScreen() {
                           Gerado em {formatDateTime(selectedGeneratedReport.gerado_em)}
                           {selectedGeneratedReport.gerado_por?.nome ? ` por ${selectedGeneratedReport.gerado_por.nome}` : ''}
                         </p>
+                        <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-600">
+                          <span className="rounded-full bg-gray-100 px-2.5 py-1">
+                            {selectedGeneratedReport.periodo.referencia === 'payment' ? 'Data do pagamento' : 'Data do pedido'}
+                          </span>
+                          <span className="rounded-full bg-gray-100 px-2.5 py-1">Canais: {dimensionListLabel(selectedGeneratedReport.filtros?.payment_capture_channel)}</span>
+                          <span className="rounded-full bg-gray-100 px-2.5 py-1">Formas: {dimensionListLabel(selectedGeneratedReport.filtros?.payment_method)}</span>
+                          <span className="rounded-full bg-gray-100 px-2.5 py-1">Situações: {dimensionListLabel(selectedGeneratedReport.filtros?.financial_status)}</span>
+                        </div>
                       </div>
                       <button
                         type="button"
@@ -722,13 +775,16 @@ export function ReportsScreen() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                     {[
-                      { label: 'Valor da cobrança', value: formatCurrency(selectedGeneratedReport.resumo.valor_final_cobranca), icon: DollarSign, color: PRIMARY },
-                      { label: 'Pedidos de clientes', value: String(selectedGeneratedReport.resumo.quantidade_pedidos_clientes || 0), icon: ShoppingCart, color: '#2563eb' },
-                      { label: 'Pedidos manuais', value: String(selectedGeneratedReport.resumo.quantidade_pedidos_manuais || 0), icon: FileText, color: '#7c3aed' },
-                      { label: 'Pedidos fiado', value: String(selectedGeneratedReport.resumo.quantidade_pedidos_fiados || 0), icon: FileText, color: '#0f766e' },
-                      { label: 'Valor bruto total', value: formatCurrency(selectedGeneratedReport.resumo.valor_bruto_total), icon: BarChart3, color: '#16a34a' },
+                      { label: 'Valor a cobrar', value: formatCurrency(selectedGeneratedReport.resumo.valor_final_cobranca), icon: DollarSign, color: PRIMARY },
+                      { label: 'Taxa calculada', value: formatCurrency(selectedGeneratedReport.resumo.taxa_plataforma?.taxa_calculada ?? selectedGeneratedReport.resumo.valor_final_cobranca), icon: BarChart3, color: '#2563eb' },
+                      { label: 'Taxa líquida', value: formatCurrency(selectedGeneratedReport.resumo.taxa_plataforma?.taxa_liquida ?? selectedGeneratedReport.resumo.valor_final_cobranca), icon: DollarSign, color: '#7c3aed' },
+                      { label: 'Taxa estornada', value: formatCurrency(selectedGeneratedReport.resumo.taxa_plataforma?.taxa_estornada || 0), icon: FileText, color: '#dc2626' },
+                      { label: 'Split recebido', value: formatCurrency(selectedGeneratedReport.resumo.taxa_plataforma?.split_recebido || 0), icon: DollarSign, color: '#16a34a' },
+                      { label: 'Split pendente', value: formatCurrency(selectedGeneratedReport.resumo.taxa_plataforma?.split_pendente || 0), icon: FileText, color: '#d97706' },
+                      { label: 'Valor registrado', value: formatCurrency(selectedGeneratedReport.resumo.valor_bruto_total), icon: BarChart3, color: '#0f766e' },
+                      { label: 'Pedidos auditados', value: String(selectedGeneratedReport.resumo.quantidade_pedidos_total || selectedGeneratedReport.pedidos.length), icon: ShoppingCart, color: '#4f46e5' },
                     ].map((item) => (
                       <div key={item.label} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
                         <item.icon className="w-5 h-5 mb-3" style={{ color: item.color }} />
@@ -747,23 +803,23 @@ export function ReportsScreen() {
                         <thead className="bg-gray-50 text-xs uppercase text-gray-500">
                           <tr>
                             <th className="px-4 py-3 text-left">Data</th>
-                            <th className="px-4 py-3 text-right">Clientes</th>
-                            <th className="px-4 py-3 text-right">Manuais</th>
-                            <th className="px-4 py-3 text-right">Fiados</th>
-                            <th className="px-4 py-3 text-right">Salao</th>
-                            <th className="px-4 py-3 text-right">Valor bruto</th>
-                            <th className="px-4 py-3 text-right">A receber</th>
+                            <th className="px-4 py-3 text-right">Pedidos</th>
+                            <th className="px-4 py-3 text-right">Valor selecionado</th>
+                            <th className="px-4 py-3 text-right">Taxa líquida</th>
+                            <th className="px-4 py-3 text-right">Split recebido</th>
+                            <th className="px-4 py-3 text-right">Split pendente</th>
+                            <th className="px-4 py-3 text-right">A cobrar</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                           {selectedGeneratedReport.dias.map((day) => (
                             <tr key={day.data}>
                               <td className="px-4 py-3 font-medium text-gray-800">{formatDate(day.data)}</td>
-                              <td className="px-4 py-3 text-right text-gray-600">{day.quantidade_pedidos_clientes}</td>
-                              <td className="px-4 py-3 text-right text-gray-600">{day.quantidade_pedidos_manuais}</td>
-                              <td className="px-4 py-3 text-right text-gray-600">{day.quantidade_pedidos_fiados || 0}</td>
-                              <td className="px-4 py-3 text-right text-gray-600">{day.quantidade_pedidos_salao || 0}</td>
+                              <td className="px-4 py-3 text-right text-gray-600">{day.quantidade_pedidos_total}</td>
                               <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(day.valor_bruto_total)}</td>
+                              <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(day.taxa_liquida ?? day.valor_a_receber)}</td>
+                              <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(day.split_recebido || 0)}</td>
+                              <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(day.split_pendente || 0)}</td>
                               <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatCurrency(day.valor_a_receber)}</td>
                             </tr>
                           ))}
@@ -774,38 +830,44 @@ export function ReportsScreen() {
 
                   <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
                     <div className="px-5 py-4 border-b border-gray-100">
-                      <h3 className="font-semibold text-gray-800">Pedidos do relatório</h3>
-                      <p className="text-xs text-gray-400 mt-0.5">Pedidos manuais de entrega podem compor a cobrança final; retirada manual aparece apenas para conferência.</p>
+                      <h3 className="font-semibold text-gray-800">Auditoria por pedido</h3>
+                      <p className="text-xs text-gray-400 mt-0.5">Os valores abaixo consideram somente pagamentos, canais e situações selecionados pelo superadmin.</p>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead className="bg-gray-50 text-xs uppercase text-gray-500">
                           <tr>
                             <th className="px-4 py-3 text-left">Pedido</th>
-                            <th className="px-4 py-3 text-left">Data</th>
+                            <th className="px-4 py-3 text-left">Referência</th>
                             <th className="px-4 py-3 text-left">Origem</th>
-                            <th className="px-4 py-3 text-left">Categoria</th>
-                            <th className="px-4 py-3 text-left">Fiado</th>
-                            <th className="px-4 py-3 text-left">Status</th>
-                            <th className="px-4 py-3 text-right">Total</th>
-                            <th className="px-4 py-3 text-right">Cobrança</th>
+                            <th className="px-4 py-3 text-left">Formas</th>
+                            <th className="px-4 py-3 text-left">Canais</th>
+                            <th className="px-4 py-3 text-left">Situações</th>
+                            <th className="px-4 py-3 text-right">Selecionado</th>
+                            <th className="px-4 py-3 text-right">Taxa líquida</th>
+                            <th className="px-4 py-3 text-right">Split recebido</th>
+                            <th className="px-4 py-3 text-right">Split pendente</th>
+                            <th className="px-4 py-3 text-right">A cobrar</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                           {selectedGeneratedReport.pedidos.map((pedido) => (
                             <tr key={pedido.id}>
                               <td className="px-4 py-3 font-medium text-gray-800">{pedido.numero_pedido || pedido.id}</td>
-                              <td className="px-4 py-3 text-gray-600">{formatDate(pedido.data)}</td>
+                              <td className="px-4 py-3 text-gray-600">{formatDateTime(pedido.data_referencia || pedido.realizado_em)}</td>
                               <td className="px-4 py-3">
                                 <span className={`rounded-full px-2 py-1 text-xs font-medium ${pedido.origem_relatorio === 'manual' ? 'bg-purple-50 text-purple-700' : 'bg-green-50 text-green-700'}`}>
-                                  {reportOriginLabel(pedido.origem_relatorio)}
+                                  {financialDimensionLabels[pedido.order_source || ''] || reportOriginLabel(pedido.origem_relatorio)}
                                 </span>
                               </td>
-                              <td className="px-4 py-3 text-gray-600">{pedido.categoria_cobranca_label || pedido.categoria_cobranca || '-'}</td>
-                              <td className="px-4 py-3 text-gray-600">{pedido.pedido_fiado ? 'Sim' : 'Não'}</td>
-                              <td className="px-4 py-3 text-gray-600">{pedido.status}</td>
-                              <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(pedido.total)}</td>
-                              <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatCurrency(pedido.valor_cobranca)}</td>
+                              <td className="px-4 py-3 text-gray-600">{pedido.payment_methods?.length ? dimensionListLabel(pedido.payment_methods) : pedido.forma_pagamento || '-'}</td>
+                              <td className="px-4 py-3 text-gray-600">{pedido.payment_capture_channels?.length ? dimensionListLabel(pedido.payment_capture_channels) : '-'}</td>
+                              <td className="px-4 py-3 text-gray-600">{pedido.financial_statuses?.length ? dimensionListLabel(pedido.financial_statuses) : pedido.status}</td>
+                              <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(pedido.valor_pagamentos_selecionados ?? pedido.total)}</td>
+                              <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(pedido.taxa_liquida ?? pedido.valor_cobranca)}</td>
+                              <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(pedido.split_recebido || 0)}</td>
+                              <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(pedido.split_pendente || 0)}</td>
+                              <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatCurrency(pedido.valor_a_cobrar ?? pedido.valor_cobranca)}</td>
                             </tr>
                           ))}
                         </tbody>
