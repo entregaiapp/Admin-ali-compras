@@ -161,6 +161,9 @@ const PAYMENT_METHOD_VALUES: Record<string, string> = {
   "Fiado": "fiado",
 };
 const CARD_PAYMENT_VALUES = new Set(["cartao_credito", "cartao_debito"]);
+const paymentMethodLabel = (value: string) =>
+  Object.entries(PAYMENT_METHOD_VALUES).find(([, methodValue]) => methodValue === value)?.[0]
+  || value.replace(/_/g, " ");
 const paymentMethodCaption = (value: string) =>
   value === "fiado"
     ? "Conta fiado do contato"
@@ -294,6 +297,8 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
   const [themePrimary, setThemePrimary] = useState(primaryColor);
   const [acceptedPaymentMethods, setAcceptedPaymentMethods] = useState<string[]>(DEFAULT_PAYMENT_METHODS);
   const [paymentMethods, setPaymentMethods] = useState<string[]>(["dinheiro"]);
+  const [paymentAmounts, setPaymentAmounts] = useState<Record<string, string>>({});
+  const [splitValuesEnabled, setSplitValuesEnabled] = useState(false);
   const [adminPixAvailable, setAdminPixAvailable] = useState(false);
   const [adminPixSelected, setAdminPixSelected] = useState(false);
   const [semTroco, setSemTroco] = useState(true);
@@ -336,6 +341,28 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
     !Number.isFinite(parsedAdjustmentValue) || parsedAdjustmentValue <= 0 || discountAmount > estimatedSubtotal
   );
   const estimatedTotal = Math.max(0, estimatedSubtotal - discountAmount + surchargeAmount + deliveryFee);
+  const estimatedTotalCents = Math.round(estimatedTotal * 100);
+  const splitPaymentLines = useMemo(() => paymentMethods.map((forma_pagamento) => ({
+    forma_pagamento,
+    valor: parseMoneyInput(paymentAmounts[forma_pagamento] || ""),
+  })), [paymentAmounts, paymentMethods]);
+  const splitPaymentTotalCents = splitPaymentLines.reduce(
+    (sum, item) => sum + (Number.isFinite(item.valor) ? Math.round(item.valor * 100) : 0),
+    0,
+  );
+  const mixedPayment = paymentMethods.length > 1;
+  const splitPaymentInvalid = mixedPayment && splitValuesEnabled && (
+    splitPaymentLines.some((item) => !Number.isFinite(item.valor) || item.valor <= 0)
+    || splitPaymentTotalCents !== estimatedTotalCents
+  );
+  const cashPaymentValue = mixedPayment
+    ? splitPaymentLines.find((item) => item.forma_pagamento === "dinheiro")?.valor || 0
+    : estimatedTotal;
+  const parsedChangeTarget = parseMoneyInput(trocoPara);
+  const cashChangeAvailable = paymentMethods.includes("dinheiro") && (!mixedPayment || splitValuesEnabled);
+  const cashChangeInvalid = cashChangeAvailable && !semTroco && (
+    !Number.isFinite(parsedChangeTarget) || parsedChangeTarget < cashPaymentValue
+  );
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedProductSearch(productSearch.trim()), 300);
@@ -757,6 +784,12 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
     .filter((line) => line.quantidade > 0));
 
   const togglePaymentMethod = (value: string) => {
+    const willRemove = paymentMethods.includes(value);
+    const nextMethods = value === "fiado"
+      ? ["fiado"]
+      : paymentMethods
+        .filter((method) => method !== "fiado" && method !== value)
+        .concat(willRemove ? [] : value);
     setPaymentMethods((current) => {
       if (value === "fiado") return ["fiado"];
       const withoutFiado = current.filter((method) => method !== "fiado");
@@ -764,6 +797,10 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
         ? withoutFiado.filter((method) => method !== value)
         : [...withoutFiado, value];
     });
+    setPaymentAmounts((current) => Object.fromEntries(
+      nextMethods.map((method) => [method, nextMethods.length > 1 ? (current[method] || "") : ""]),
+    ));
+    setSplitValuesEnabled(false);
     setSemTroco(true);
     setTrocoPara("");
   };
@@ -788,6 +825,12 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
             : "Informe um valor válido para o ajuste.",
         );
       }
+      if (!adminPixSelected && splitPaymentInvalid) {
+        throw new Error("Informe quanto sera pago em cada forma. A soma deve ser igual ao total do pedido.");
+      }
+      if (!adminPixSelected && cashChangeInvalid) {
+        throw new Error("O valor entregue em dinheiro para troco deve cobrir a parte paga em dinheiro.");
+      }
       const geo = pickupAtStore ? null : unwrap(await api.post("/geocode-address", {
         street: address.rua, number: address.numero, neighborhood: address.bairro,
         city: address.cidade, state: address.estado, zipCode: address.cep,
@@ -810,9 +853,10 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
         pagamento: adminPixSelected ? undefined : {
           forma_pagamento: paymentMethods[0],
           formas_pagamento: paymentMethods,
-          sem_troco: paymentMethods.length === 1 && paymentMethods[0] === "dinheiro" ? semTroco : undefined,
-          troco_para: paymentMethods.length === 1 && paymentMethods[0] === "dinheiro" && !semTroco
-            ? Number(trocoPara.replace(",", "."))
+          pagamentos: mixedPayment && splitValuesEnabled ? splitPaymentLines : undefined,
+          sem_troco: cashChangeAvailable ? semTroco : undefined,
+          troco_para: cashChangeAvailable && !semTroco
+            ? parsedChangeTarget
             : undefined,
         },
       };
@@ -1153,7 +1197,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
             <div className="mx-auto grid max-w-3xl gap-5 md:grid-cols-2">
               <section className="rounded-xl border bg-white p-5">
                 <h3 className="font-bold">Forma de pagamento</h3>
-                <p className="mt-1 text-xs text-slate-500">Selecione uma ou mais formas. Os valores serão informados somente ao confirmar o recebimento.</p>
+                <p className="mt-1 text-xs text-slate-500">Selecione uma ou mais formas. Em pagamento misto, informe a parte paga em cada uma.</p>
                 {adminPixAvailable && (
                   <button type="button" onClick={() => setAdminPixSelected((current) => !current)} className="mt-4 flex w-full items-center gap-3 rounded-xl border-2 p-3 text-left" style={adminPixSelected ? { borderColor: primary, backgroundColor: primarySoft } : { borderColor: "#e2e8f0" }}>
                     <CreditCard style={{ color: adminPixSelected ? primary : "#94a3b8" }} />
@@ -1175,11 +1219,63 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
                     );
                   })}
                 </div>
-                {paymentMethods.length === 1 && paymentMethods[0] === "dinheiro" && (
+                {mixedPayment && (
+                  <div className="mt-4 rounded-xl border bg-slate-50 p-3">
+                    <label className="flex cursor-pointer items-start gap-2 text-sm font-semibold text-slate-800">
+                      <input
+                        type="checkbox"
+                        checked={splitValuesEnabled}
+                        onChange={(event) => {
+                          setSplitValuesEnabled(event.target.checked);
+                          setSemTroco(true);
+                          setTrocoPara("");
+                        }}
+                        className="mt-0.5 h-4 w-4"
+                      />
+                      <span>
+                        Informar valores por forma
+                        <small className="mt-0.5 block font-normal text-slate-500">Opcional. Necessário somente para detalhar a divisão ou calcular troco.</small>
+                      </span>
+                    </label>
+                    {splitValuesEnabled && <div className="mt-3 space-y-3 border-t pt-3">
+                      {paymentMethods.map((method) => (
+                        <label key={method} className="grid grid-cols-[minmax(0,1fr)_130px] items-center gap-3 text-sm font-semibold text-slate-700">
+                          <span className="truncate capitalize">{paymentMethodLabel(method)}</span>
+                          <input
+                            value={paymentAmounts[method] || ""}
+                            onChange={(event) => setPaymentAmounts((current) => ({ ...current, [method]: event.target.value }))}
+                            placeholder="0,00"
+                            inputMode="decimal"
+                            className="w-full rounded-lg border bg-white p-2.5 text-right font-normal"
+                          />
+                        </label>
+                      ))}
+                      <div className={`flex items-center justify-between border-t pt-3 text-sm font-bold ${splitPaymentInvalid ? "text-red-600" : "text-emerald-700"}`}>
+                        <span>{splitPaymentTotalCents <= estimatedTotalCents ? "Falta distribuir" : "Valor excedente"}</span>
+                        <span>{money(Math.abs(estimatedTotalCents - splitPaymentTotalCents) / 100)}</span>
+                      </div>
+                    </div>}
+                  </div>
+                )}
+                {cashChangeAvailable && (
                   <>
                     <label className="mt-4 flex cursor-pointer items-center gap-2 text-sm"><input type="checkbox" checked={semTroco} onChange={(e) => setSemTroco(e.target.checked)} className="h-4 w-4" /> Não precisa de troco</label>
-                    {!semTroco && <label className="mt-3 block text-sm font-medium">Troco para<input value={trocoPara} onChange={(e) => setTrocoPara(e.target.value)} placeholder="0,00" inputMode="decimal" className="mt-1 w-full rounded-lg border p-2.5" /></label>}
+                    {!semTroco && (
+                      <label className="mt-3 block text-sm font-medium">
+                        Valor entregue em dinheiro
+                        <input value={trocoPara} onChange={(e) => setTrocoPara(e.target.value)} placeholder="0,00" inputMode="decimal" className={`mt-1 w-full rounded-lg border p-2.5 ${cashChangeInvalid && trocoPara ? "border-red-400" : ""}`} />
+                        <span className="mt-1 block text-xs font-normal text-slate-500">
+                          Parte em dinheiro: {money(cashPaymentValue)}
+                          {!cashChangeInvalid && parsedChangeTarget > cashPaymentValue ? ` · Troco: ${money(parsedChangeTarget - cashPaymentValue)}` : ""}
+                        </span>
+                      </label>
+                    )}
                   </>
+                )}
+                {mixedPayment && paymentMethods.includes("dinheiro") && !splitValuesEnabled && (
+                  <p className="mt-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                    Para informar troco, marque “Informar valores por forma”.
+                  </p>
                 )}
                 </>}
                 <div className="mt-5 border-t pt-4">
@@ -1244,7 +1340,7 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
           {nextStep ? (
             <button disabled={contactStepBlocked || (step === STEP_PRODUCTS && !lines.length) || (step === STEP_ADDRESS && !pickupAtStore && (!address.rua || !address.numero || !address.area_entrega_id || !address.bairro || !address.cidade || !address.estado))} onClick={() => { setError(""); setStep(nextStep); }} className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-white disabled:opacity-40" style={buttonStyle}>Continuar <ArrowRight className="h-4 w-4" /></button>
           ) : (
-            <button disabled={busy || adjustmentInvalid || (!adminPixSelected && paymentMethods.length === 0) || (!adminPixSelected && paymentMethods.length === 1 && paymentMethods[0] === "dinheiro" && !semTroco && !trocoPara)} onClick={submit} className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-white disabled:opacity-50" style={buttonStyle}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {adminPixSelected ? "Criar pedido e gerar link" : "Criar pedido e imprimir"}</button>
+            <button disabled={busy || adjustmentInvalid || (!adminPixSelected && (paymentMethods.length === 0 || splitPaymentInvalid || cashChangeInvalid))} onClick={submit} className="inline-flex items-center gap-2 rounded-lg px-5 py-2.5 font-semibold text-white disabled:opacity-50" style={buttonStyle}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {adminPixSelected ? "Criar pedido e gerar link" : "Criar pedido e imprimir"}</button>
           )}
         </footer>
       </div>

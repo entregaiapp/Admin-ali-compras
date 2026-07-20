@@ -56,7 +56,6 @@ export function FiadosScreen() {
   const [filters, setFilters] = useState({
     page: 1,
     busca: "",
-    status: "",
     pagou_no_periodo: false,
     data_inicio: firstDayOfMonth(),
     data_fim: today(),
@@ -117,9 +116,7 @@ export function FiadosScreen() {
     if (!selectedAccount || typeof window === "undefined") return;
     if (!window.matchMedia("(max-width: 1279px)").matches) return;
 
-    window.requestAnimationFrame(() => {
-      detailsPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
+    window.requestAnimationFrame(() => detailsPanelRef.current?.scrollTo({ top: 0 }));
   }, [selectedAccount]);
 
   const pageButtons = useMemo(() => {
@@ -212,8 +209,20 @@ export function FiadosScreen() {
         pedido_ids: selectedOrderIds,
       });
       await load();
-      await loadDetails(selectedAccount);
-      setReceipt({ valor: "", forma_pagamento: "dinheiro", observacao: "" });
+      const refreshedDetails = await fiadosService.details(selectedAccount.id, {
+        data_inicio: filters.data_inicio,
+        data_fim: filters.data_fim,
+      });
+      if (Number(refreshedDetails?.resumo?.saldo_aberto || 0) > 0) {
+        setDetails(refreshedDetails);
+        setSelectedOrderIds([]);
+        setReceipt({ valor: String(refreshedDetails.resumo.saldo_aberto), forma_pagamento: "dinheiro", observacao: "" });
+      } else {
+        setSelectedAccount(null);
+        setDetails(null);
+        setSelectedOrderIds([]);
+        setReceipt({ valor: "", forma_pagamento: "dinheiro", observacao: "" });
+      }
     } catch (caught: any) {
       setError(apiError(caught, "Não foi possível registrar o recebimento."));
     } finally {
@@ -252,15 +261,15 @@ export function FiadosScreen() {
           ["Recebido no período", dashboard?.recebido_periodo],
           ["Pessoas com saldo", dashboard?.pessoas_com_saldo, false],
           ["Pedidos abertos", dashboard?.pedidos_abertos, false],
-        ].map(([label, value, currency = true]) => (
-          <div key={String(label)} className="min-w-0 rounded-lg border bg-white p-3 shadow-sm sm:p-4">
+        ].map(([label, value, currency = true], index) => (
+          <div key={String(label)} className={`min-w-0 rounded-lg border bg-white p-3 shadow-sm sm:p-4 ${index === 0 ? "col-span-2 sm:col-span-1" : ""} ${index >= 3 ? "hidden sm:block" : ""}`}>
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</div>
             <div className="mt-2 truncate text-lg font-bold text-slate-950 sm:text-xl">{currency ? money(value) : Number(value || 0)}</div>
           </div>
         ))}
       </div>
 
-      <div className="mb-4 grid gap-3 rounded-lg border bg-white p-3 lg:grid-cols-[1fr_150px_150px_170px_180px]">
+      <div className="mb-4 rounded-lg border bg-white p-3 sm:grid sm:grid-cols-[minmax(0,1fr)_150px_150px_180px] sm:gap-3">
         <label className="relative">
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
           <input
@@ -270,17 +279,25 @@ export function FiadosScreen() {
             className="h-10 w-full rounded-lg border pl-9 pr-3 text-sm"
           />
         </label>
-        <input type="date" value={filters.data_inicio} onChange={(event) => setFilters((current) => ({ ...current, data_inicio: event.target.value, page: 1 }))} className="h-10 rounded-lg border px-3 text-sm" />
-        <input type="date" value={filters.data_fim} onChange={(event) => setFilters((current) => ({ ...current, data_fim: event.target.value, page: 1 }))} className="h-10 rounded-lg border px-3 text-sm" />
-        <select value={filters.status} onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value, page: 1 }))} className="h-10 rounded-lg border px-3 text-sm">
-          <option value="">Todos status</option>
-          <option value="aberto">Com saldo aberto</option>
-          <option value="quitado">Quitados</option>
-        </select>
-        <label className="flex h-10 items-center gap-2 rounded-lg border px-3 text-sm font-semibold text-slate-700">
-          <input type="checkbox" checked={filters.pagou_no_periodo} onChange={(event) => setFilters((current) => ({ ...current, pagou_no_periodo: event.target.checked, page: 1 }))} />
-          Pagou no período
-        </label>
+        <details className="mt-2 rounded-lg border sm:hidden">
+          <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-slate-700">Período e filtros</summary>
+          <div className="grid gap-2 border-t p-3">
+            <label className="text-xs font-semibold text-slate-600">De<input type="date" value={filters.data_inicio} onChange={(event) => setFilters((current) => ({ ...current, data_inicio: event.target.value, page: 1 }))} className="mt-1 h-10 w-full rounded-lg border px-3 text-sm" /></label>
+            <label className="text-xs font-semibold text-slate-600">Até<input type="date" value={filters.data_fim} onChange={(event) => setFilters((current) => ({ ...current, data_fim: event.target.value, page: 1 }))} className="mt-1 h-10 w-full rounded-lg border px-3 text-sm" /></label>
+            <label className="flex h-10 items-center gap-2 rounded-lg border px-3 text-sm font-semibold text-slate-700">
+              <input type="checkbox" checked={filters.pagou_no_periodo} onChange={(event) => setFilters((current) => ({ ...current, pagou_no_periodo: event.target.checked, page: 1 }))} />
+              Pagou no período
+            </label>
+          </div>
+        </details>
+        <div className="hidden sm:contents">
+          <input type="date" aria-label="Data inicial" value={filters.data_inicio} onChange={(event) => setFilters((current) => ({ ...current, data_inicio: event.target.value, page: 1 }))} className="h-10 rounded-lg border px-3 text-sm" />
+          <input type="date" aria-label="Data final" value={filters.data_fim} onChange={(event) => setFilters((current) => ({ ...current, data_fim: event.target.value, page: 1 }))} className="h-10 rounded-lg border px-3 text-sm" />
+          <label className="flex h-10 items-center gap-2 rounded-lg border px-3 text-sm font-semibold text-slate-700">
+            <input type="checkbox" checked={filters.pagou_no_periodo} onChange={(event) => setFilters((current) => ({ ...current, pagou_no_periodo: event.target.checked, page: 1 }))} />
+            Pagou no período
+          </label>
+        </div>
       </div>
 
       <div className="grid min-h-0 gap-4 xl:flex-1 xl:grid-cols-[minmax(0,1fr)_460px]">
@@ -341,10 +358,8 @@ export function FiadosScreen() {
                       <span className="block font-bold text-slate-950">{money(account.saldo_aberto)}</span>
                     </span>
                   </span>
-                  <span className="mt-3 grid grid-cols-3 gap-2 text-xs">
-                    <span><span className="block text-slate-400">Fiado</span><b className="text-slate-700">{money(account.valor_fiado_periodo)}</b></span>
-                    <span><span className="block text-slate-400">Recebido</span><b className="text-slate-700">{money(account.valor_pago_periodo)}</b></span>
-                    <span className="text-right"><span className="block text-slate-400">Pedidos</span><b className="text-slate-700">{account.pedidos_abertos}</b></span>
+                  <span className="mt-2 block text-xs font-semibold text-slate-500">
+                    {account.pedidos_abertos} {Number(account.pedidos_abertos) === 1 ? "pedido em aberto" : "pedidos em aberto"}
                   </span>
                 </button>
               )) : (
@@ -372,7 +387,7 @@ export function FiadosScreen() {
           </div>
         </section>
 
-        <aside ref={detailsPanelRef} className={`scroll-mt-3 rounded-lg border bg-white p-4 xl:min-h-0 xl:overflow-y-auto ${selectedAccount ? "block" : "hidden xl:block"}`}>
+        <aside ref={detailsPanelRef} className={`fixed inset-0 z-[90] overflow-y-auto bg-white p-4 shadow-2xl sm:inset-4 sm:rounded-xl sm:border xl:static xl:z-auto xl:min-h-0 xl:overflow-y-auto xl:rounded-lg xl:shadow-none ${selectedAccount ? "block" : "hidden xl:block"}`}>
           {!selectedAccount ? (
             <div className="flex h-full min-h-80 flex-col items-center justify-center text-center text-slate-500">
               <ReceiptText className="mb-3 h-10 w-10 text-slate-300" />

@@ -1578,11 +1578,7 @@ export function SalaoPage() {
       setCloseMesaTarget(null);
       await loadAll({ manual: true });
     } catch (error: any) {
-      showSystemNotice(
-        error?.response?.data?.message ||
-          error?.message ||
-          "Não foi possível fechar a mesa.",
-      );
+      showSystemNotice(getApiErrorMessage(error, "Não foi possível fechar a mesa."));
     } finally {
       setActionBusy("");
     }
