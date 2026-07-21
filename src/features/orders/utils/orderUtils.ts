@@ -40,7 +40,13 @@ export const getOrderItemName = (item: any) => {
     "Produto não informado";
   const variation = firstText(item?.nome_variacao);
 
-  return variation ? `${name} - ${variation}` : name;
+  const displayName = variation ? `${name} - ${variation}` : name;
+  const hasBorder = (Array.isArray(item?.selecoes) ? item.selecoes : []).some((selection: any) =>
+    firstText(selection?.nome_opcao).toLocaleLowerCase('pt-BR').includes('borda')
+  );
+  return hasBorder && !displayName.toLocaleLowerCase('pt-BR').includes('(com borda)')
+    ? `${displayName} (Com borda)`
+    : displayName;
 };
 
 export const getOrderItemConfigurationLines = (item: any) => {

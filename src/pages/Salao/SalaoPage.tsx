@@ -442,11 +442,19 @@ const formatMoney = (value: unknown) =>
     .toFixed(2)
     .replace(".", ",");
 
-const salaoPrintItemName = (item: any) =>
-  [item?.nome_produto || "Produto", item?.nome_variacao]
+const salaoHasBorderSelection = (item: any) => arrayOrEmpty<any>(item?.selecoes).some((selection) =>
+  String(selection?.nome_opcao || "").toLocaleLowerCase("pt-BR").includes("borda")
+);
+
+const salaoPrintItemName = (item: any) => {
+  const name = [item?.nome_produto || "Produto", item?.nome_variacao]
     .map((value) => String(value || "").trim())
     .filter(Boolean)
     .join(" - ");
+  return salaoHasBorderSelection(item) && !name.toLocaleLowerCase("pt-BR").includes("(com borda)")
+    ? `${name} (Com borda)`
+    : name;
+};
 
 const salaoPrintSelectionLine = (selection: any) => {
   const quantity = Number(selection?.quantidade || 1);
@@ -3410,7 +3418,7 @@ export function SalaoPage() {
                               >
                                 <div className="min-w-0 flex-1 overflow-hidden">
                                   <div className="break-words text-sm font-medium leading-tight text-gray-900 [overflow-wrap:anywhere] sm:text-base">
-                                    {item.nome_produto}
+                                    {item.nome_produto}{!itemVariation && salaoHasBorderSelection(item) ? " (Com borda)" : ""}
                                   </div>
                                   <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-gray-500 sm:mt-1 sm:gap-1.5 sm:text-xs">
                                     <span className="min-w-0 break-words [overflow-wrap:anywhere]">
@@ -3425,7 +3433,7 @@ export function SalaoPage() {
                                   </div>
                                   {itemVariation && (
                                     <div className="mt-1 break-words text-[11px] font-semibold text-slate-700 [overflow-wrap:anywhere] sm:text-xs">
-                                      Tamanho: {itemVariation}
+                                      Tamanho: {itemVariation}{salaoHasBorderSelection(item) ? " (Com borda)" : ""}
                                     </div>
                                   )}
                                   {itemSelections.length > 0 && (
@@ -3758,7 +3766,7 @@ export function SalaoPage() {
                       className="break-words font-semibold text-gray-900 [overflow-wrap:anywhere]"
                       style={{ fontSize: 14 * kdsCardScale, lineHeight: 1.25 }}
                     >
-                      {item.nome_produto}
+                      {item.nome_produto}{!item.nome_variacao && salaoHasBorderSelection(item) ? " (Com borda)" : ""}
                     </div>
                     <div
                       className="break-words text-gray-500 [overflow-wrap:anywhere]"
@@ -3775,7 +3783,7 @@ export function SalaoPage() {
                           lineHeight: 1.3,
                         }}
                       >
-                        Variação: {item.nome_variacao}
+                        Variação: {item.nome_variacao}{salaoHasBorderSelection(item) ? " (Com borda)" : ""}
                       </div>
                     )}
                   </div>
