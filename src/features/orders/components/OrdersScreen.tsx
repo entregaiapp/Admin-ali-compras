@@ -112,6 +112,17 @@ import {
   createOrdersAdminRealtime,
   ordersTenantTopic,
 } from "@/features/orders/services/ordersRealtime";
+import {
+  createOrdersReconciliationScheduler,
+  getFirstAvailableOperationalTab,
+  getOrdersReconciliationPlan,
+  getOrdersRealtimeAction,
+  readOperationalAvailability,
+  type OperationalOrderType,
+  type OperationalOrderTabKey,
+  type OperationalTabAvailability,
+  type OrdersReconciliationResources,
+} from "@/features/orders/services/ordersReconciliation";
 import { printingService } from "@/features/printing/services/printingService";
 import { AdminPixChargePanel } from "@/features/adminPixCharges/components/AdminPixChargePanel";
 import { adminPixChargeService } from "@/features/adminPixCharges/services/adminPixChargeService";
@@ -420,19 +431,6 @@ const ORDER_TABS = [
   { value: "Salao", label: "Salão" },
 ] as const;
 type OrderTab = (typeof ORDER_TABS)[number]["value"];
-type OperationalOrderTabKey =
-  | "falta_imprimir"
-  | "andamento"
-  | "cancelamentos"
-  | "saiu_para_entrega"
-  | "entregues"
-  | "entregues_aguardando_pagamento"
-  | "nao_entregues"
-  | "cancelados";
-type OperationalTabAvailability = Record<
-  OperationalOrderTabKey,
-  { disponivel: boolean; total: number }
->;
 type OperationalTabCache = {
   orders: any[];
   nextCursor: string | null;
@@ -844,8 +842,12 @@ export function OrdersScreen() {
     }
   })();
   const userPermissionsKey = Array.isArray(user?.permissions) ? user.permissions.join("|") : "";
-  const realtimeRefreshTimeoutRef = useRef<number | null>(null);
-  const pendingPrintAlertRequestRef = useRef(false);
+  const reconciliationExecutorRef = useRef<
+    (resources: OrdersReconciliationResources) => Promise<void>
+  >(async () => undefined);
+  const reconciliationSchedulerRef = useRef<
+    ReturnType<typeof createOrdersReconciliationScheduler> | null
+  >(null);
   const operationalCacheRef = useRef<Record<string, OperationalTabCache>>({});
   const operationalAvailabilityCacheRef = useRef<
     Record<string, OperationalTabAvailability>
@@ -857,10 +859,23 @@ export function OrdersScreen() {
   const ordersRequestVersionRef = useRef(0);
   const ordersRequestInFlightRef = useRef(false);
   const ordersPaginationInvalidatedRef = useRef(false);
+  const initialOrdersLoadRef = useRef(true);
+  const realtimeNavigationPendingRef = useRef(false);
+  const realtimeSearchResetPendingRef = useRef(false);
   const searchEffectReadyRef = useRef(false);
   const archivedDaysCarouselRef = useRef<HTMLDivElement | null>(null);
   const ordersScreenRef = useRef<HTMLDivElement | null>(null);
   const orderCardClickTimeoutRef = useRef<number | null>(null);
+
+  if (!reconciliationSchedulerRef.current) {
+    reconciliationSchedulerRef.current = createOrdersReconciliationScheduler({
+      reconcile: (resources) => reconciliationExecutorRef.current(resources),
+      isVisible: () => document.visibilityState === "visible",
+      debug: (message, details) => {
+        if (import.meta.env.DEV) console.debug(`[Pedidos] ${message}`, details);
+      },
+    });
+  }
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setCurrentTimeMs(Date.now()), 30_000);
@@ -887,104 +902,8 @@ export function OrdersScreen() {
     useAlertSoundPreference(user?.loja_id, "entrega");
   const { enabled: pickupSoundEnabled, setEnabled: setPickupSoundEnabled } =
     useAlertSoundPreference(user?.loja_id, "retirada");
-  const refreshInProgressOrderCounts = useCallback(async () => {
-    if (!user?.loja_id) {
-      setInProgressOrdersCount({ entrega: 0, retirada: 0 });
-      return;
-    }
-
-    const types = ["entrega", "retirada"] as const;
-    const responses = await Promise.allSettled(
-      types.map((type) =>
-        api.post("/pedidos/operacionais/consulta", {
-          tipo_pedido: type,
-          aba: "andamento",
-          limite: 1,
-          ids_em_cache: [],
-        }),
-      ),
-    );
-
-    setInProgressOrdersCount((current) => {
-      const next = { ...current };
-      responses.forEach((response, index) => {
-        if (response.status !== "fulfilled") return;
-        const payload = response.value.data?.data || {};
-        const total = Number(payload.abas?.andamento?.total || 0);
-        next[types[index]] = Number.isFinite(total) ? total : 0;
-      });
-      return next;
-    });
-  }, [user?.loja_id]);
-
-  useEffect(() => {
-    void refreshInProgressOrderCounts();
-    const intervalId = window.setInterval(
-      () => void refreshInProgressOrderCounts(),
-      60_000,
-    );
-    return () => window.clearInterval(intervalId);
-  }, [refreshInProgressOrderCounts]);
-
-  const pendingPrintOrders = useMemo(
-    () => orders.filter(isAppOrderAwaitingPrint),
-    [orders],
-  );
-  const refreshPendingPrintAlerts = useCallback(async () => {
-    if (!user?.loja_id || pendingPrintAlertRequestRef.current) return;
-
-    pendingPrintAlertRequestRef.current = true;
-    try {
-      const activeOperationalType =
-        viewMode === "lista" && typeFilter === "Entrega"
-          ? "entrega"
-          : viewMode === "lista" && typeFilter === "Retirada"
-            ? "retirada"
-            : null;
-      const types: Array<"entrega" | "retirada"> = activeOperationalType
-        ? [activeOperationalType === "entrega" ? "retirada" : "entrega"]
-        : ["entrega", "retirada"];
-      const responses = await Promise.allSettled(
-        types.map((type) =>
-          api.post("/pedidos/operacionais/consulta", {
-            tipo_pedido: type,
-            aba: "falta_imprimir",
-            limite: 1,
-            ids_em_cache: [],
-          }),
-        ),
-      );
-
-      setPendingPrintAlerts((current) => {
-        const next = { ...current };
-        responses.forEach((response, index) => {
-          if (response.status !== "fulfilled") return;
-          const payload = response.value.data?.data || {};
-          const total = Number(payload.abas?.falta_imprimir?.total);
-          next[types[index]] = Number.isFinite(total)
-            ? total > 0
-            : Array.isArray(payload.pedidos) && payload.pedidos.length > 0;
-        });
-        return next;
-      });
-    } catch (error) {
-      console.error("Error checking pending print alerts:", error);
-    } finally {
-      pendingPrintAlertRequestRef.current = false;
-    }
-  }, [user?.loja_id, typeFilter, viewMode]);
-  const hasPendingDeliveryPrint = useMemo(
-    () =>
-      pendingPrintAlerts.entrega ||
-      pendingPrintOrders.some((order) => getOrderType(order) === "entrega"),
-    [pendingPrintAlerts.entrega, pendingPrintOrders],
-  );
-  const hasPendingPickupPrint = useMemo(
-    () =>
-      pendingPrintAlerts.retirada ||
-      pendingPrintOrders.some((order) => getOrderType(order) === "retirada"),
-    [pendingPrintAlerts.retirada, pendingPrintOrders],
-  );
+  const hasPendingDeliveryPrint = pendingPrintAlerts.entrega;
+  const hasPendingPickupPrint = pendingPrintAlerts.retirada;
   const deliverySound = usePersistentAttentionSound(
     `pedidos:${user?.loja_id || "sem-loja"}:entrega`,
     deliverySoundEnabled,
@@ -1019,6 +938,62 @@ export function OrdersScreen() {
     ? operationalTabKey
     : "";
   const operationalCacheKey = `${operationalFiltersKey}:${operationalTabKey}`;
+  const currentOperationalType: OperationalOrderType | null =
+    isOperationalOrdersView ? operationalType : null;
+  const ordersViewRef = useRef({
+    currentOperationalType,
+    typeFilter,
+    isOperationalOrdersView,
+    viewMode,
+    activeListGroupKey,
+    search,
+    statusFilter,
+    bairroFilter,
+  });
+  ordersViewRef.current = {
+    currentOperationalType,
+    typeFilter,
+    isOperationalOrdersView,
+    viewMode,
+    activeListGroupKey,
+    search,
+    statusFilter,
+    bairroFilter,
+  };
+
+  const applyOperationalCounters = (
+    type: OperationalOrderType,
+    availability: OperationalTabAvailability,
+  ) => {
+    setInProgressOrdersCount((current) => ({
+      ...current,
+      [type]: availability.andamento.total,
+    }));
+    setPendingPrintAlerts((current) => ({
+      ...current,
+      [type]: availability.falta_imprimir.total > 0,
+    }));
+  };
+
+  const fetchOperationalSummary = async (types: OperationalOrderType[]) => {
+    if (!user?.loja_id || types.length === 0) return;
+    try {
+      const response = await api.post("/pedidos/operacionais/resumo", {
+        tipos_pedido: [...new Set(types)],
+      });
+      const payload = response.data?.data;
+      if (!payload || typeof payload !== "object") {
+        throw new Error("Invalid operational summary response");
+      }
+
+      types.forEach((type) => {
+        const availability = readOperationalAvailability(payload[type]?.abas);
+        if (availability) applyOperationalCounters(type, availability);
+      });
+    } catch (error) {
+      console.error("Error fetching operational order summary:", error);
+    }
+  };
 
   const invalidateOperationalOrderCaches = (orderId: string, type: string) => {
     const normalizedType = type === "retirada" ? "retirada" : "entrega";
@@ -1041,14 +1016,14 @@ export function OrdersScreen() {
     mode: "reset" | "append" | "poll" = "reset",
     options: { silent?: boolean } = {},
   ) => {
-    if (!isOperationalOrdersView || !user?.loja_id) return;
-    if (mode === "poll" && operationalRequestInFlightRef.current) return;
-    if (mode === "append" && operationalRequestInFlightRef.current) return;
+    if (!isOperationalOrdersView || !user?.loja_id) return null;
+    if (mode === "poll" && operationalRequestInFlightRef.current) return null;
+    if (mode === "append" && operationalRequestInFlightRef.current) return null;
 
     const cacheKey = operationalCacheKey;
     const filtersKey = operationalFiltersKey;
     const cached = operationalCacheRef.current[cacheKey];
-    if (mode === "append" && (!cached?.hasMore || !cached.nextCursor)) return;
+    if (mode === "append" && (!cached?.hasMore || !cached.nextCursor)) return null;
 
     if (mode !== "append") operationalAbortRef.current?.abort();
     const controller = new AbortController();
@@ -1075,7 +1050,11 @@ export function OrdersScreen() {
       if (requestVersion !== operationalRequestVersionRef.current) return;
 
       let payload = response.data?.data || {};
-      let incoming = Array.isArray(payload.pedidos) ? payload.pedidos : [];
+      let availability = readOperationalAvailability(payload.abas);
+      if (!Array.isArray(payload.pedidos) || !availability) {
+        throw new Error("Invalid operational orders response");
+      }
+      let incoming = payload.pedidos;
       if (
         Number(payload.abas?.[operationalTabKey]?.total || 0) > 0 &&
         incoming.length === 0
@@ -1095,20 +1074,21 @@ export function OrdersScreen() {
         );
         if (requestVersion !== operationalRequestVersionRef.current) return;
         payload = response.data?.data || {};
-        incoming = Array.isArray(payload.pedidos) ? payload.pedidos : [];
+        availability = readOperationalAvailability(payload.abas);
+        if (!Array.isArray(payload.pedidos) || !availability) {
+          throw new Error("Invalid operational orders fallback response");
+        }
+        incoming = payload.pedidos;
       }
-      let availability = payload.abas || EMPTY_OPERATIONAL_AVAILABILITY;
       let resolvedTabKey = operationalTabKey;
       if (mode !== "append" && !availability[operationalTabKey]?.disponivel) {
-        const firstAvailable = OPERATIONAL_TAB_DEFINITIONS.find(
-          ({ key }) => availability[key]?.disponivel,
-        );
-        if (firstAvailable && firstAvailable.key !== operationalTabKey) {
+        const firstAvailableKey = getFirstAvailableOperationalTab(availability);
+        if (firstAvailableKey && firstAvailableKey !== operationalTabKey) {
           response = await api.post(
             "/pedidos/operacionais/consulta",
             {
               tipo_pedido: operationalType,
-              aba: firstAvailable.key,
+              aba: firstAvailableKey,
               limite: PER_PAGE,
               busca: search.trim() || undefined,
               status: frontendToBackendStatus[statusFilter],
@@ -1119,9 +1099,13 @@ export function OrdersScreen() {
           );
           if (requestVersion !== operationalRequestVersionRef.current) return;
           payload = response.data?.data || {};
-          incoming = Array.isArray(payload.pedidos) ? payload.pedidos : [];
-          availability = payload.abas || availability;
-          resolvedTabKey = firstAvailable.key;
+          const fallbackAvailability = readOperationalAvailability(payload.abas);
+          if (!Array.isArray(payload.pedidos) || !fallbackAvailability) {
+            throw new Error("Invalid operational tab fallback response");
+          }
+          incoming = payload.pedidos;
+          availability = fallbackAvailability;
+          resolvedTabKey = firstAvailableKey;
         }
       }
       const resolvedCacheKey = `${filtersKey}:${resolvedTabKey}`;
@@ -1156,20 +1140,7 @@ export function OrdersScreen() {
       operationalCacheRef.current[resolvedCacheKey] = nextCache;
       operationalAvailabilityCacheRef.current[filtersKey] = availability;
       setOperationalAvailability(availability);
-      if (
-        statusFilter === "Todos" &&
-        !search.trim() &&
-        bairroFilter === "Todos"
-      ) {
-        setInProgressOrdersCount((current) => ({
-          ...current,
-          [operationalType]: Number(availability.andamento?.total || 0),
-        }));
-      }
-      setPendingPrintAlerts((current) => ({
-        ...current,
-        [operationalType]: Number(availability.falta_imprimir?.total || 0) > 0,
-      }));
+      applyOperationalCounters(operationalType, availability);
       setOrders(mergedOrders);
       if (resolvedTabKey !== operationalTabKey) {
         setActiveListGroupKey(resolvedTabKey);
@@ -1183,13 +1154,12 @@ export function OrdersScreen() {
       setNewOrdersCount((current) => ({ ...current, [operationalType]: 0 }));
 
       if (!availability[operationalTabKey]?.disponivel) {
-        const firstAvailable = OPERATIONAL_TAB_DEFINITIONS.find(
-          ({ key }) => availability[key]?.disponivel,
-        );
-        if (firstAvailable && firstAvailable.key !== operationalTabKey) {
-          setActiveListGroupKey(firstAvailable.key);
+        const firstAvailableKey = getFirstAvailableOperationalTab(availability);
+        if (firstAvailableKey && firstAvailableKey !== operationalTabKey) {
+          setActiveListGroupKey(firstAvailableKey);
         }
       }
+      return { type: operationalType, availability };
     } catch (error: any) {
       if (error?.name !== "CanceledError" && error?.code !== "ERR_CANCELED") {
         console.error("Error fetching operational orders:", error);
@@ -1202,6 +1172,7 @@ export function OrdersScreen() {
         setLoading(false);
       }
     }
+    return null;
   };
 
   useEffect(() => {
@@ -1210,6 +1181,19 @@ export function OrdersScreen() {
     ordersAbortRef.current?.abort();
     ordersRequestVersionRef.current += 1;
     setPage(1);
+    if (initialOrdersLoadRef.current) {
+      initialOrdersLoadRef.current = false;
+      reconciliationSchedulerRef.current?.schedule({
+        reason: "initial",
+        full: true,
+        immediate: true,
+      });
+      return;
+    }
+    if (realtimeNavigationPendingRef.current) {
+      realtimeNavigationPendingRef.current = false;
+      return;
+    }
     if (isOperationalOrdersView) {
       const cached = operationalCacheRef.current[operationalCacheKey];
       setOrders(cached?.orders || []);
@@ -1412,6 +1396,11 @@ export function OrdersScreen() {
       searchEffectReadyRef.current = true;
       return;
     }
+    if (realtimeSearchResetPendingRef.current) {
+      realtimeSearchResetPendingRef.current = false;
+      realtimeNavigationPendingRef.current = false;
+      return;
+    }
     const timer = setTimeout(() => {
       setPage(1);
       if (isOperationalOrdersView) {
@@ -1570,13 +1559,11 @@ export function OrdersScreen() {
     }
   };
 
-  const checkNewOrders = async () => {
+  const checkNewOrders = async (requestedTypes?: OrderCounterKey[]) => {
     try {
       setCheckingNewOrders(true);
-      const types: OrderCounterKey[] = [
-        "entrega",
-        "retirada",
-        ...(salaoEnabled ? ["salao" as const] : []),
+      const types: OrderCounterKey[] = requestedTypes || [
+        "entrega", "retirada", ...(salaoEnabled ? ["salao" as const] : []),
       ];
       const responses = await Promise.all(
         types.map((type) => api.get("/pedidos/novos/contagem", {
@@ -1598,122 +1585,180 @@ export function OrdersScreen() {
     }
   };
 
+  reconciliationExecutorRef.current = async (resources) => {
+    if (!user?.loja_id || document.visibilityState !== "visible") return;
+
+    const currentType = ordersViewRef.current.currentOperationalType;
+    const plan = getOrdersReconciliationPlan(resources, currentType);
+    const requestedSummaryTypes = new Set(plan.summaryTypes);
+
+    let listCoveredType: OperationalOrderType | null = null;
+    if (plan.listType) {
+      const result = await fetchOperationalOrders(
+        resources.reasons.includes("initial") || resources.reasons.includes("manual")
+          ? "reset"
+          : "poll",
+        {
+          silent:
+            !resources.reasons.includes("initial") &&
+            !resources.reasons.includes("manual"),
+        },
+      );
+      if (result) listCoveredType = plan.listType;
+      else requestedSummaryTypes.add(plan.listType);
+    } else if (resources.full) {
+      await fetchOrders(1, true, {
+        silent:
+          !resources.reasons.includes("initial") &&
+          !resources.reasons.includes("manual"),
+      });
+    }
+
+    if (listCoveredType) requestedSummaryTypes.delete(listCoveredType);
+
+    const summaryTypes = [...requestedSummaryTypes];
+    if (summaryTypes.length > 0) await fetchOperationalSummary(summaryTypes);
+    if (
+      resources.full &&
+      newOrderCursorsReady &&
+      ordersViewRef.current.typeFilter === "Salao"
+    ) {
+      await checkNewOrders(["salao"]);
+    }
+
+    if (import.meta.env.DEV) {
+      console.debug("[Pedidos] reconciliation_finished", {
+        reasons: resources.reasons,
+        resources: {
+          list: listCoveredType ? [`lista ${listCoveredType}`] : [],
+          summary: summaryTypes.map((type) => `resumo ${type}`),
+        },
+        eventCount: resources.eventCount,
+      });
+    }
+  };
+
   useEffect(() => {
-    if (!newOrderCursorsReady) return;
-
-    const intervalId = window.setInterval(() => {
-      if (isOperationalOrdersView) {
-        void fetchOperationalOrders("poll", { silent: true });
-      } else {
-        void checkNewOrders();
-      }
-    }, 60000);
-
-    return () => window.clearInterval(intervalId);
-  }, [
-    statusFilter,
-    typeFilter,
-    bairroFilter,
-    search,
-    viewMode,
-    lastOrdersLoadedAt,
-    salaoEnabled,
-    newOrderCursorsReady,
-  ]);
-
-  useEffect(() => {
-    if (!user?.loja_id) {
+    const scheduler = reconciliationSchedulerRef.current;
+    if (!scheduler || !user?.loja_id) {
       setPendingPrintAlerts({ entrega: false, retirada: false });
+      setInProgressOrdersCount({ entrega: 0, retirada: 0 });
       return;
     }
 
-    const reconcileAlerts = () => {
-      if (document.visibilityState === "hidden") return;
-      void refreshPendingPrintAlerts();
+    const scheduleFull = (
+      reason: "interval" | "focus" | "online" | "visible",
+    ) => scheduler.schedule({
+      reason,
+      full: true,
+      immediate: reason === "visible",
+      dedupeEquivalent: reason !== "interval",
+    });
+    const handleFocus = () => scheduleFull("focus");
+    const handleOnline = () => scheduleFull("online");
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") scheduleFull("visible");
     };
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === "visible") scheduleFull("interval");
+    }, 5 * 60_000);
 
-    void refreshPendingPrintAlerts();
-    const intervalId = window.setInterval(reconcileAlerts, 30000);
-    window.addEventListener("focus", reconcileAlerts);
-    window.addEventListener("online", reconcileAlerts);
-    document.addEventListener("visibilitychange", reconcileAlerts);
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("online", handleOnline);
+    document.addEventListener("visibilitychange", handleVisibility);
 
     return () => {
       window.clearInterval(intervalId);
-      window.removeEventListener("focus", reconcileAlerts);
-      window.removeEventListener("online", reconcileAlerts);
-      document.removeEventListener("visibilitychange", reconcileAlerts);
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("online", handleOnline);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      scheduler.cancelPending();
     };
-  }, [user?.loja_id, refreshPendingPrintAlerts]);
+  }, [user?.loja_id]);
 
-  useEffect(() => {
-    if (!user?.loja_id) return;
-
-    const reconcile = () => {
-      if (document.visibilityState === "hidden") return;
-      void fetchOrders(1, true, { silent: true });
-    };
-
-    window.addEventListener("focus", reconcile);
-    window.addEventListener("online", reconcile);
-    document.addEventListener("visibilitychange", reconcile);
-
-    return () => {
-      window.removeEventListener("focus", reconcile);
-      window.removeEventListener("online", reconcile);
-      document.removeEventListener("visibilitychange", reconcile);
-    };
-  }, [user?.loja_id, statusFilter, typeFilter, bairroFilter, search, viewMode]);
-
+  const accessToken = localStorage.getItem("token") || "";
   useEffect(() => {
     const lojaId = user?.loja_id;
-    const accessToken = localStorage.getItem("token") || "";
     const realtime = lojaId ? createOrdersAdminRealtime(accessToken) : null;
-    if (!realtime || !lojaId) return;
-
-    const scheduleReconcile = () => {
-      if (realtimeRefreshTimeoutRef.current)
-        window.clearTimeout(realtimeRefreshTimeoutRef.current);
-      realtimeRefreshTimeoutRef.current = window.setTimeout(() => {
-        realtimeRefreshTimeoutRef.current = null;
-        void fetchOrders(1, true, { silent: true });
-      }, 150);
-    };
+    const scheduler = reconciliationSchedulerRef.current;
+    if (!realtime || !lojaId || !scheduler) return;
 
     const channel = realtime
       .channel(ordersTenantTopic(lojaId), { config: { private: true } })
       .on("broadcast", { event: "pedidos:update" }, ({ payload }: any) => {
-        void refreshPendingPrintAlerts();
-        const tipoPedido = String(payload?.tipoPedido || "").toLowerCase();
-        if (payload?.pedidoId && (tipoPedido === "entrega" || tipoPedido === "retirada")) {
-          invalidateOperationalOrderCaches(payload.pedidoId, tipoPedido);
+        const action = getOrdersRealtimeAction(payload);
+        if (action.full) {
+          scheduler.schedule({ reason: "realtime", full: true });
+          return;
         }
-        if (
-          payload?.event === "PEDIDO_CRIADO" &&
-          payload?.requiresPrintAlert === true &&
-          (tipoPedido === "entrega" || tipoPedido === "retirada")
-        ) {
+
+        invalidateOperationalOrderCaches(action.orderId!, action.type!);
+        if (action.openPendingPrint) {
+          const shouldResetSearch = Boolean(ordersViewRef.current.search.trim());
+          realtimeNavigationPendingRef.current =
+            ordersViewRef.current.currentOperationalType !== action.type ||
+            ordersViewRef.current.viewMode !== "lista" ||
+            ordersViewRef.current.activeListGroupKey !== "falta_imprimir" ||
+            Boolean(ordersViewRef.current.search.trim()) ||
+            ordersViewRef.current.statusFilter !== "Todos" ||
+            ordersViewRef.current.bairroFilter !== "Todos";
+          ordersViewRef.current = {
+            currentOperationalType: action.type,
+            typeFilter: action.type === "retirada" ? "Retirada" : "Entrega",
+            isOperationalOrdersView: true,
+            viewMode: "lista",
+            activeListGroupKey: "falta_imprimir",
+            search: "",
+            statusFilter: "Todos",
+            bairroFilter: "Todos",
+          };
+          realtimeSearchResetPendingRef.current = shouldResetSearch;
           setViewMode("lista");
-          setTypeFilter(tipoPedido === "retirada" ? "Retirada" : "Entrega");
+          setTypeFilter(action.type === "retirada" ? "Retirada" : "Entrega");
           setActiveListGroupKey("falta_imprimir");
+          setSearch("");
+          setStatusFilter("Todos");
+          setBairroFilter("Todos");
         }
-        scheduleReconcile();
+
+        const currentType = ordersViewRef.current.currentOperationalType;
+        scheduler.schedule({
+          reason: "realtime",
+          listTypes: action.type === currentType ? [action.type!] : [],
+          summaryTypes: action.type === currentType ? [] : [action.type!],
+        });
       })
       .subscribe((status) => {
-        if (status === "SUBSCRIBED") scheduleReconcile();
+        if (status === "SUBSCRIBED") {
+          scheduler.schedule({
+            reason: "online",
+            full: true,
+            dedupeEquivalent: true,
+          });
+        }
       });
 
     return () => {
-      if (realtimeRefreshTimeoutRef.current)
-        window.clearTimeout(realtimeRefreshTimeoutRef.current);
       void realtime.removeChannel(channel);
     };
-  }, [user?.loja_id, statusFilter, typeFilter, bairroFilter, search, viewMode, refreshPendingPrintAlerts]);
+  }, [user?.loja_id, accessToken]);
+
+  useEffect(() => () => {
+    reconciliationSchedulerRef.current?.dispose();
+    reconciliationSchedulerRef.current = null;
+  }, []);
 
   const refreshCurrentOrderTab = async () => {
-    setOrders([]);
     setPage(1);
-    await Promise.all([fetchOrders(1, true), fetchAuxiliaryData()]);
+    reconciliationSchedulerRef.current?.schedule({
+      reason: "manual",
+      full: true,
+      immediate: true,
+    });
+    await Promise.all([
+      reconciliationSchedulerRef.current?.flush(),
+      fetchAuxiliaryData(),
+    ]);
   };
 
   const fetchArchivedDayOrders = async (
@@ -2256,7 +2301,16 @@ export function OrdersScreen() {
     if (selected?.id === order.id) {
       setSelected((prev: any) => (prev ? { ...prev, ...updatedOrder } : prev));
     }
-    void refreshPendingPrintAlerts();
+    invalidateOperationalOrderCaches(order.id, getOrderType(order));
+    const type = getOrderType(order) === "retirada" ? "retirada" : "entrega";
+    reconciliationSchedulerRef.current?.schedule({
+      reason: "manual",
+      listTypes:
+        ordersViewRef.current.currentOperationalType === type ? [type] : [],
+      summaryTypes:
+        ordersViewRef.current.currentOperationalType === type ? [] : [type],
+      immediate: true,
+    });
     return { ...order, ...updatedOrder };
   };
 
