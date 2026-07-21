@@ -194,6 +194,7 @@ export function SettingsScreen() {
       "Entrega concluída",
     ],
     gateway_pagamento_padrao: "mercadopago",
+    pagamento_somente_na_entrega: false,
     impressao_pedido_modo: "agent_com_fallback",
   });
 
@@ -303,6 +304,7 @@ export function SettingsScreen() {
         taxa_entrega_padrao:
           store.taxa_entrega_padrao ?? prev.taxa_entrega_padrao ?? 0,
         formas_pagamento: config.formas_pagamento || prev.formas_pagamento,
+        pagamento_somente_na_entrega: config.pagamento_somente_na_entrega === true,
         permitir_cpf_na_nota_cliente:
           config.permitir_cpf_na_nota_cliente ?? prev.permitir_cpf_na_nota_cliente ?? true,
         preferencias_notificacao:
@@ -1099,6 +1101,14 @@ export function SettingsScreen() {
                   Configurações de Entrega
                 </h3>
               </div>
+              {formData.pagamento_somente_na_entrega && (
+                <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                  <p className="font-semibold">Pagamento somente na entrega/retirada está ativo</p>
+                  <p className="mt-1 text-xs">
+                    Esta permissão é controlada pelo superadmin. No checkout, o cliente verá somente PIX, crédito, débito e dinheiro dentre as formas selecionadas abaixo; o recebimento ficará pendente para confirmação da loja.
+                  </p>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-gray-600 mb-1.5">
