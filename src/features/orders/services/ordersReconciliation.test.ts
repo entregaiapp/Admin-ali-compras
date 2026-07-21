@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createOrdersReconciliationScheduler,
   getFirstAvailableOperationalTab,
+  getPreferredOperationalTab,
   getOrdersReconciliationPlan,
   getOrdersRealtimeAction,
   OPERATIONAL_ORDER_TAB_KEYS,
@@ -71,6 +72,31 @@ describe("orders reconciliation", () => {
     expect(parsed).not.toBeNull();
     expect(getFirstAvailableOperationalTab(parsed!)).toBe("andamento");
     expect(readOperationalAvailability({ andamento: { total: 3 } })).toBeNull();
+  });
+
+  it("always prioritizes falta_imprimir while it has orders", () => {
+    const withPendingPrint = readOperationalAvailability(availability({
+      falta_imprimir: 1,
+      andamento: 5,
+      cancelamentos: 2,
+    }))!;
+    expect(getPreferredOperationalTab(withPendingPrint, "andamento")).toBe(
+      "falta_imprimir",
+    );
+    expect(getPreferredOperationalTab(withPendingPrint, "cancelamentos")).toBe(
+      "falta_imprimir",
+    );
+
+    const afterPrinting = readOperationalAvailability(availability({
+      andamento: 5,
+      cancelamentos: 2,
+    }))!;
+    expect(getPreferredOperationalTab(afterPrinting, "falta_imprimir")).toBe(
+      "andamento",
+    );
+    expect(getPreferredOperationalTab(afterPrinting, "cancelamentos")).toBe(
+      "cancelamentos",
+    );
   });
 
   it("groups nearby events without losing resources from the first event", async () => {

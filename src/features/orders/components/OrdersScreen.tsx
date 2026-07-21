@@ -114,7 +114,7 @@ import {
 } from "@/features/orders/services/ordersRealtime";
 import {
   createOrdersReconciliationScheduler,
-  getFirstAvailableOperationalTab,
+  getPreferredOperationalTab,
   getOrdersReconciliationPlan,
   getOrdersRealtimeAction,
   readOperationalAvailability,
@@ -1081,14 +1081,17 @@ export function OrdersScreen() {
         incoming = payload.pedidos;
       }
       let resolvedTabKey = operationalTabKey;
-      if (mode !== "append" && !availability[operationalTabKey]?.disponivel) {
-        const firstAvailableKey = getFirstAvailableOperationalTab(availability);
-        if (firstAvailableKey && firstAvailableKey !== operationalTabKey) {
+      if (mode !== "append") {
+        const preferredTabKey = getPreferredOperationalTab(
+          availability,
+          operationalTabKey,
+        );
+        if (preferredTabKey && preferredTabKey !== operationalTabKey) {
           response = await api.post(
             "/pedidos/operacionais/consulta",
             {
               tipo_pedido: operationalType,
-              aba: firstAvailableKey,
+              aba: preferredTabKey,
               limite: PER_PAGE,
               busca: search.trim() || undefined,
               status: frontendToBackendStatus[statusFilter],
@@ -1105,7 +1108,7 @@ export function OrdersScreen() {
           }
           incoming = payload.pedidos;
           availability = fallbackAvailability;
-          resolvedTabKey = firstAvailableKey;
+          resolvedTabKey = preferredTabKey;
         }
       }
       const resolvedCacheKey = `${filtersKey}:${resolvedTabKey}`;
@@ -1153,12 +1156,6 @@ export function OrdersScreen() {
       }));
       setNewOrdersCount((current) => ({ ...current, [operationalType]: 0 }));
 
-      if (!availability[operationalTabKey]?.disponivel) {
-        const firstAvailableKey = getFirstAvailableOperationalTab(availability);
-        if (firstAvailableKey && firstAvailableKey !== operationalTabKey) {
-          setActiveListGroupKey(firstAvailableKey);
-        }
-      }
       return { type: operationalType, availability };
     } catch (error: any) {
       if (error?.name !== "CanceledError" && error?.code !== "ERR_CANCELED") {

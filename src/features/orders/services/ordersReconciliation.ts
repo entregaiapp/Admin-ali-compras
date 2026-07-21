@@ -88,6 +88,15 @@ export const getFirstAvailableOperationalTab = (
   (key) => availability[key].disponivel,
 ) || null;
 
+export const getPreferredOperationalTab = (
+  availability: OperationalTabAvailability,
+  currentTab: OperationalOrderTabKey,
+) => {
+  if (availability.falta_imprimir.disponivel) return "falta_imprimir";
+  if (availability[currentTab].disponivel) return currentTab;
+  return getFirstAvailableOperationalTab(availability);
+};
+
 export const getOrdersReconciliationPlan = (
   resources: Pick<OrdersReconciliationResources, "full" | "listTypes" | "summaryTypes">,
   currentType: OperationalOrderType | null,
