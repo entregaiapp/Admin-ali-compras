@@ -1,7 +1,8 @@
-import { Minus, Plus, Search, X } from "lucide-react";
+import { MessageSquare, Minus, Plus, Search, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { OptionObservationModal } from "@/shared/components/OptionObservationModal";
 
-type Selection = { group: any; option: any; quantity: number };
+type Selection = { group: any; option: any; quantity: number; observations?: string };
 
 type ConfiguredItem = {
   variationId: string;
@@ -139,6 +140,7 @@ const initialSelectionsFor = (
         group,
         option,
         quantity: Math.max(1, Number(storedSelection.quantidade || 1)),
+        observations: String(storedSelection.observacoes || "").trim() || undefined,
       };
     })
     .filter(Boolean) as Selection[];
@@ -166,6 +168,8 @@ export function SalaoProductConfiguratorModal({
   const [quantity, setQuantity] = useState(() => Math.max(1, Number(initialItem?.quantity || 1)));
   const [notes, setNotes] = useState(initialItem?.notes || "");
   const [search, setSearch] = useState("");
+  const [editingOption, setEditingOption] = useState<Selection | null>(null);
+  const [optionNotesDraft, setOptionNotesDraft] = useState("");
   const searchRef = useRef<HTMLInputElement | null>(null);
 
   const optionCount = useMemo(
@@ -241,6 +245,23 @@ export function SalaoProductConfiguratorModal({
     });
   };
 
+  const openOptionNotes = (selection: Selection) => {
+    setEditingOption(selection);
+    setOptionNotesDraft(selection.observations || "");
+  };
+
+  const saveOptionNotes = () => {
+    if (!editingOption) return;
+    const observations = optionNotesDraft.trim();
+    setSelections((current) => current.map((selection) => (
+      selection.group.id === editingOption.group.id && selection.option.id === editingOption.option.id
+        ? { ...selection, observations: observations || undefined }
+        : selection
+    )));
+    setEditingOption(null);
+    setOptionNotesDraft("");
+  };
+
   const validationIssue = useMemo(() => {
     if ((configuration?.variacoes || []).length > 0 && !variationId) return "Selecione uma variação.";
     const invalidGroup = groups.find((group: any) => {
@@ -302,6 +323,7 @@ export function SalaoProductConfiguratorModal({
   const unitPrice = pricedConfiguration.unitPrice;
 
   return (
+    <>
     <div className="fixed inset-0 z-[100] flex items-end bg-slate-950/50 p-0 backdrop-blur-[1px] sm:items-center sm:justify-center sm:p-6" role="dialog" aria-modal="true" aria-label={`Configurar ${product?.nome || "produto"}`}>
       <div className="flex max-h-[94vh] w-full max-w-3xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-h-[88vh] sm:rounded-2xl">
         <header className="flex items-start justify-between gap-4 border-b border-slate-100 px-4 py-4 sm:px-6">
@@ -380,6 +402,7 @@ export function SalaoProductConfiguratorModal({
                             <span className="min-w-0 flex-1">
                               <span className="block text-sm font-semibold text-slate-900">{option.nome}</span>
                               {option.descricao && <span className="block text-xs text-slate-500">{option.descricao}</span>}
+                              {selection?.observations && <span className="mt-1 block text-xs font-semibold text-amber-700">Obs.: {selection.observations}</span>}
                               {priceForVariation(option, variationId) > 0 && <span className="block text-xs font-medium text-slate-500">+ {formatMoney(priceForVariation(option, variationId))}</span>}
                             </span>
                           </button>
@@ -389,6 +412,12 @@ export function SalaoProductConfiguratorModal({
                               <span className="w-7 text-center text-sm font-bold text-slate-900">{selection.quantity}</span>
                               <button type="button" onClick={() => changeOptionQuantity(group, option, 1)} className="p-2 text-slate-600 hover:bg-slate-100" aria-label={`Aumentar ${option.nome}`}><Plus className="h-3.5 w-3.5" /></button>
                             </div>
+                          )}
+                          {selection && (
+                            <button type="button" onClick={() => openOptionNotes(selection)} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs font-bold text-slate-700" title={selection.observations || "Adicionar observação"}>
+                              <MessageSquare className="h-3.5 w-3.5" />
+                              <span className="hidden sm:inline">{selection.observations ? "Editar obs." : "Observação"}</span>
+                            </button>
                           )}
                         </div>
                       );
@@ -425,5 +454,16 @@ export function SalaoProductConfiguratorModal({
         </footer>
       </div>
     </div>
+    {editingOption && (
+      <OptionObservationModal
+        optionName={editingOption.option.nome}
+        value={optionNotesDraft}
+        primaryColor="#122a4c"
+        onChange={setOptionNotesDraft}
+        onClose={() => setEditingOption(null)}
+        onSave={saveOptionNotes}
+      />
+    )}
+    </>
   );
 }

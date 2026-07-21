@@ -39,11 +39,12 @@ const shouldLoadConfiguration = (item: any) =>
   );
 
 const buildSelectionPayload = (configuredItem: any) =>
-  configuredItem.selections.map(({ group, option, quantity, fraction, unitPrice, contribution }: any) => ({
+  configuredItem.selections.map(({ group, option, quantity, fraction, observations }: any) => ({
     grupo_id: group.id,
     opcao_id: option.id,
     quantidade: quantity,
     fracao: fraction || undefined,
+    observacoes: observations?.trim() || undefined,
   }));
 
 export function EditOrderItemModal({
@@ -134,6 +135,7 @@ export function EditOrderItemModal({
             opcao_id: selection.opcao_id || null,
             quantidade: selection.quantidade || 1,
             fracao: selection.fracao || null,
+            observacoes: selection.observacoes || null,
           }))
         : [],
     });

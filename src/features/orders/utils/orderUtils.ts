@@ -59,7 +59,8 @@ export const getOrderItemConfigurationLines = (item: any) => {
       quantity > 1 ? `x${quantity}` : "",
       fraction > 0 ? `${Math.round(fraction * 100)}%` : "",
     ].filter(Boolean).join(", ");
-    lines.push(`${group ? `${group}: ` : ""}${option}${suffix ? ` (${suffix})` : ""}`);
+    const notes = firstText(selection?.observacoes);
+    lines.push(`${group ? `${group}: ` : ""}${option}${notes ? ` - ${notes}` : ""}${suffix ? ` (${suffix})` : ""}`);
   });
 
   return lines;

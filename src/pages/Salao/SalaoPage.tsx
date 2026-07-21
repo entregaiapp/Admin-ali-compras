@@ -455,7 +455,8 @@ const salaoPrintSelectionLine = (selection: any) => {
     quantity > 1 ? `x${formatSalaoQuantity(quantity)}` : "",
     fraction > 0 ? `${Math.round(fraction * 100)}%` : "",
   ].filter(Boolean).join(", ");
-  return `${selection?.nome_grupo || "Opção"}: ${selection?.nome_opcao || "Opção"}${suffix ? ` (${suffix})` : ""}`;
+  const notes = String(selection?.observacoes || "").trim();
+  return `${selection?.nome_grupo || "Opção"}: ${selection?.nome_opcao || "Opção"}${notes ? ` - ${notes}` : ""}${suffix ? ` (${suffix})` : ""}`;
 };
 
 const toCents = (value: unknown) => Math.round(Number(value || 0) * 100);
@@ -480,6 +481,7 @@ type SalaoConfiguredItemInput = {
     fraction?: number | null;
     unitPrice: number;
     contribution: number;
+    observations?: string;
   }>;
   quantity: number;
   notes: string;
@@ -1385,12 +1387,13 @@ export function SalaoPage() {
 
   const buildSalaoSelectionPayload = (item: SalaoConfiguredItemInput) =>
     item.selections.map(
-      ({ group, option, quantity: optionQuantity, fraction, unitPrice, contribution }) => ({
+      ({ group, option, quantity: optionQuantity, fraction, unitPrice, contribution, observations }) => ({
         grupo_id: group.id,
         opcao_id: option.id,
         quantidade: optionQuantity,
         nome_grupo: group.nome,
         nome_opcao: option.nome,
+        observacoes: observations?.trim() || undefined,
         fracao: fraction || undefined,
         preco_unitario: unitPrice,
         preco_contribuicao: contribution,
@@ -2134,7 +2137,7 @@ export function SalaoPage() {
         getQuantity: (item) => Number(item.quantidade || 0),
         getDetails: (item) =>
           arrayOrEmpty<any>(item.selecoes).map(
-            (selection) => `${selection.nome_grupo}: ${selection.nome_opcao}`,
+            (selection) => salaoPrintSelectionLine(selection),
           ),
         getNote: (item) => String(item.observacoes || "").trim(),
       },
@@ -3444,7 +3447,7 @@ export function SalaoPage() {
                                                 <span className="font-semibold">
                                                   {selection.nome_grupo || "Opção"}:
                                                 </span>{" "}
-                                                {selection.nome_opcao || "Opção"}
+                                                {selection.nome_opcao || "Opção"}{selection.observacoes ? ` - ${selection.observacoes}` : ""}
                                                 {quantity > 1 ? ` x${formatSalaoQuantity(quantity)}` : ""}
                                                 {selection.fracao ? ` (${selection.fracao})` : ""}
                                               </span>
@@ -3820,7 +3823,7 @@ export function SalaoPage() {
                           >
                             <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">
                               <span className="font-semibold">{selection.nome_grupo || "Opção"}:</span>{" "}
-                              {selection.nome_opcao || "Opção"}
+                              {selection.nome_opcao || "Opção"}{selection.observacoes ? ` - ${selection.observacoes}` : ""}
                               {quantity > 1 ? ` x${formatSalaoQuantity(quantity)}` : ""}
                               {selection.fracao ? ` (${selection.fracao})` : ""}
                             </span>

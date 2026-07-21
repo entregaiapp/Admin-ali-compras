@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, CreditCard, Loader2, Minus, Package, Plus, Search, Trash2, X } from "lucide-react";
+import { Check, CreditCard, Loader2, MessageSquare, Minus, Package, Plus, Search, Trash2, X } from "lucide-react";
 import api from "@/shared/lib/api";
+import { OptionObservationModal } from "@/shared/components/OptionObservationModal";
 
 const unwrap = (response: any) => response?.data?.data ?? response?.data;
 const PRODUCT_CATALOG_PAGE_SIZE = 100;
@@ -132,6 +133,8 @@ export function AddOrderItemsModal({
   const [selectedOptions, setSelectedOptions] = useState<any[]>([]);
   const [optionSearches, setOptionSearches] = useState<Record<string, string>>({});
   const [configurationNotes, setConfigurationNotes] = useState("");
+  const [editingOption, setEditingOption] = useState<any>(null);
+  const [optionNotesDraft, setOptionNotesDraft] = useState("");
   const [motivo, setMotivo] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("dinheiro");
   const [paymentObservation, setPaymentObservation] = useState("");
@@ -310,6 +313,23 @@ export function AddOrderItemsModal({
     if (next > Number(option.quantidade_maxima || 99)) return current;
     return current.map((item) => item === selection ? { ...item, quantidade: next } : item);
   });
+  const openOptionNotes = (group: any, option: any) => {
+    const selection = optionSelection(group.id, option.id);
+    if (!selection) return;
+    setEditingOption({ groupId: group.id, optionId: option.id, name: option.nome });
+    setOptionNotesDraft(selection.observacoes || "");
+  };
+  const saveOptionNotes = () => {
+    if (!editingOption) return;
+    const observations = optionNotesDraft.trim();
+    setSelectedOptions((current) => current.map((selection) => (
+      selection.grupo_id === editingOption.groupId && selection.opcao_id === editingOption.optionId
+        ? { ...selection, observacoes: observations || undefined }
+        : selection
+    )));
+    setEditingOption(null);
+    setOptionNotesDraft("");
+  };
   const saveConfiguredLine = () => {
     const product = configuring?.produto;
     if (!product) return;
@@ -567,6 +587,7 @@ export function AddOrderItemsModal({
                             />
                             <span>
                               <b className="block text-sm">{option.nome}</b>
+                              {selected?.observacoes && <small className="block font-semibold text-amber-700">Obs.: {selected.observacoes}</small>}
                               {optionPrice > 0 && <small className="text-slate-500">+ {money(optionPrice)}</small>}
                             </span>
                           </button>
@@ -576,6 +597,12 @@ export function AddOrderItemsModal({
                               <b className="w-7 text-center text-sm">{selected.quantidade}</b>
                               <button disabled={count >= limits.maximum} onClick={() => changeOptionQuantity(group, option, 1)} className="p-1.5 disabled:cursor-not-allowed disabled:opacity-40"><Plus className="h-3 w-3" /></button>
                             </div>
+                          )}
+                          {selected && (
+                            <button type="button" onClick={() => openOptionNotes(group, option)} className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-300 bg-white p-2 text-xs font-bold text-slate-700" title={selected.observacoes || "Adicionar observação"}>
+                              <MessageSquare className="h-3.5 w-3.5" />
+                              <span className="hidden sm:inline">{selected.observacoes ? "Editar obs." : "Observação"}</span>
+                            </button>
                           )}
                         </div>
                       );
@@ -594,6 +621,9 @@ export function AddOrderItemsModal({
             </div>
           </div>
         </div>
+      )}
+      {editingOption && (
+        <OptionObservationModal optionName={editingOption.name} value={optionNotesDraft} primaryColor={primaryColor} onChange={setOptionNotesDraft} onClose={() => setEditingOption(null)} onSave={saveOptionNotes} />
       )}
     </div>
   );
