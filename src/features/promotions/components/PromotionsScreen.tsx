@@ -8,6 +8,8 @@ import { showSystemNotice } from '@/shared/components/SystemToast';
 import { dateTimeInputInBrasilia, formatBrasiliaDate } from '@/shared/lib/dateTime';
 
 const PRIMARY = '#122a4c';
+const PROMOTIONS_PER_PAGE = 24;
+const PRODUCT_SEARCH_LIMIT = 20;
 
 const isConfigurableProduct = (product: { modo_compra?: string | null }) => product.modo_compra === 'configuravel';
 
@@ -67,8 +69,15 @@ export function PromotionsScreen() {
   const [saving, setSaving] = useState(false);
   const [searchingAvailableProducts, setSearchingAvailableProducts] = useState(false);
   const [statusFilter, setStatusFilter] = useState<PromotionStatusFilter>('all');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalPromotions, setTotalPromotions] = useState(0);
 
-  const fetchProducts = async (searchTerm = search) => {
+  const fetchProducts = async (
+    searchTerm = search,
+    requestedPage = page,
+    requestedStatus = statusFilter,
+  ) => {
     try {
       setLoading(true);
       const response = await api.get('/produtos_loja', {
@@ -76,15 +85,20 @@ export function PromotionsScreen() {
           busca: searchTerm.trim() || undefined,
           incluir_opcoes_produto: true,
           incluir_promocoes_inativas: true,
-          per_page: 1000,
+          incluir_configuracao_opcoes: false,
+          promocao_configurada: true,
+          promocao_ativa: requestedStatus === 'all' ? undefined : requestedStatus === 'active',
+          page: requestedPage,
+          per_page: PROMOTIONS_PER_PAGE,
         },
       });
       const data = response.data.data;
       const all = Array.isArray(data) ? data : data?.data || [];
       
-      // Mantém também promoções encerradas para permitir reativação e edição.
-      const promoProducts = all.filter(hasPromotionalPrice);
-      setProducts(promoProducts);
+      setProducts(all.filter(hasPromotionalPrice));
+      setPage(Number(data?.page || requestedPage));
+      setTotalPages(Math.max(1, Number(data?.total_pages || 1)));
+      setTotalPromotions(Number(data?.total ?? all.length));
     } catch (error) {
       console.error('Error fetching promotions:', error);
     } finally {
@@ -93,15 +107,26 @@ export function PromotionsScreen() {
   };
 
   const fetchAvailableProducts = async (searchTerm = addPromoSearch) => {
+    const normalizedSearch = searchTerm.trim();
+    if (normalizedSearch.length < 2) {
+      setAllStoreProducts([]);
+      setSearchingAvailableProducts(false);
+      return;
+    }
+
     try {
       setSearchingAvailableProducts(true);
       const response = await api.get('/produtos_loja', {
         params: {
-          busca: searchTerm.trim() || undefined,
+          busca: normalizedSearch,
           ativo: true,
           incluir_opcoes_produto: true,
           incluir_promocoes_inativas: true,
-          per_page: 1000,
+          incluir_configuracao_opcoes: false,
+          promocao_configurada: false,
+          include_total: false,
+          page: 1,
+          per_page: PRODUCT_SEARCH_LIMIT,
         },
       });
       const data = response.data.data;
@@ -115,7 +140,7 @@ export function PromotionsScreen() {
   };
 
   useEffect(() => {
-    fetchProducts('');
+    fetchProducts('', 1, 'all');
   }, []);
 
   useEffect(() => {
@@ -123,13 +148,14 @@ export function PromotionsScreen() {
 
     setAddPromoSearch('');
     setAddPromoSearchInput('');
-    fetchAvailableProducts('');
+    setAllStoreProducts([]);
   }, [showAddPromo]);
 
   const handlePromotionSearch = () => {
     const term = searchInput.trim();
     setSearch(term);
-    fetchProducts(term);
+    setPage(1);
+    fetchProducts(term, 1, statusFilter);
   };
 
   const handleAvailableProductSearch = () => {
@@ -181,7 +207,7 @@ export function PromotionsScreen() {
         });
       }
       
-      await fetchProducts(search);
+      await fetchProducts(search, page, statusFilter);
       if (showAddPromo) fetchAvailableProducts(addPromoSearch);
       setEditingPrice(null);
       setShowAddPromo(false);
@@ -209,27 +235,28 @@ export function PromotionsScreen() {
           promocao_ate: null,
         });
       }
-      fetchProducts(search);
+      fetchProducts(search, page, statusFilter);
     } catch (error) {
       console.error('Error removing promotion:', error);
       showSystemNotice('Não foi possível remover a promoção.');
     }
   };
 
-  const activePromotions = products.filter(isPromotionActive).length;
-  const inactivePromotions = products.length - activePromotions;
-  const filtered = products.filter((product) => (
-    statusFilter === 'all'
-    || (statusFilter === 'active' && isPromotionActive(product))
-    || (statusFilter === 'inactive' && !isPromotionActive(product))
-  ));
+  const filtered = products;
 
-  const availableProducts = allStoreProducts.filter((p) => {
-    const hasPromotion = p.preco_promocional !== null && p.preco_promocional !== undefined;
-    if (hasPromotion) return false;
+  const availableProducts = allStoreProducts;
 
-    return true;
-  });
+  const handleStatusFilterChange = (nextStatus: PromotionStatusFilter) => {
+    setStatusFilter(nextStatus);
+    setPage(1);
+    fetchProducts(search, 1, nextStatus);
+  };
+
+  const handlePageChange = (nextPage: number) => {
+    if (nextPage < 1 || nextPage > totalPages || nextPage === page) return;
+    setPage(nextPage);
+    fetchProducts(search, nextPage, statusFilter);
+  };
 
   const calculateDiscount = (price: number, promoPrice: number) => {
     if (!price || !promoPrice) return 0;
@@ -286,27 +313,22 @@ export function PromotionsScreen() {
           </button>
           <div className="ml-auto hidden items-center gap-4 sm:flex">
              <div className="text-right">
-                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Ativas</div>
-                <div className="text-sm font-bold text-green-700">{activePromotions}</div>
-             </div>
-             <div className="h-8 w-px bg-gray-200" />
-             <div className="text-right">
-                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Inativas</div>
-                <div className="text-sm font-bold text-gray-600">{inactivePromotions}</div>
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Encontradas</div>
+                <div className="text-sm font-bold text-gray-700">{totalPromotions} promoções</div>
              </div>
           </div>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
           {([
-            ['all', `Todas (${products.length})`],
-            ['active', `Ativas (${activePromotions})`],
-            ['inactive', `Inativas (${inactivePromotions})`],
+            ['all', 'Todas'],
+            ['active', 'Ativas'],
+            ['inactive', 'Inativas'],
           ] as [PromotionStatusFilter, string][]).map(([value, label]) => (
             <button
               key={value}
               type="button"
-              onClick={() => setStatusFilter(value)}
+              onClick={() => handleStatusFilterChange(value)}
               className={`rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${statusFilter === value ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
               style={statusFilter === value ? { backgroundColor: PRIMARY } : undefined}
             >
@@ -324,8 +346,9 @@ export function PromotionsScreen() {
             <span className="text-sm text-gray-400 font-medium">Carregando promoções...</span>
           </div>
         ) : filtered.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filtered.map(product => {
+          <div className="space-y-5">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {filtered.map(product => {
               const price = parseFloat(product.preco || 0);
               const promoPrice = parseFloat(product.preco_promocional || 0);
               const discount = calculateDiscount(price, promoPrice);
@@ -407,7 +430,33 @@ export function PromotionsScreen() {
                   </div>
                 </div>
               );
-            })}
+              })}
+            </div>
+            {totalPages > 1 && (
+              <div className="flex flex-col items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 sm:flex-row">
+                <span className="text-xs text-gray-500">
+                  Página {page} de {totalPages} · {totalPromotions} promoções
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={page <= 1 || loading}
+                    onClick={() => handlePageChange(page - 1)}
+                    className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-bold text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Anterior
+                  </button>
+                  <button
+                    type="button"
+                    disabled={page >= totalPages || loading}
+                    onClick={() => handlePageChange(page + 1)}
+                    className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-bold text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Próxima
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center py-24 text-center px-6">
@@ -469,7 +518,7 @@ export function PromotionsScreen() {
                   <button
                     type="button"
                     onClick={handleAvailableProductSearch}
-                    disabled={searchingAvailableProducts}
+                    disabled={searchingAvailableProducts || addPromoSearchInput.trim().length < 2}
                     className="px-4 py-2 rounded-xl text-sm font-bold text-white disabled:opacity-60"
                     style={{ backgroundColor: PRIMARY }}
                   >
@@ -524,9 +573,11 @@ export function PromotionsScreen() {
                  ))}
                  {!searchingAvailableProducts && availableProducts.length === 0 && (
                    <div className="py-8 text-center text-sm text-gray-500">
-                     {addPromoSearch
-                       ? `Nenhum produto disponível encontrado para "${addPromoSearch}".`
-                       : 'Nenhum produto disponível encontrado.'}
+                     {!addPromoSearch
+                       ? 'Digite ao menos 2 caracteres para buscar um produto.'
+                       : addPromoSearch.length < 2
+                         ? 'Digite ao menos 2 caracteres para realizar a busca.'
+                         : `Nenhum produto disponível encontrado para "${addPromoSearch}".`}
                    </div>
                  )}
               </div>
