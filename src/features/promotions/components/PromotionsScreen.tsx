@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { 
   Tag, Search, Edit2, X, Package, Trash2, 
-  AlertCircle, DollarSign, TrendingDown, Percent, Plus
+  DollarSign, Percent, Plus, CalendarDays, Power
 } from 'lucide-react';
 import api from '@/shared/lib/api';
 import { showSystemNotice } from '@/shared/components/SystemToast';
+import { dateTimeInputInBrasilia, formatBrasiliaDate } from '@/shared/lib/dateTime';
 
 const PRIMARY = '#122a4c';
 
@@ -15,9 +16,42 @@ type PromotionTarget = {
   name: string;
   price: string;
   promoPrice: string;
+  promotionUntil: string;
+  active: boolean;
   configurable: boolean;
   storeProductId?: string;
   optionProductId?: string;
+};
+
+type PromotionStatusFilter = 'all' | 'active' | 'inactive';
+
+const hasPromotionalPrice = (product: any) => (
+  product?.preco_promocional !== null
+  && product?.preco_promocional !== undefined
+  && Number(product.preco_promocional) > 0
+);
+
+const isPromotionActive = (product: any) => {
+  if (!hasPromotionalPrice(product)) return false;
+  const regularPrice = Number(product?.preco);
+  const promotionalPrice = Number(product?.preco_promocional);
+  if (!Number.isFinite(regularPrice) || promotionalPrice >= regularPrice) return false;
+  if (!product?.promocao_ate) return true;
+  const endTime = new Date(product.promocao_ate).getTime();
+  return Number.isFinite(endTime) && endTime >= Date.now();
+};
+
+const promotionDateTimeValue = (value?: string | null) => dateTimeInputInBrasilia(value);
+
+const promotionEndLabel = (value?: string | null) => {
+  if (!value) return 'Sem data de término';
+  return formatBrasiliaDate(value, {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 };
 
 export function PromotionsScreen() {
@@ -32,6 +66,7 @@ export function PromotionsScreen() {
   const [allStoreProducts, setAllStoreProducts] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
   const [searchingAvailableProducts, setSearchingAvailableProducts] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<PromotionStatusFilter>('all');
 
   const fetchProducts = async (searchTerm = search) => {
     try {
@@ -40,15 +75,15 @@ export function PromotionsScreen() {
         params: {
           busca: searchTerm.trim() || undefined,
           incluir_opcoes_produto: true,
-          promocao_ativa: true,
+          incluir_promocoes_inativas: true,
           per_page: 1000,
         },
       });
       const data = response.data.data;
       const all = Array.isArray(data) ? data : data?.data || [];
       
-      // Filtra apenas produtos que têm preço promocional
-      const promoProducts = all.filter((p: any) => p.preco_promocional !== null && p.preco_promocional !== undefined);
+      // Mantém também promoções encerradas para permitir reativação e edição.
+      const promoProducts = all.filter(hasPromotionalPrice);
       setProducts(promoProducts);
     } catch (error) {
       console.error('Error fetching promotions:', error);
@@ -65,6 +100,7 @@ export function PromotionsScreen() {
           busca: searchTerm.trim() || undefined,
           ativo: true,
           incluir_opcoes_produto: true,
+          incluir_promocoes_inativas: true,
           per_page: 1000,
         },
       });
@@ -102,32 +138,57 @@ export function PromotionsScreen() {
     fetchAvailableProducts(term);
   };
 
-  const handleUpdatePrice = async (id: string, price: string) => {
+  const handleSavePromotion = async () => {
+    if (!editingPrice) return;
+
     try {
       setSaving(true);
-      const val = parseFloat(price.toString().replace(',', '.'));
+      const val = parseFloat(editingPrice.promoPrice.toString().replace(',', '.'));
+      const regularPrice = Number(editingPrice.price);
       
-      if (isNaN(val)) {
-        showSystemNotice('Preço inválido');
+      if (!Number.isFinite(val) || val <= 0) {
+        showSystemNotice('Informe um preço promocional válido.');
         return;
       }
+      if (val >= regularPrice) {
+        showSystemNotice('O preço promocional deve ser menor que o preço atual.');
+        return;
+      }
+
+      if (
+        editingPrice.active
+        && editingPrice.promotionUntil
+        && new Date(editingPrice.promotionUntil).getTime() <= Date.now()
+      ) {
+        showSystemNotice('Para ativar a promoção, informe uma data futura ou deixe a validade em branco.');
+        return;
+      }
+
+      const promotionUntil = editingPrice.active
+        ? editingPrice.promotionUntil || null
+        : new Date().toISOString();
 
       const target = editingPrice;
       if (target?.optionProductId && target.storeProductId) {
         await api.patch(`/produtos_loja/${target.storeProductId}/configuracao/opcoes/${target.optionProductId}/promocao`, {
           preco_promocional: val,
+          promocao_ate: promotionUntil,
         });
       } else {
-        await api.patch(`/produtos_loja/${id}`, { preco_promocional: val });
+        await api.patch(`/produtos_loja/${target.id}`, {
+          preco_promocional: val,
+          promocao_ate: promotionUntil,
+        });
       }
       
-      fetchProducts(search); // Refresh
+      await fetchProducts(search);
       if (showAddPromo) fetchAvailableProducts(addPromoSearch);
       setEditingPrice(null);
       setShowAddPromo(false);
+      showSystemNotice(editingPrice.active ? 'Promoção salva e ativada.' : 'Promoção desativada.');
     } catch (error) {
-      console.error('Error updating promotion price:', error);
-      showSystemNotice('Não foi possível atualizar o preço promocional.');
+      console.error('Error updating promotion:', error);
+      showSystemNotice('Não foi possível salvar a promoção.');
     } finally {
       setSaving(false);
     }
@@ -140,9 +201,13 @@ export function PromotionsScreen() {
       if (product.opcao_grupo_produto_id && product.produto_loja_id_origem) {
         await api.patch(`/produtos_loja/${product.produto_loja_id_origem}/configuracao/opcoes/${product.opcao_grupo_produto_id}/promocao`, {
           preco_promocional: null,
+          promocao_ate: null,
         });
       } else {
-        await api.patch(`/produtos_loja/${product.id}`, { preco_promocional: null });
+        await api.patch(`/produtos_loja/${product.id}`, {
+          preco_promocional: null,
+          promocao_ate: null,
+        });
       }
       fetchProducts(search);
     } catch (error) {
@@ -151,7 +216,13 @@ export function PromotionsScreen() {
     }
   };
 
-  const filtered = products;
+  const activePromotions = products.filter(isPromotionActive).length;
+  const inactivePromotions = products.length - activePromotions;
+  const filtered = products.filter((product) => (
+    statusFilter === 'all'
+    || (statusFilter === 'active' && isPromotionActive(product))
+    || (statusFilter === 'inactive' && !isPromotionActive(product))
+  ));
 
   const availableProducts = allStoreProducts.filter((p) => {
     const hasPromotion = p.preco_promocional !== null && p.preco_promocional !== undefined;
@@ -176,7 +247,7 @@ export function PromotionsScreen() {
               Produtos em Promoção
             </h2>
             <p className="text-sm text-gray-500 mt-1">
-              Gerencie todos os itens que possuem preços promocionais ativos na sua loja.
+              Gerencie preço, status e validade das promoções dos itens da sua loja.
             </p>
           </div>
           
@@ -213,12 +284,35 @@ export function PromotionsScreen() {
             <Search className="w-4 h-4" />
             <span>Buscar</span>
           </button>
-          <div className="ml-auto flex items-center gap-4">
-             <div className="text-right hidden sm:block">
-                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Total em Promoção</div>
-                <div className="text-sm font-bold text-gray-700">{products.length} itens</div>
+          <div className="ml-auto hidden items-center gap-4 sm:flex">
+             <div className="text-right">
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Ativas</div>
+                <div className="text-sm font-bold text-green-700">{activePromotions}</div>
+             </div>
+             <div className="h-8 w-px bg-gray-200" />
+             <div className="text-right">
+                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Inativas</div>
+                <div className="text-sm font-bold text-gray-600">{inactivePromotions}</div>
              </div>
           </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {([
+            ['all', `Todas (${products.length})`],
+            ['active', `Ativas (${activePromotions})`],
+            ['inactive', `Inativas (${inactivePromotions})`],
+          ] as [PromotionStatusFilter, string][]).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setStatusFilter(value)}
+              className={`rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${statusFilter === value ? 'text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+              style={statusFilter === value ? { backgroundColor: PRIMARY } : undefined}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -235,6 +329,7 @@ export function PromotionsScreen() {
               const price = parseFloat(product.preco || 0);
               const promoPrice = parseFloat(product.preco_promocional || 0);
               const discount = calculateDiscount(price, promoPrice);
+              const promotionActive = isPromotionActive(product);
 
               return (
                 <div key={product.id} className="bg-white rounded-2xl border border-gray-200 shadow-sm hover:shadow-md transition-all overflow-hidden group">
@@ -249,8 +344,11 @@ export function PromotionsScreen() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1">
+                           <span className={`rounded border px-1.5 py-0.5 text-[10px] font-bold ${promotionActive ? 'border-green-100 bg-green-50 text-green-700' : 'border-gray-200 bg-gray-100 text-gray-500'}`}>
+                              {promotionActive ? 'Ativa' : 'Inativa'}
+                           </span>
                            <span className="px-1.5 py-0.5 rounded bg-red-50 text-red-600 text-[10px] font-bold border border-red-100">
-                              -{discount}%
+                             -{discount}%
                            </span>
                            {product.destaque && (
                              <span className="w-2 h-2 rounded-full bg-amber-400" />
@@ -275,6 +373,11 @@ export function PromotionsScreen() {
                        </div>
                     </div>
 
+                    <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
+                      <CalendarDays className="h-3.5 w-3.5 flex-shrink-0" />
+                      <span>{promotionEndLabel(product.promocao_ate)}</span>
+                    </div>
+
                     <div className="mt-4 flex items-center gap-2">
                       <button
                         onClick={() => setEditingPrice({ 
@@ -282,6 +385,8 @@ export function PromotionsScreen() {
                            name: product.nome, 
                            price: price.toFixed(2), 
                            promoPrice: promoPrice.toFixed(2),
+                           promotionUntil: promotionDateTimeValue(product.promocao_ate),
+                           active: promotionActive,
                            configurable: isConfigurableProduct(product),
                            storeProductId: product.produto_loja_id_origem,
                            optionProductId: product.opcao_grupo_produto_id,
@@ -289,7 +394,7 @@ export function PromotionsScreen() {
                         className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-50 hover:text-primary hover:border-primary/30 transition-all"
                       >
                         <Edit2 className="w-3.5 h-3.5" />
-                        Alterar Preço
+                        Gerenciar promoção
                       </button>
                       <button
                         onClick={() => handleRemovePromotion(product)}
@@ -313,9 +418,13 @@ export function PromotionsScreen() {
             <p className="text-sm text-gray-500 max-w-sm">
               {search 
                 ? `Não encontramos nenhum produto em promoção com o nome "${search}".`
-                : 'Não há produtos com preço promocional ativo no momento.'}
+                : statusFilter === 'active'
+                  ? 'Não há promoções ativas no momento.'
+                  : statusFilter === 'inactive'
+                    ? 'Não há promoções inativas ou encerradas.'
+                    : 'Ainda não há promoções cadastradas.'}
             </p>
-            {!search && (
+            {!search && statusFilter === 'all' && (
                <button
                   onClick={() => setShowAddPromo(true)}
                   className="mt-6 px-6 py-2.5 bg-primary text-white text-sm font-bold rounded-xl shadow-lg shadow-primary/20 hover:opacity-90 active:scale-95 transition-all"
@@ -382,6 +491,8 @@ export function PromotionsScreen() {
                           name: p.nome, 
                           price: parseFloat(p.preco || 0).toFixed(2), 
                           promoPrice: '',
+                          promotionUntil: '',
+                          active: true,
                           configurable: isConfigurableProduct(p),
                           storeProductId: p.produto_loja_id_origem,
                           optionProductId: p.opcao_grupo_produto_id,
@@ -426,7 +537,7 @@ export function PromotionsScreen() {
       {/* Edit Modal (used for both Edit and Add Promo after selection) */}
       {editingPrice && (
         <div className="fixed inset-0 bg-black/40 z-[110] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
-           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in duration-200">
+           <div className="flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-2xl animate-in zoom-in duration-200">
               <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                  <h3 className="font-bold text-gray-900">Configurar Promoção</h3>
                  <button onClick={() => setEditingPrice(null)} className="p-1 hover:bg-gray-100 rounded-full text-gray-400">
@@ -434,7 +545,7 @@ export function PromotionsScreen() {
                  </button>
               </div>
               
-              <div className="p-6 space-y-4">
+              <div className="space-y-4 overflow-y-auto p-6">
                  <div className="p-3 bg-gray-50 rounded-xl flex items-center gap-3">
                     <div className="w-10 h-10 rounded bg-white flex items-center justify-center border border-gray-100 flex-shrink-0">
                        <Tag className="w-5 h-5 text-primary" style={{ color: PRIMARY }} />
@@ -477,6 +588,52 @@ export function PromotionsScreen() {
                          </div>
                        )}
                     </div>
+
+                    <div className="rounded-xl border border-gray-200 p-3">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <div className="flex items-center gap-1.5 text-sm font-bold text-gray-800">
+                            <Power className="h-4 w-4" />
+                            Promoção ativa
+                          </div>
+                          <p className="mt-0.5 text-[11px] text-gray-500">
+                            Desative para interromper a oferta sem apagar o preço cadastrado.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-label="Ativar ou desativar promoção"
+                          aria-checked={editingPrice.active}
+                          onClick={() => setEditingPrice((current) => current ? {
+                            ...current,
+                            active: !current.active,
+                            promotionUntil: !current.active && current.promotionUntil && new Date(current.promotionUntil).getTime() <= Date.now()
+                              ? ''
+                              : current.promotionUntil,
+                          } : null)}
+                          className={`relative h-6 w-11 flex-shrink-0 rounded-full transition-colors ${editingPrice.active ? 'bg-green-600' : 'bg-gray-300'}`}
+                        >
+                          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${editingPrice.active ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                        Data e hora de término
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={editingPrice.promotionUntil}
+                        disabled={!editingPrice.active}
+                        onChange={(event) => setEditingPrice((current) => current ? { ...current, promotionUntil: event.target.value } : null)}
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-3 text-sm text-gray-800 outline-none transition-all focus:border-primary focus:ring-4 focus:ring-primary/5 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
+                      />
+                      <p className="mt-1.5 text-[11px] text-gray-500">
+                        Deixe em branco para manter a promoção ativa sem prazo de término.
+                      </p>
+                    </div>
                  </div>
               </div>
 
@@ -488,12 +645,12 @@ export function PromotionsScreen() {
                     Cancelar
                  </button>
                  <button
-                    onClick={() => handleUpdatePrice(editingPrice.id, editingPrice.promoPrice)}
+                    onClick={handleSavePromotion}
                     disabled={saving || !editingPrice.promoPrice}
                     className="flex-1 py-2.5 bg-primary text-white text-sm font-bold rounded-xl shadow-lg shadow-primary/20 hover:opacity-90 active:scale-95 transition-all disabled:opacity-50"
                     style={{ backgroundColor: PRIMARY }}
                  >
-                    {saving ? 'Processando...' : 'Ativar Promoção'}
+                    {saving ? 'Salvando...' : 'Salvar promoção'}
                  </button>
               </div>
            </div>
