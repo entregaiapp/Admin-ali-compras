@@ -1691,6 +1691,13 @@ export function OrdersScreen() {
 
         invalidateOperationalOrderCaches(action.orderId!, action.type!);
         if (action.openPendingPrint) {
+          // O reconciliador completo fica pausado em abas ocultas, mas este
+          // evento já informa que o pedido exige impressão. Atualize o alerta
+          // imediatamente para o som funcionar também em segundo plano.
+          setPendingPrintAlerts((current) => ({
+            ...current,
+            [action.type!]: true,
+          }));
           const shouldResetSearch = Boolean(ordersViewRef.current.search.trim());
           realtimeNavigationPendingRef.current =
             ordersViewRef.current.currentOperationalType !== action.type ||
@@ -4446,12 +4453,18 @@ export function OrdersScreen() {
                 <button
                 type="button"
                 onClick={() => {
+                  if (deliverySoundEnabled && deliverySound.autoplayBlocked) {
+                    deliverySound.arm();
+                    return;
+                  }
                   const nextEnabled = !deliverySoundEnabled;
                   setDeliverySoundEnabled(nextEnabled);
                   if (nextEnabled) deliverySound.arm();
                 }}
                 className={`relative inline-flex h-11 w-11 flex-none items-center justify-center rounded-full border shadow-sm transition-all sm:my-1.5 sm:h-9 sm:w-9 ${
-                  hasPendingDeliveryPrint && deliverySoundEnabled
+                  deliverySoundEnabled && deliverySound.autoplayBlocked
+                    ? "animate-pulse border-amber-400 bg-amber-500 text-white"
+                    : hasPendingDeliveryPrint && deliverySoundEnabled
                     ? "animate-pulse border-red-300 bg-red-600 text-white"
                     : deliverySoundEnabled
                       ? "border-transparent text-white"
@@ -4462,8 +4475,20 @@ export function OrdersScreen() {
                     ? { backgroundColor: primaryColor }
                     : undefined
                 }
-                title={deliverySoundEnabled ? "Som do Delivery ativado" : "Som do Delivery desativado"}
-                aria-label={deliverySoundEnabled ? "Som do Delivery ativado" : "Som do Delivery desativado"}
+                title={
+                  deliverySoundEnabled && deliverySound.autoplayBlocked
+                    ? "Clique para liberar o som do Delivery"
+                    : deliverySoundEnabled
+                      ? "Som do Delivery ativado"
+                      : "Som do Delivery desativado"
+                }
+                aria-label={
+                  deliverySoundEnabled && deliverySound.autoplayBlocked
+                    ? "Liberar som do Delivery"
+                    : deliverySoundEnabled
+                      ? "Som do Delivery ativado"
+                      : "Som do Delivery desativado"
+                }
                 aria-pressed={deliverySoundEnabled}
               >
                 {deliverySoundEnabled ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
@@ -4474,12 +4499,18 @@ export function OrdersScreen() {
                 <button
                 type="button"
                 onClick={() => {
+                  if (pickupSoundEnabled && pickupSound.autoplayBlocked) {
+                    pickupSound.arm();
+                    return;
+                  }
                   const nextEnabled = !pickupSoundEnabled;
                   setPickupSoundEnabled(nextEnabled);
                   if (nextEnabled) pickupSound.arm();
                 }}
                 className={`relative inline-flex h-11 w-11 flex-none items-center justify-center rounded-full border shadow-sm transition-all sm:my-1.5 sm:h-9 sm:w-9 ${
-                  hasPendingPickupPrint && pickupSoundEnabled
+                  pickupSoundEnabled && pickupSound.autoplayBlocked
+                    ? "animate-pulse border-amber-400 bg-amber-500 text-white"
+                    : hasPendingPickupPrint && pickupSoundEnabled
                     ? "animate-pulse border-red-300 bg-red-600 text-white"
                     : pickupSoundEnabled
                       ? "border-transparent text-white"
@@ -4490,8 +4521,20 @@ export function OrdersScreen() {
                     ? { backgroundColor: primaryColor }
                     : undefined
                 }
-                title={pickupSoundEnabled ? "Som da Retirada ativado" : "Som da Retirada desativado"}
-                aria-label={pickupSoundEnabled ? "Som da Retirada ativado" : "Som da Retirada desativado"}
+                title={
+                  pickupSoundEnabled && pickupSound.autoplayBlocked
+                    ? "Clique para liberar o som da Retirada"
+                    : pickupSoundEnabled
+                      ? "Som da Retirada ativado"
+                      : "Som da Retirada desativado"
+                }
+                aria-label={
+                  pickupSoundEnabled && pickupSound.autoplayBlocked
+                    ? "Liberar som da Retirada"
+                    : pickupSoundEnabled
+                      ? "Som da Retirada ativado"
+                      : "Som da Retirada desativado"
+                }
                 aria-pressed={pickupSoundEnabled}
               >
                 {pickupSoundEnabled ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}

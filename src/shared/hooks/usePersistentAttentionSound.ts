@@ -8,15 +8,31 @@ type ChannelState = {
 type Listener = () => void;
 
 const SOUND_URL = "/sounds/Entregaiaudio.mp3";
-const REPLAY_DELAY_MS = 1000;
+const ARMED_STORAGE_KEY = "admin-attention-sound-armed:v1";
+
+const readStoredArmedState = () => {
+  if (typeof window === "undefined") return false;
+  try {
+    return localStorage.getItem(ARMED_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+};
+
+const storeArmedState = () => {
+  try {
+    localStorage.setItem(ARMED_STORAGE_KEY, "true");
+  } catch {
+    // O armazenamento pode estar indisponível em modo privado/restrito.
+  }
+};
 
 class PersistentAttentionSoundManager {
   private audio: HTMLAudioElement | null = null;
   private channels = new Map<string, ChannelState>();
   private listeners = new Set<Listener>();
-  private replayTimeout: number | null = null;
   private playing = false;
-  private armed = false;
+  private armed = readStoredArmedState();
   private autoplayBlocked = false;
   private activationListenersAttached = false;
 
@@ -48,6 +64,7 @@ class PersistentAttentionSoundManager {
 
   arm = () => {
     this.armed = true;
+    storeArmedState();
     this.autoplayBlocked = false;
     this.ensureAudio();
     this.emit();
@@ -71,6 +88,9 @@ class PersistentAttentionSoundManager {
 
     const audio = new Audio(SOUND_URL);
     audio.preload = "auto";
+    // O loop nativo continua em abas ocultas. Timers JavaScript são limitados
+    // pelo navegador e podem deixar o alerta silencioso em segundo plano.
+    audio.loop = true;
     audio.addEventListener("ended", this.handleEnded);
     this.audio = audio;
     return audio;
@@ -89,7 +109,7 @@ class PersistentAttentionSoundManager {
       return;
     }
 
-    if (this.armed && !this.playing && this.replayTimeout === null) {
+    if (this.armed && !this.playing) {
       void this.playNow();
     }
   }
@@ -99,7 +119,6 @@ class PersistentAttentionSoundManager {
     const audio = this.ensureAudio();
     if (!audio) return;
 
-    this.clearReplayTimeout();
     try {
       audio.pause();
       audio.currentTime = 0;
@@ -118,24 +137,11 @@ class PersistentAttentionSoundManager {
   private handleEnded = () => {
     this.playing = false;
     this.emit();
-    this.clearReplayTimeout();
     if (!this.armed || !this.hasActivePending()) return;
-
-    this.replayTimeout = window.setTimeout(() => {
-      this.replayTimeout = null;
-      void this.playNow();
-    }, REPLAY_DELAY_MS);
+    void this.playNow();
   };
 
-  private clearReplayTimeout() {
-    if (this.replayTimeout !== null) {
-      window.clearTimeout(this.replayTimeout);
-      this.replayTimeout = null;
-    }
-  }
-
   private stop() {
-    this.clearReplayTimeout();
     if (this.audio) {
       this.audio.pause();
       this.audio.currentTime = 0;

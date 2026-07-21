@@ -2568,12 +2568,18 @@ export function SalaoPage() {
             <button
               type="button"
               onClick={() => {
+                if (salaoSoundEnabled && salaoSound.autoplayBlocked) {
+                  salaoSound.arm();
+                  return;
+                }
                 const nextEnabled = !salaoSoundEnabled;
                 setSalaoSoundEnabled(nextEnabled);
                 if (nextEnabled) salaoSound.arm();
               }}
               className={`relative inline-flex h-9 w-9 flex-none items-center justify-center rounded-full border shadow-sm transition-all ${
-                hasPendingCustomerAttention && salaoSoundEnabled
+                salaoSoundEnabled && salaoSound.autoplayBlocked
+                  ? "animate-pulse border-amber-400 bg-amber-500 text-white"
+                  : hasPendingCustomerAttention && salaoSoundEnabled
                   ? "animate-pulse border-red-300 bg-red-600 text-white"
                   : salaoSoundEnabled
                     ? "border-transparent text-white"
@@ -2584,8 +2590,20 @@ export function SalaoPage() {
                   ? { backgroundColor: PRIMARY }
                   : undefined
               }
-              title={salaoSoundEnabled ? "Som ativado" : "Som desativado"}
-              aria-label={salaoSoundEnabled ? "Som ativado" : "Som desativado"}
+              title={
+                salaoSoundEnabled && salaoSound.autoplayBlocked
+                  ? "Clique para liberar o som"
+                  : salaoSoundEnabled
+                    ? "Som ativado"
+                    : "Som desativado"
+              }
+              aria-label={
+                salaoSoundEnabled && salaoSound.autoplayBlocked
+                  ? "Liberar som"
+                  : salaoSoundEnabled
+                    ? "Som ativado"
+                    : "Som desativado"
+              }
               aria-pressed={salaoSoundEnabled}
             >
               {salaoSoundEnabled ? (
