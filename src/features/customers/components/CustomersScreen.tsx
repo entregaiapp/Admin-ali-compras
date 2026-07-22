@@ -6,6 +6,7 @@ import { formatBrasiliaDate } from '@/shared/lib/dateTime';
 const PRIMARY = '#122a4c';
 const CUSTOMERS_PER_PAGE = 20;
 const API_CUSTOMERS_PER_PAGE = 100;
+const CUSTOMER_FILTERS = ['Todos', 'Melhores clientes', 'Recorrentes', 'Novos', 'Inativos'];
 
 const toNumber = (value: any) => {
   if (value === null || value === undefined || value === '') return 0;
@@ -231,21 +232,34 @@ export function CustomersScreen() {
     setCurrentPage(1);
   }, [search, filter]);
 
-  const filtered = customers.filter(c => {
-    const matchSearch = (c.nome || '').toLowerCase().includes(search.toLowerCase()) || 
-                        (c.email || '').toLowerCase().includes(search.toLowerCase()) ||
-                        (c.telefone || '').toLowerCase().includes(search.toLowerCase());
+  const filtered = customers
+    .filter(c => {
+      const matchSearch = (c.nome || '').toLowerCase().includes(search.toLowerCase()) ||
+                          (c.email || '').toLowerCase().includes(search.toLowerCase()) ||
+                          (c.telefone || '').toLowerCase().includes(search.toLowerCase());
 
-    const ordersCount = getCustomerOrdersCount(c);
-    const createdAt = c.criado_em ? new Date(c.criado_em).getTime() : 0;
-    const isRecentCustomer = createdAt > 0 && Date.now() - createdAt <= 30 * 24 * 60 * 60 * 1000;
-    
-    if (filter === 'Recorrentes') return matchSearch && ordersCount >= 2;
-    if (filter === 'Novos') return matchSearch && (ordersCount <= 1 || isRecentCustomer);
-    if (filter === 'Inativos') return matchSearch && c.status === 'inativo';
-    
-    return matchSearch;
-  });
+      const ordersCount = getCustomerOrdersCount(c);
+      const createdAt = c.criado_em ? new Date(c.criado_em).getTime() : 0;
+      const isRecentCustomer = createdAt > 0 && Date.now() - createdAt <= 30 * 24 * 60 * 60 * 1000;
+
+      if (filter === 'Melhores clientes') return matchSearch && getCustomerTotal(c) > 0;
+      if (filter === 'Recorrentes') return matchSearch && ordersCount >= 2;
+      if (filter === 'Novos') return matchSearch && (ordersCount <= 1 || isRecentCustomer);
+      if (filter === 'Inativos') return matchSearch && c.status === 'inativo';
+
+      return matchSearch;
+    })
+    .sort((customerA, customerB) => {
+      if (filter !== 'Melhores clientes') return 0;
+
+      const totalDifference = getCustomerTotal(customerB) - getCustomerTotal(customerA);
+      if (totalDifference !== 0) return totalDifference;
+
+      const ordersDifference = getCustomerOrdersCount(customerB) - getCustomerOrdersCount(customerA);
+      if (ordersDifference !== 0) return ordersDifference;
+
+      return String(customerA.nome || '').localeCompare(String(customerB.nome || ''), 'pt-BR');
+    });
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / CUSTOMERS_PER_PAGE));
   const safePage = Math.min(currentPage, totalPages);
@@ -274,7 +288,7 @@ export function CustomersScreen() {
             />
           </div>
           <div className="flex items-center gap-2 overflow-x-auto pb-1">
-            {['Todos', 'Recorrentes', 'Novos', 'Inativos'].map(f => (
+            {CUSTOMER_FILTERS.map(f => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
