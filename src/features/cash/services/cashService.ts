@@ -57,6 +57,34 @@ export type CashFinancialSummary = {
     fiado_criado?: number;
     fiado_recebido?: number;
   };
+  cobranca_plataforma_relatorio?: {
+    periodo: {
+      inicio: string;
+      fim: string;
+      referencia: 'payment' | 'order';
+    };
+    configuracao: {
+      dateType: 'payment' | 'order';
+      order_source: string[];
+      payment_capture_channel: string[];
+      payment_method: string[];
+      financial_status: string[];
+    };
+    quantidade_pedidos: number;
+    valor_movimentado_selecionado: number;
+    taxa_calculada: number;
+    taxa_estornada: number;
+    taxa_liquida: number;
+    split_recebido: number;
+    split_pendente: number;
+    valor_a_pagar_plataforma: number;
+    regra_split?: {
+      id: string;
+      nome?: string | null;
+      tipo_valor?: string | null;
+      valor?: number | null;
+    } | null;
+  };
 };
 
 export type CashRegister = {

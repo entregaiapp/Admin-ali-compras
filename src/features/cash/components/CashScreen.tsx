@@ -176,6 +176,8 @@ const printCashClosingReceipt = (
   const cardInformed = Number(cash.informado_cartao_debito || 0) + Number(cash.informado_cartao_credito || 0);
   const creditTabCreated = Number(cash.financeiro?.resumo_vendas?.fiado_criado || 0);
   const creditTabReceived = Number(cash.financeiro?.resumo_vendas?.fiado_recebido || 0);
+  const platformBilling = cash.financeiro?.cobranca_plataforma_relatorio;
+  const platformReference = platformBilling?.periodo.referencia === 'order' ? 'data do pedido' : 'data do pagamento';
 
   printWindow.document.write(`<!doctype html>
     <html lang="pt-BR">
@@ -221,6 +223,16 @@ const printCashClosingReceipt = (
           <div class="row"><span>Despesas</span><strong>-${escapePrintHtml(currency(resolvedSummary.despesas_total))}</strong></div>
           <div class="row"><span>Mov. líquida</span><strong>${escapePrintHtml(currency(totalMovements))}</strong></div>
           <div class="divider"></div>
+          <div class="center total">PLATAFORMA</div>
+          <div class="center muted">Período do caixa · ${escapePrintHtml(platformReference)}</div>
+          <div class="row"><span>Pedidos considerados</span><strong>${escapePrintHtml(platformBilling?.quantidade_pedidos || 0)}</strong></div>
+          <div class="row"><span>Taxa calculada</span><strong>${escapePrintHtml(currency(platformBilling?.taxa_calculada))}</strong></div>
+          <div class="row"><span>Taxa estornada</span><strong>-${escapePrintHtml(currency(platformBilling?.taxa_estornada))}</strong></div>
+          <div class="row"><span>Taxa líquida</span><strong>${escapePrintHtml(currency(platformBilling?.taxa_liquida))}</strong></div>
+          <div class="row"><span>Split já recebido</span><strong>${escapePrintHtml(currency(platformBilling?.split_recebido))}</strong></div>
+          <div class="row"><span>Split pendente</span><strong>${escapePrintHtml(currency(platformBilling?.split_pendente))}</strong></div>
+          <div class="row total"><span>A PAGAR À PLATAFORMA</span><strong>${escapePrintHtml(currency(platformBilling?.valor_a_pagar_plataforma))}</strong></div>
+          <div class="divider"></div>
           <div class="row"><span>Dinheiro informado</span><strong>${escapePrintHtml(currency(cash.informado_dinheiro))}</strong></div>
           <div class="row"><span>PIX informado</span><strong>${escapePrintHtml(currency(cash.informado_pix))}</strong></div>
           <div class="row"><span>Cartão informado</span><strong>${escapePrintHtml(currency(cardInformed))}</strong></div>
@@ -252,7 +264,7 @@ const printCashClosingWithDetails = async (cash: CashRegister, movements: CashMo
     return printCashClosingReceipt(details.caixa, movements, printWindow);
   } catch (error) {
     printWindow.close();
-    showSystemNotice('Não foi possível carregar os valores de fiado para a impressão.');
+    showSystemNotice('Não foi possível carregar os dados completos para a impressão.');
     return false;
   }
 };
