@@ -10,6 +10,8 @@ import {
   Copy,
   CheckCircle,
   XCircle,
+  RefreshCw,
+  ExternalLink,
   MapPin,
   Plus,
   Trash2,
@@ -136,6 +138,8 @@ export function SettingsScreen() {
   const [pagarmeStatus, setPagarmeStatus] = useState<any>(null);
   const [pagarmeRecipient, setPagarmeRecipient] = useState<any>(null);
   const [pagarmeRecipientForm, setPagarmeRecipientForm] = useState<any>(emptyPagarmeRecipientForm);
+  const [pagarmeKycLink, setPagarmeKycLink] = useState<any>(null);
+  const [loadingPagarmeKyc, setLoadingPagarmeKyc] = useState(false);
   const [loadingMp, setLoadingMp] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -200,6 +204,9 @@ export function SettingsScreen() {
 
   const user = JSON.parse(localStorage.getItem("user") || "{}");
   const lojaId = user.loja_id;
+  const pagarmeKycReady = pagarmeRecipient?.status === "affiliation"
+    && pagarmeRecipient?.kyc_status === "partially_denied"
+    && pagarmeRecipient?.kyc_status_reason === "additional_documents_required";
 
   const checkGatewayConnections = useCallback(async () => {
     if (!lojaId) return;
@@ -617,6 +624,48 @@ export function SettingsScreen() {
       setError(err.response?.data?.error?.message || "Não foi possível salvar o recebedor Pagar.me.");
     } finally {
       setLoadingMp(false);
+    }
+  };
+
+  const handleSyncPagarmeRecipient = async () => {
+    if (!pagarmeRecipient?.recipient_id) return;
+    try {
+      setLoadingPagarmeKyc(true);
+      setError("");
+      const response = await api.post("/payment-gateways/loja/pagarme/recipient/sync");
+      setPagarmeRecipient(response.data?.data || null);
+      setPagarmeKycLink(null);
+      await checkGatewayConnections();
+      showSystemNotice("Status do recebedor Stone/Pagar.me atualizado.");
+    } catch (err: any) {
+      setError(err.response?.data?.error?.message || "Não foi possível sincronizar o recebedor Pagar.me.");
+    } finally {
+      setLoadingPagarmeKyc(false);
+    }
+  };
+
+  const handleCreatePagarmeKycLink = async () => {
+    try {
+      setLoadingPagarmeKyc(true);
+      setError("");
+      const response = await api.post("/payment-gateways/loja/pagarme/recipient/kyc-link");
+      setPagarmeKycLink(response.data?.data || null);
+      await loadPagarmeRecipient();
+      showSystemNotice("Link de validação gerado. Ele é temporário.");
+    } catch (err: any) {
+      setError(err.response?.data?.error?.message || "Não foi possível gerar o link de validação.");
+    } finally {
+      setLoadingPagarmeKyc(false);
+    }
+  };
+
+  const handleCopyPagarmeKycLink = async () => {
+    if (!pagarmeKycLink?.url) return;
+    try {
+      await navigator.clipboard.writeText(pagarmeKycLink.url);
+      showSystemNotice("Link de validação copiado.");
+    } catch {
+      setError("Não foi possível copiar o link. Selecione-o manualmente.");
     }
   };
 
@@ -1403,6 +1452,43 @@ export function SettingsScreen() {
                   <div><span className="text-gray-400">Documento</span><br /><strong>{pagarmeRecipient?.document_last4 ? `final ${pagarmeRecipient.document_last4}` : "pendente"}</strong></div>
                   <div><span className="text-gray-400">Conta bancária</span><br /><strong>{pagarmeRecipient?.bank_account_last4 ? `final ${pagarmeRecipient.bank_account_last4}` : "pendente"}</strong></div>
                 </div>
+
+                {pagarmeRecipient?.recipient_id && (
+                  <div className="mb-4 rounded-xl border border-gray-100 bg-white p-4">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <h5 className="text-sm font-semibold text-gray-800">Validação de identidade (KYC)</h5>
+                        <p className="mt-1 text-xs text-gray-500">
+                          {pagarmeRecipient.status === "active"
+                            ? "Validação concluída; o recebedor está ativo."
+                            : pagarmeKycReady
+                              ? "O Pagar.me solicitou documentos adicionais. Gere o link para o titular concluir a validação."
+                              : "Aguardando o Pagar.me liberar a validação. Sincronize periodicamente para consultar o status."}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={() => void handleSyncPagarmeRecipient()} disabled={loadingPagarmeKyc} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 disabled:opacity-50">
+                          <RefreshCw className={`h-4 w-4 ${loadingPagarmeKyc ? "animate-spin" : ""}`} /> Sincronizar
+                        </button>
+                        <button type="button" onClick={() => void handleCreatePagarmeKycLink()} disabled={!pagarmeKycReady || loadingPagarmeKyc} className="inline-flex items-center gap-2 rounded-lg bg-[#00a868] px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
+                          <LinkIcon className="h-4 w-4" /> Gerar link KYC
+                        </button>
+                      </div>
+                    </div>
+
+                    {pagarmeKycLink?.url && (
+                      <div className="mt-4 space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                        <p className="text-xs font-medium text-amber-900">Link temporário — envie somente ao titular. Ele expira em aproximadamente 20 minutos.</p>
+                        <div className="flex flex-col gap-2 md:flex-row">
+                          <input value={pagarmeKycLink.url} readOnly aria-label="Link de validação KYC" className="min-w-0 flex-1 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs" />
+                          <button type="button" onClick={() => void handleCopyPagarmeKycLink()} className="inline-flex items-center justify-center gap-2 rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900"><Copy className="h-4 w-4" /> Copiar</button>
+                          <a href={pagarmeKycLink.url} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#122a4c] px-3 py-2 text-xs font-semibold text-white"><ExternalLink className="h-4 w-4" /> Abrir</a>
+                        </div>
+                        {pagarmeKycLink.expiration_date && <p className="text-xs text-amber-800">Expira em: {new Date(pagarmeKycLink.expiration_date).toLocaleString("pt-BR")}</p>}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="space-y-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
                   <div className="grid gap-3 md:grid-cols-4">
