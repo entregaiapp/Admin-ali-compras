@@ -6,7 +6,11 @@ export type PrintAgent = {
   platform?: string | null;
   app_version?: string | null;
   last_seen_at?: string | null;
+  active?: boolean;
+  paused_at?: string | null;
   revoked_at?: string | null;
+  operational_status?: "online" | "offline" | "inactive" | "suspended_schedule" | "revoked" | string;
+  next_open_at?: string | null;
   online?: boolean;
 };
 

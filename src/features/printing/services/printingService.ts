@@ -20,6 +20,10 @@ export const printingService = {
     return unwrap<PrintAgent>(await api.post(`/printing/agents/${id}/revoke`, {}));
   },
 
+  async pauseAgent(id: string) {
+    return unwrap<PrintAgent>(await api.post(`/printing/agents/${id}/pause`, {}));
+  },
+
   async listPrinters() {
     return unwrap<Printer[]>(await api.get("/printing/printers"));
   },

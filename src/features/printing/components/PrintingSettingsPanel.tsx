@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Archive, Laptop, Link, Printer, RefreshCw, TestTube2, Trash2 } from "lucide-react";
+import { Archive, Laptop, Link, PauseCircle, Printer, RefreshCw, TestTube2, Trash2 } from "lucide-react";
 import { showSystemNotice } from "@/shared/components/SystemToast";
 import { formatBrasiliaDate } from "@/shared/lib/dateTime";
 import api from "@/shared/lib/api";
@@ -48,6 +48,28 @@ function hexToRgba(hex: string, alpha: number) {
   const green = (value >> 8) & 255;
   const blue = value & 255;
   return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+}
+
+function versionAtLeast(version: string | null | undefined, minimum: string) {
+  const parse = (value: string | null | undefined) => String(value || "0")
+    .split(".")
+    .map((part) => Number.parseInt(part.replace(/\D.*$/, ""), 10) || 0);
+  const current = parse(version);
+  const expected = parse(minimum);
+  for (let index = 0; index < Math.max(current.length, expected.length); index += 1) {
+    const left = current[index] || 0;
+    const right = expected[index] || 0;
+    if (left !== right) return left > right;
+  }
+  return true;
+}
+
+function isAgentInactive(agent: PrintAgent) {
+  return agent.active === false || agent.operational_status === "inactive";
+}
+
+function isAgentOutsideSchedule(agent: PrintAgent) {
+  return agent.operational_status === "suspended_schedule";
 }
 
 function PrintTabButton({
@@ -116,7 +138,7 @@ export function PrintingSettingsPanel({ printMode, onPrintModeChange }: Printing
 
   const activeAgents = useMemo(() => agents.filter((agent) => !agent.revoked_at), [agents]);
   const archivedAgents = useMemo(() => agents.filter((agent) => agent.revoked_at), [agents]);
-  const hasOnlineAgent = useMemo(() => activeAgents.some((agent) => agent.online), [activeAgents]);
+  const hasOnlineAgent = useMemo(() => activeAgents.some((agent) => agent.online && !isAgentInactive(agent)), [activeAgents]);
   const activePrinters = useMemo(() => printers.filter((printer) => printer.active), [printers]);
   const inactivePrinters = useMemo(() => printers.filter((printer) => !printer.active), [printers]);
   const visiblePrinters = printerStatusTab === "active" ? activePrinters : inactivePrinters;
@@ -219,6 +241,17 @@ export function PrintingSettingsPanel({ printMode, onPrintModeChange }: Printing
     }
   };
 
+  const pauseAgent = async (agent: PrintAgent) => {
+    if (!window.confirm(`Inativar o agente "${agent.nome}"? A retomada será feita somente no computador do agente.`)) return;
+    try {
+      await printingService.pauseAgent(agent.id);
+      await load();
+      showSystemNotice("Agente inativado. A retomada deve ser feita no computador vinculado.");
+    } catch (error: any) {
+      showSystemNotice(error?.response?.data?.message || error?.response?.data?.error?.message || "Não foi possível inativar o agente.");
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-gray-200 bg-white p-5">
@@ -299,7 +332,10 @@ export function PrintingSettingsPanel({ printMode, onPrintModeChange }: Printing
           <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">Nenhum computador ativo vinculado.</div>
         ) : (
           <div className="grid gap-3">
-            {activeAgents.map((agent) => (
+            {activeAgents.map((agent) => {
+              const inactive = isAgentInactive(agent);
+              const supportsPause = versionAtLeast(agent.app_version, "2.2.0");
+              return (
               <div key={agent.id} className="flex flex-col gap-3 rounded-lg border border-gray-200 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex min-w-0 items-start gap-3">
                   <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100 text-gray-700">
@@ -308,20 +344,47 @@ export function PrintingSettingsPanel({ printMode, onPrintModeChange }: Printing
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <h4 className="font-bold text-gray-900">{agent.nome}</h4>
-                      <PrintStatusBadge online={agent.online} revoked={Boolean(agent.revoked_at)} />
+                      <PrintStatusBadge
+                        online={agent.online}
+                        revoked={Boolean(agent.revoked_at)}
+                        inactive={inactive}
+                        scheduled={isAgentOutsideSchedule(agent)}
+                      />
                     </div>
                     <p className="mt-1 text-xs text-gray-500">Última conexão: {safeDate(agent.last_seen_at)}</p>
                     <p className="text-xs text-gray-500">Versão: {agent.app_version || "Não informada"}</p>
+                    {inactive && (
+                      <p className="mt-1 text-xs font-semibold text-amber-700">
+                        Inativo desde {safeDate(agent.paused_at)}. A retomada deve ser feita no computador do agente.
+                      </p>
+                    )}
+                    {!inactive && isAgentOutsideSchedule(agent) && (
+                      <p className="mt-1 text-xs font-semibold text-blue-700">
+                        Suspenso fora do horário. Próxima abertura: {safeDate(agent.next_open_at)}.
+                      </p>
+                    )}
+                    {!supportsPause && !inactive && (
+                      <p className="mt-1 text-xs text-gray-500">Atualize para a versão 2.2.0 para liberar inativação operacional.</p>
+                    )}
                   </div>
                 </div>
                 {!agent.revoked_at && (
-                  <button type="button" onClick={() => void revokeAgent(agent)} className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-600">
-                    <Trash2 className="h-4 w-4" />
-                    Revogar
-                  </button>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    {!inactive && supportsPause && (
+                      <button type="button" onClick={() => void pauseAgent(agent)} className="inline-flex items-center justify-center gap-2 rounded-lg border border-amber-200 px-3 py-2 text-sm font-semibold text-amber-700">
+                        <PauseCircle className="h-4 w-4" />
+                        Inativar agente
+                      </button>
+                    )}
+                    <button type="button" onClick={() => void revokeAgent(agent)} className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-600">
+                      <Trash2 className="h-4 w-4" />
+                      Revogar
+                    </button>
+                  </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
