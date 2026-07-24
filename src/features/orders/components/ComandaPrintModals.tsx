@@ -1,6 +1,7 @@
-import { ChefHat, Printer, Receipt, X } from "lucide-react";
+import { AlertTriangle, ChefHat, Laptop, Printer, Receipt, X } from "lucide-react";
 import type { ComandaPrintMode } from "@/features/orders/utils/print";
 import type { KitchenPrintSelectionItem } from "@/features/orders/utils/kitchenPrintTracking";
+import type { PrintAgentResumeAlert } from "@/features/printing/utils/printAvailability";
 import { useMemo, useState, type MouseEvent } from "react";
 
 type PrintModeModalProps = {
@@ -18,6 +19,11 @@ type KitchenSelectionModalProps = {
   busy?: boolean;
   onClose: () => void;
   onPrint: (itemKeys: string[]) => void;
+};
+
+type DisconnectedPrinterModalProps = {
+  details: PrintAgentResumeAlert;
+  onClose: () => void;
 };
 
 const stopPropagation = (event: MouseEvent) => event.stopPropagation();
@@ -113,6 +119,82 @@ export function ComandaPrintModeModal({
               </button>
             );
           })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function DisconnectedPrinterModal({
+  details,
+  onClose,
+}: DisconnectedPrinterModalProps) {
+  const printerName =
+    details.printer?.display_name ||
+    details.printer?.device_name ||
+    "Impressora configurada";
+
+  return (
+    <div
+      className="fixed inset-0 z-[170] flex items-center justify-center bg-slate-950/80 p-3 backdrop-blur-sm sm:p-6"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="disconnected-printer-title"
+      aria-describedby="disconnected-printer-description"
+    >
+      <div className="w-full max-w-2xl overflow-hidden rounded-3xl border-2 border-amber-300 bg-white shadow-2xl shadow-black/40">
+        <header className="flex flex-col items-center bg-gradient-to-br from-amber-400 via-amber-500 to-orange-500 px-6 py-8 text-center text-slate-950 sm:px-10">
+          <span className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-white/80 bg-white/95 shadow-lg">
+            <AlertTriangle className="h-11 w-11 text-red-600" strokeWidth={2.5} />
+          </span>
+          <h2
+            id="disconnected-printer-title"
+            className="mt-5 text-2xl font-black tracking-tight sm:text-3xl"
+          >
+            Impressora desconectada
+          </h2>
+          <p className="mt-2 text-sm font-bold text-slate-800 sm:text-base">
+            A impressão foi bloqueada para evitar o envio ao equipamento errado.
+          </p>
+        </header>
+
+        <div className="space-y-5 px-5 py-6 sm:px-10 sm:py-8">
+          <div className="rounded-2xl border-2 border-amber-200 bg-amber-50 px-5 py-4">
+            <p className="text-xs font-black uppercase tracking-wider text-amber-800">
+              Impressora configurada para seu usuário
+            </p>
+            <p className="mt-1 break-words text-xl font-black text-slate-950 sm:text-2xl">
+              {printerName}
+            </p>
+            {details.agent?.name && (
+              <p className="mt-3 flex items-center gap-2 text-sm font-bold text-slate-600">
+                <Laptop className="h-4 w-4 shrink-0" />
+                Computador: {details.agent.name}
+              </p>
+            )}
+          </div>
+
+          <p
+            id="disconnected-printer-description"
+            className="text-base font-semibold leading-relaxed text-slate-700 sm:text-lg"
+          >
+            A impressora configurada para o seu usuário está inativa. No
+            Entregaí Print Agent, toque no botão{" "}
+            <strong className="font-black text-slate-950">
+              “Retomar agente de impressão”
+            </strong>{" "}
+            para ativar a impressão para este período. Depois, tente imprimir
+            novamente.
+          </p>
+
+          <button
+            type="button"
+            onClick={onClose}
+            autoFocus
+            className="flex min-h-14 w-full items-center justify-center rounded-2xl bg-[#122a4c] px-6 py-4 text-base font-black text-white shadow-lg transition hover:bg-[#0d203b] focus:outline-none focus:ring-4 focus:ring-blue-300"
+          >
+            Entendi
+          </button>
         </div>
       </div>
     </div>

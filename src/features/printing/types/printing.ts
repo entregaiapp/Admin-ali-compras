@@ -49,6 +49,23 @@ export type UserPrinterPreference = {
   printer_device_name?: string;
 };
 
+export type UserPrinterReadiness = {
+  assigned: boolean;
+  available: boolean;
+  requires_resume: boolean;
+  operational_status: "unassigned" | "ready" | "inactive" | "suspended_schedule";
+  reason: "inactive" | "suspended_schedule" | null;
+  printer: {
+    id: string;
+    display_name: string;
+    device_name: string;
+  } | null;
+  agent: {
+    id: string;
+    name: string | null;
+  } | null;
+};
+
 export type PairingCode = {
   id: string;
   code: string;

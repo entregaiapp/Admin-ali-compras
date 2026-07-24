@@ -1,5 +1,5 @@
 import api from "@/shared/lib/api";
-import type { PairingCode, PrintAgent, PrintAutomationSetting, Printer, UserPrinterPreference } from "@/features/printing/types/printing";
+import type { PairingCode, PrintAgent, PrintAutomationSetting, Printer, UserPrinterPreference, UserPrinterReadiness } from "@/features/printing/types/printing";
 
 const unwrap = <T,>(response: { data: any }): T => response.data?.data ?? response.data;
 
@@ -49,6 +49,10 @@ export const printingService = {
       usuario_id: usuarioId,
       printer_id: printerId,
     }));
+  },
+
+  async getUserPrinterReadiness() {
+    return unwrap<UserPrinterReadiness>(await api.get("/printing/user-printer-readiness"));
   },
 
   async testPrint(printerId?: string) {

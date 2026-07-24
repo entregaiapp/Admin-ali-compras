@@ -99,6 +99,7 @@ import { DeliveryToPickupModal } from "@/features/orders/components/DeliveryToPi
 import { CompactOrderStatusTimeline } from "@/features/orders/components/CompactOrderStatusTimeline";
 import {
   ComandaPrintModeModal,
+  DisconnectedPrinterModal,
   KitchenPrintSelectionModal,
 } from "@/features/orders/components/ComandaPrintModals";
 import { showSystemNotice, systemToast } from "@/shared/components/SystemToast";
@@ -124,6 +125,11 @@ import {
   type OrdersReconciliationResources,
 } from "@/features/orders/services/ordersReconciliation";
 import { printingService } from "@/features/printing/services/printingService";
+import {
+  getResumeAlertFromError,
+  getResumeAlertFromReadiness,
+  type PrintAgentResumeAlert,
+} from "@/features/printing/utils/printAvailability";
 import { AdminPixChargePanel } from "@/features/adminPixCharges/components/AdminPixChargePanel";
 import { adminPixChargeService } from "@/features/adminPixCharges/services/adminPixChargeService";
 import type { AdminPixCharge } from "@/features/adminPixCharges/types/adminPixCharge";
@@ -773,6 +779,9 @@ export function OrdersScreen() {
   const [storePrintData, setStorePrintData] = useState<any | null>(null);
   const [printOrder, setPrintOrder] = useState<any | null>(null);
   const [printBusy, setPrintBusy] = useState(false);
+  const [printReadinessBusy, setPrintReadinessBusy] = useState(false);
+  const [printAgentResumeAlert, setPrintAgentResumeAlert] =
+    useState<PrintAgentResumeAlert | null>(null);
   const [kitchenPrintSelection, setKitchenPrintSelection] = useState<{
     order: any;
     items: any[];
@@ -2278,7 +2287,36 @@ export function OrdersScreen() {
     return nextOrder;
   };
 
-  const handlePrintComanda = (order: any) => {
+  const showPrintAgentResumeRequired = (details: PrintAgentResumeAlert) => {
+    setPrintOrder(null);
+    setKitchenPrintSelection(null);
+    setPrintAgentResumeAlert(details);
+  };
+
+  const handlePrintComanda = async (order: any) => {
+    if (printReadinessBusy) return;
+    if (
+      (storePrintData?.impressao_pedido_modo || "agent_com_fallback") ===
+      "navegador_windows"
+    ) {
+      setPrintOrder(order);
+      return;
+    }
+
+    setPrintReadinessBusy(true);
+    try {
+      const readiness = await printingService.getUserPrinterReadiness();
+      const resumeAlert = getResumeAlertFromReadiness(readiness);
+      if (resumeAlert) {
+        showPrintAgentResumeRequired(resumeAlert);
+        return;
+      }
+    } catch {
+      // A criação do trabalho repete esta validação e continua sendo a fonte de verdade.
+    } finally {
+      setPrintReadinessBusy(false);
+    }
+
     setPrintOrder(order);
   };
 
@@ -2363,6 +2401,11 @@ export function OrdersScreen() {
       });
       return true;
     } catch (error) {
+      const resumeAlert = getResumeAlertFromError(error);
+      if (resumeAlert) {
+        showPrintAgentResumeRequired(resumeAlert);
+        return false;
+      }
       if (printMode !== "agent_com_fallback") throw error;
       showSystemNotice("Print Agent indisponível. Abrindo impressão pelo Windows.");
       if (!printOrderInBrowser(order, items, mode, orderPayment)) return false;
@@ -4308,6 +4351,12 @@ export function OrdersScreen() {
           primaryColor={primaryColor}
           onClose={() => setDeliveryToPickupOrder(null)}
           onDone={(result) => void handleDeliveryToPickupDone(result)}
+        />
+      )}
+      {printAgentResumeAlert && (
+        <DisconnectedPrinterModal
+          details={printAgentResumeAlert}
+          onClose={() => setPrintAgentResumeAlert(null)}
         />
       )}
       {printOrder && (
