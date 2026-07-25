@@ -437,6 +437,7 @@ function OpenCashModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
     Promise.all([cashService.availableOrders(), cashService.availableShifts()])
       .then(([availableOrders, availableShifts]) => {
         setOrders(availableOrders);
+        setSelectAll(availableOrders.length > 0);
         setShifts(availableShifts.turnos || []);
         setSelectedShift(availableShifts.turno_sugerido_id || null);
       })
