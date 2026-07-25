@@ -3,7 +3,8 @@ import { Outlet, useNavigate, useLocation, Navigate } from 'react-router';
 import {
   LayoutDashboard, ShoppingCart, Package,  Grid3X3, Tag, Image, Users, Truck, User,
   Ticket, CreditCard, BarChart3, UserCog, Settings, Bell, Menu, X, LogOut,
-  ChevronRight, Key, Bike, UtensilsCrossed, Wallet, PanelLeftClose, PanelLeftOpen, ClipboardList
+  ChevronRight, Key, Bike, UtensilsCrossed, Wallet, PanelLeftClose, PanelLeftOpen, ClipboardList,
+  MessageSquare
 } from 'lucide-react';
 import api from '@/shared/lib/api';
 import logo from '@/assets/logo.png';
@@ -23,6 +24,7 @@ const navItems = [
   { label: 'Banners', icon: Image, path: '/banners', slug: 'banners' },
   { label: 'Notificações', icon: Bell, path: '/notifications', slug: 'notificacoes' },
   { label: 'Clientes', icon: Users, path: '/customers', slug: 'clientes' },
+  { label: 'Feedbacks', icon: MessageSquare, path: '/feedbacks', slug: 'dashboard' },
   { label: 'Entregas', icon: Truck, path: '/deliveries', slug: 'entregadores' },
   { label: 'Entregadores', icon: User, path: '/entregadores', slug: 'entregadores' },
   { label: 'Cupons', icon: Ticket, path: '/coupons', slug: 'cupons' },
@@ -40,7 +42,7 @@ const navGroups = [
   { title: 'Operação', paths: ['/driver', '/orders', '/salao', '/deliveries', '/entregadores'] },
   { title: 'Cardápio', paths: ['/products', '/categories'] },
   { title: 'Marketing e vendas', paths: ['/promotions', '/coupons', '/banners', '/notifications'] },
-  { title: 'Clientes', paths: ['/customers'] },
+  { title: 'Clientes', paths: ['/customers', '/feedbacks'] },
   { title: 'Financeiro', paths: ['/payments', '/cash', '/fiados', '/reports'] },
   { title: 'Administração', paths: ['/users', '/activities', '/settings'] },
 ];

@@ -26,6 +26,7 @@ import { MyDeliveriesPage } from "@/pages/Driver/MyDeliveriesPage";
 import { RouteDetailPage } from "@/pages/Driver/RouteDetailPage";
 import { SalaoPage } from "@/pages/Salao/SalaoPage";
 import { AuditLogsPage } from "@/pages/AuditLogs/AuditLogsPage";
+import { FeedbacksPage } from "@/pages/Feedbacks/FeedbacksPage";
 
 export const router = createBrowserRouter([
   {
@@ -66,6 +67,7 @@ export const router = createBrowserRouter([
           { path: "banners", Component: BannersPage },
           { path: "customers", Component: CustomersPage },
           { path: "clientes", Component: CustomersPage },
+          { path: "feedbacks", Component: FeedbacksPage },
           { path: "deliveries", Component: DeliveriesPage },
           { path: "coupons", Component: CouponsPage },
           { path: "payments", Component: PaymentsPage },
