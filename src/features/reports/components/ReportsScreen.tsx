@@ -13,10 +13,13 @@ import {
   type DeliveryPaymentBillingReport
 } from '@/features/reports/services/deliveryPaymentReportsService';
 import { StoreFinancialOverview } from '@/features/reports/components/StoreFinancialOverview';
+import {
+  buildSalesChartData,
+  isValidDateInput
+} from '@/features/reports/utils/salesChartData';
 
 const PRIMARY = '#122a4c';
 const COLORS = [PRIMARY, '#2563eb', '#7c3aed', '#16a34a', '#d97706', '#ea580c'];
-const DAY_MS = 24 * 60 * 60 * 1000;
 const SOLD_PRODUCTS_PER_PAGE = 20;
 
 type SoldProduct = {
@@ -44,29 +47,6 @@ type SoldProductsPayload = {
     quantidade_total: number;
     faturamento_total: number;
   };
-};
-
-const parseLocalDate = (value: string) => {
-  const [year, month, day] = value.split('-').map(Number);
-  return new Date(year, month - 1, day);
-};
-
-const addDays = (date: Date, days: number) => {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
-};
-
-const formatDateInput = (date: Date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-const formatChartLabel = (date: Date, endDate?: Date) => {
-  const sameMonth = endDate && date.getMonth() === endDate.getMonth() && date.getFullYear() === endDate.getFullYear();
-  return date.toLocaleDateString('pt-BR', sameMonth ? { day: '2-digit' } : { day: '2-digit', month: '2-digit' });
 };
 
 const formatCurrency = (value: number | string | null | undefined) => {
@@ -319,69 +299,6 @@ const printDeliveryPaymentReport = (report: DeliveryPaymentBillingReport) => {
   return openPrintDocument(title, body);
 };
 
-const getSalesPointDate = (point: any) => {
-  const value = point?.date || point?.data || point?.dia || point?.created_at || point?.periodo;
-  if (!value || typeof value !== 'string') return null;
-
-  const date = value.includes('T') ? new Date(value) : parseLocalDate(value.slice(0, 10));
-  return Number.isNaN(date.getTime()) ? null : date;
-};
-
-const getSalesPointValue = (point: any) => {
-  const value = point?.vendas ?? point?.valor ?? point?.total ?? point?.revenue ?? 0;
-  const number = typeof value === 'number' ? value : Number(String(value).replace(',', '.'));
-  return Number.isFinite(number) ? number : 0;
-};
-
-const buildSalesChartData = (rawData: any[], startDate: string, endDate: string) => {
-  const start = parseLocalDate(startDate);
-  const end = parseLocalDate(endDate);
-  const safeEnd = end >= start ? end : start;
-  const totalDays = Math.max(1, Math.floor((safeEnd.getTime() - start.getTime()) / DAY_MS) + 1);
-  const bucketSize = totalDays <= 14 ? 1 : Math.ceil(totalDays / 12);
-  const bucketCount = Math.ceil(totalDays / bucketSize);
-
-  const buckets = Array.from({ length: bucketCount }, (_, index) => {
-    const bucketStart = addDays(start, index * bucketSize);
-    const bucketEnd = addDays(bucketStart, Math.min(bucketSize, totalDays - index * bucketSize) - 1);
-    const label = bucketSize === 1
-      ? formatChartLabel(bucketStart, safeEnd)
-      : `${formatChartLabel(bucketStart, safeEnd)}-${formatChartLabel(bucketEnd, safeEnd)}`;
-
-    return {
-      day: label,
-      vendas: 0,
-      start: formatDateInput(bucketStart),
-      end: formatDateInput(bucketEnd)
-    };
-  });
-
-  const dataWithDates = rawData.filter(point => getSalesPointDate(point));
-
-  if (dataWithDates.length > 0) {
-    dataWithDates.forEach((point) => {
-      const pointDate = getSalesPointDate(point);
-      if (!pointDate || pointDate < start || pointDate > safeEnd) return;
-      const bucketIndex = Math.min(
-        bucketCount - 1,
-        Math.floor((pointDate.getTime() - start.getTime()) / DAY_MS / bucketSize)
-      );
-      buckets[bucketIndex].vendas += getSalesPointValue(point);
-    });
-    return buckets;
-  }
-
-  if (rawData.length === bucketCount) {
-    return buckets.map((bucket, index) => ({ ...bucket, vendas: getSalesPointValue(rawData[index]) }));
-  }
-
-  if (rawData.length === 1 && bucketCount === 1) {
-    return [{ ...buckets[0], vendas: getSalesPointValue(rawData[0]) }];
-  }
-
-  return buckets;
-};
-
 export function ReportsScreen() {
   const navigate = useNavigate();
   const [metrics, setMetrics] = useState<any>(null);
@@ -391,6 +308,8 @@ export function ReportsScreen() {
   const today = dateInputInBrasilia();
   const [startDate, setStartDate] = useState(today);
   const [endDate, setEndDate] = useState(today);
+  const [startDateInput, setStartDateInput] = useState(today);
+  const [endDateInput, setEndDateInput] = useState(today);
   const [showGeneratedReports, setShowGeneratedReports] = useState(false);
   const [generatedReports, setGeneratedReports] = useState<DeliveryPaymentBillingReport[]>([]);
   const [selectedGeneratedReport, setSelectedGeneratedReport] = useState<DeliveryPaymentBillingReport | null>(null);
@@ -650,15 +569,31 @@ export function ReportsScreen() {
               <Calendar className="w-4 h-4 ml-2 mr-1 text-gray-500" />
               <input
                 type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
+                value={startDateInput}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setStartDateInput(value);
+                  if (isValidDateInput(value)) setStartDate(value);
+                }}
+                onBlur={() => {
+                  if (!isValidDateInput(startDateInput)) setStartDateInput(startDate);
+                }}
+                required
                 className="border-none text-sm text-gray-700 outline-none cursor-pointer bg-transparent"
               />
               <span className="text-gray-400 px-1 text-sm">até</span>
               <input
                 type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
+                value={endDateInput}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setEndDateInput(value);
+                  if (isValidDateInput(value)) setEndDate(value);
+                }}
+                onBlur={() => {
+                  if (!isValidDateInput(endDateInput)) setEndDateInput(endDate);
+                }}
+                required
                 className="border-none text-sm text-gray-700 outline-none cursor-pointer bg-transparent"
               />
             </div>
