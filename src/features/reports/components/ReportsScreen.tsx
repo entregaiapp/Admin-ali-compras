@@ -12,6 +12,7 @@ import {
   deliveryPaymentReportsService,
   type DeliveryPaymentBillingReport
 } from '@/features/reports/services/deliveryPaymentReportsService';
+import { StoreFinancialOverview } from '@/features/reports/components/StoreFinancialOverview';
 
 const PRIMARY = '#122a4c';
 const COLORS = [PRIMARY, '#2563eb', '#7c3aed', '#16a34a', '#d97706', '#ea580c'];
@@ -142,8 +143,8 @@ const openPrintDocument = (title: string, body: string) => {
 
 const reportOriginLabel = (value?: string | null) => {
   const labels: Record<string, string> = {
-    cliente: 'Cliente',
-    manual: 'Manual',
+    cliente: 'App ou link do cliente',
+    manual: 'Painel da loja',
     fiado: 'Fiado',
     salao: 'Salão',
   };
@@ -152,11 +153,11 @@ const reportOriginLabel = (value?: string | null) => {
 
 const financialDimensionLabels: Record<string, string> = {
   CUSTOMER_APP: 'App ou link do cliente',
-  ADMIN: 'Painel administrativo',
-  SALON: 'Salão',
-  UNKNOWN: 'Origem desconhecida',
-  ONLINE_GATEWAY: 'Gateway online',
-  EXTERNAL_OR_OFFLINE: 'Externo ou offline',
+  ADMIN: 'Painel da loja',
+  SALON: 'Atendimento no salão',
+  UNKNOWN: 'Não identificado',
+  ONLINE_GATEWAY: 'Recebido online',
+  EXTERNAL_OR_OFFLINE: 'Recebido fora do app',
   CREDIT_TAB: 'Fiado',
   PIX: 'Pix',
   CARD: 'Cartão',
@@ -165,9 +166,9 @@ const financialDimensionLabels: Record<string, string> = {
   PENDING: 'Pendente',
   REFUNDED: 'Estornado',
   CANCELED: 'Cancelado',
-  REJECTED: 'Rejeitado',
-  EXPIRED: 'Expirado',
-  UNDEFINED: 'Indefinido',
+  REJECTED: 'Recusado',
+  EXPIRED: 'Vencido',
+  UNDEFINED: 'Não identificado',
   DELIVERY: 'Entrega',
   PICKUP: 'Retirada',
   DINE_IN: 'Salão',
@@ -189,16 +190,16 @@ const buildDeliveryPaymentReportCsv = (report: DeliveryPaymentBillingReport) => 
     ['Situações', dimensionListLabel(report.filtros?.financial_status)],
     ['Gerado em', formatDateTime(report.gerado_em)],
     ['Valor registrado', report.resumo.valor_bruto_total],
-    ['Base elegível', platform?.base_elegivel ?? ''],
+    ['Vendas usadas no cálculo', platform?.base_elegivel ?? ''],
     ['Taxa calculada', platform?.taxa_calculada ?? ''],
-    ['Taxa estornada', platform?.taxa_estornada ?? ''],
-    ['Taxa líquida', platform?.taxa_liquida ?? ''],
-    ['Split recebido', platform?.split_recebido ?? ''],
-    ['Split pendente', platform?.split_pendente ?? ''],
-    ['Valor a cobrar', report.resumo.valor_final_cobranca],
-    ['Diferença de conciliação', platform?.diferenca_conciliacao ?? ''],
+    ['Taxa retirada por devoluções', platform?.taxa_estornada ?? ''],
+    ['Taxa final', platform?.taxa_liquida ?? ''],
+    ['Taxa já descontada online', platform?.split_recebido ?? ''],
+    ['Desconto online aguardando', platform?.split_pendente ?? ''],
+    ['Taxa a pagar', report.resumo.valor_final_cobranca],
+    ['Valor para conferir', platform?.diferenca_conciliacao ?? ''],
     [],
-    ['Número', 'Data de referência', 'Origem', 'Tipo', 'Formas', 'Canais', 'Situações', 'Valor selecionado', 'Taxa calculada', 'Taxa estornada', 'Taxa líquida', 'Split recebido', 'Split pendente', 'Valor a cobrar', 'Diferença'],
+    ['Número', 'Data considerada', 'Pedido feito por', 'Tipo', 'Formas', 'Onde recebeu', 'Situações', 'Valor considerado', 'Taxa calculada', 'Taxa retirada', 'Taxa final', 'Já descontado online', 'Desconto aguardando', 'Taxa a pagar', 'Valor para conferir'],
     ...report.pedidos.map((pedido) => [
       pedido.numero_pedido || pedido.id,
       formatDateTime(pedido.data_referencia || pedido.realizado_em),
@@ -235,10 +236,10 @@ const downloadDeliveryPaymentReportCsv = (report: DeliveryPaymentBillingReport) 
 };
 
 const printDeliveryPaymentReport = (report: DeliveryPaymentBillingReport) => {
-  const title = `Relatório de cobrança e auditoria financeira`;
+  const title = `Relatório de pagamentos e taxas`;
   const platform = report.resumo.taxa_plataforma;
   const body = `
-    <h1>Relatório de cobrança e auditoria financeira</h1>
+    <h1>Relatório de pagamentos e taxas</h1>
     <div class="muted">${escapePrintHtml(report.loja?.nome || 'Estabelecimento')}</div>
     <div class="muted">Período: ${escapePrintHtml(formatDate(report.periodo.data_inicio))} até ${escapePrintHtml(formatDate(report.periodo.data_fim))}</div>
     <div class="muted">Referência: ${report.periodo.referencia === 'payment' ? 'data do pagamento' : 'data do pedido'}</div>
@@ -248,12 +249,12 @@ const printDeliveryPaymentReport = (report: DeliveryPaymentBillingReport) => {
     <div class="muted">Gerado em ${escapePrintHtml(formatDateTime(report.gerado_em))}${report.gerado_por?.nome ? ` por ${escapePrintHtml(report.gerado_por.nome)}` : ''}</div>
 
     <section class="grid no-break">
-      <div class="card"><div class="label">Valor a cobrar</div><div class="value">${escapePrintHtml(formatCurrency(report.resumo.valor_final_cobranca))}</div></div>
+      <div class="card"><div class="label">Taxa a pagar</div><div class="value">${escapePrintHtml(formatCurrency(report.resumo.valor_final_cobranca))}</div></div>
       <div class="card"><div class="label">Taxa calculada</div><div class="value">${escapePrintHtml(formatCurrency(platform?.taxa_calculada || 0))}</div></div>
-      <div class="card"><div class="label">Taxa líquida</div><div class="value">${escapePrintHtml(formatCurrency(platform?.taxa_liquida || 0))}</div></div>
-      <div class="card"><div class="label">Taxa estornada</div><div class="value">${escapePrintHtml(formatCurrency(platform?.taxa_estornada || 0))}</div></div>
-      <div class="card"><div class="label">Split recebido</div><div class="value">${escapePrintHtml(formatCurrency(platform?.split_recebido || 0))}</div></div>
-      <div class="card"><div class="label">Split pendente</div><div class="value">${escapePrintHtml(formatCurrency(platform?.split_pendente || 0))}</div></div>
+      <div class="card"><div class="label">Taxa final</div><div class="value">${escapePrintHtml(formatCurrency(platform?.taxa_liquida || 0))}</div></div>
+      <div class="card"><div class="label">Taxa retirada por devoluções</div><div class="value">${escapePrintHtml(formatCurrency(platform?.taxa_estornada || 0))}</div></div>
+      <div class="card"><div class="label">Taxa já descontada online</div><div class="value">${escapePrintHtml(formatCurrency(platform?.split_recebido || 0))}</div></div>
+      <div class="card"><div class="label">Desconto online aguardando</div><div class="value">${escapePrintHtml(formatCurrency(platform?.split_pendente || 0))}</div></div>
     </section>
 
     <h2>Resumo diário</h2>
@@ -262,11 +263,11 @@ const printDeliveryPaymentReport = (report: DeliveryPaymentBillingReport) => {
         <tr>
           <th>Data</th>
           <th class="num">Pedidos</th>
-          <th class="num">Valor selecionado</th>
-          <th class="num">Taxa líquida</th>
-          <th class="num">Split recebido</th>
-          <th class="num">Split pendente</th>
-          <th class="num">A cobrar</th>
+          <th class="num">Valor considerado</th>
+          <th class="num">Taxa final</th>
+          <th class="num">Já descontado online</th>
+          <th class="num">Desconto aguardando</th>
+          <th class="num">Taxa a pagar</th>
         </tr>
       </thead>
       <tbody>
@@ -284,18 +285,18 @@ const printDeliveryPaymentReport = (report: DeliveryPaymentBillingReport) => {
       </tbody>
     </table>
 
-    <h2>Auditoria por pedido</h2>
+    <h2>Detalhes por pedido</h2>
     <table>
       <thead>
         <tr>
           <th>Pedido</th>
-          <th>Referência</th>
-          <th>Origem</th>
+          <th>Data considerada</th>
+          <th>Pedido feito por</th>
           <th>Formas / canais</th>
           <th>Situações</th>
-          <th class="num">Selecionado</th>
-          <th class="num">Taxa líquida</th>
-          <th class="num">A cobrar</th>
+          <th class="num">Valor considerado</th>
+          <th class="num">Taxa final</th>
+          <th class="num">Taxa a pagar</th>
         </tr>
       </thead>
       <tbody>
@@ -574,21 +575,21 @@ export function ReportsScreen() {
       : `${formatDate(startDate)} até ${formatDate(endDate)}`;
     const body = `
       <h1>Relatórios operacionais</h1>
-      <div class="muted">Pedidos, produtos e movimento por período. Não substitui o caixa financeiro conciliado.</div>
+      <div class="muted">Pedidos, produtos e movimento no período escolhido.</div>
       <div class="muted">Período: ${escapePrintHtml(periodLabel)}</div>
       <div class="muted">Impresso em ${escapePrintHtml(formatDateTime(new Date().toISOString()))}</div>
 
       <section class="grid no-break">
-        <div class="card"><div class="label">GMV operacional</div><div class="value">${escapePrintHtml(formatCurrency(faturamentoTotal))}</div></div>
+        <div class="card"><div class="label">Valor vendido</div><div class="value">${escapePrintHtml(formatCurrency(faturamentoTotal))}</div></div>
         <div class="card"><div class="label">Pedidos</div><div class="value">${escapePrintHtml(pedidosTotal)}</div></div>
         <div class="card"><div class="label">Ticket médio</div><div class="value">${escapePrintHtml(formatCurrency(ticketMedio))}</div></div>
         <div class="card"><div class="label">Novos clientes</div><div class="value">${escapePrintHtml(metrics?.novosClientes || 0)}</div></div>
         <div class="card"><div class="label">Cancelamentos</div><div class="value">${escapePrintHtml(taxaCancelamento)}%</div></div>
       </section>
 
-      <h2>GMV operacional por dia</h2>
+      <h2>Valor vendido por dia</h2>
       <table>
-        <thead><tr><th>Período</th><th class="num">GMV operacional</th></tr></thead>
+        <thead><tr><th>Período</th><th class="num">Valor vendido</th></tr></thead>
         <tbody>
           ${salesData.map((item) => `
             <tr>
@@ -622,8 +623,8 @@ export function ReportsScreen() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-gray-900 font-semibold text-xl">Relatórios Operacionais</h2>
-          <p className="text-gray-500 text-sm mt-0.5">Pedidos, produtos e movimento por período. A conciliação financeira fica no caixa.</p>
+          <h2 className="text-gray-900 font-semibold text-xl">Relatórios da Loja</h2>
+          <p className="text-gray-500 text-sm mt-0.5">Pagamentos, vendas, produtos e movimento no período escolhido.</p>
         </div>
         <div className="flex flex-col sm:flex-row sm:items-center gap-2">
           {!showGeneratedReports && (
@@ -633,7 +634,7 @@ export function ReportsScreen() {
               className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
             >
               <Printer className="h-4 w-4" />
-              Imprimir
+              Imprimir vendas e produtos
             </button>
           )}
           <button
@@ -642,7 +643,7 @@ export function ReportsScreen() {
             className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
           >
             {showGeneratedReports ? <ArrowLeft className="h-4 w-4" /> : <FileText className="h-4 w-4" />}
-            {showGeneratedReports ? 'Voltar aos indicadores' : 'Relatórios gerados do meu estabelecimento'}
+            {showGeneratedReports ? 'Voltar aos relatórios da loja' : 'Relatórios enviados para minha loja'}
           </button>
           {!showGeneratedReports && (
             <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg p-1.5 shadow-sm">
@@ -777,14 +778,14 @@ export function ReportsScreen() {
 
                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                     {[
-                      { label: 'Valor a cobrar', value: formatCurrency(selectedGeneratedReport.resumo.valor_final_cobranca), icon: DollarSign, color: PRIMARY },
+                      { label: 'Taxa a pagar', value: formatCurrency(selectedGeneratedReport.resumo.valor_final_cobranca), icon: DollarSign, color: PRIMARY },
                       { label: 'Taxa calculada', value: formatCurrency(selectedGeneratedReport.resumo.taxa_plataforma?.taxa_calculada ?? selectedGeneratedReport.resumo.valor_final_cobranca), icon: BarChart3, color: '#2563eb' },
-                      { label: 'Taxa líquida', value: formatCurrency(selectedGeneratedReport.resumo.taxa_plataforma?.taxa_liquida ?? selectedGeneratedReport.resumo.valor_final_cobranca), icon: DollarSign, color: '#7c3aed' },
-                      { label: 'Taxa estornada', value: formatCurrency(selectedGeneratedReport.resumo.taxa_plataforma?.taxa_estornada || 0), icon: FileText, color: '#dc2626' },
-                      { label: 'Split recebido', value: formatCurrency(selectedGeneratedReport.resumo.taxa_plataforma?.split_recebido || 0), icon: DollarSign, color: '#16a34a' },
-                      { label: 'Split pendente', value: formatCurrency(selectedGeneratedReport.resumo.taxa_plataforma?.split_pendente || 0), icon: FileText, color: '#d97706' },
+                      { label: 'Taxa final', value: formatCurrency(selectedGeneratedReport.resumo.taxa_plataforma?.taxa_liquida ?? selectedGeneratedReport.resumo.valor_final_cobranca), icon: DollarSign, color: '#7c3aed' },
+                      { label: 'Taxa retirada por devoluções', value: formatCurrency(selectedGeneratedReport.resumo.taxa_plataforma?.taxa_estornada || 0), icon: FileText, color: '#dc2626' },
+                      { label: 'Já descontado online', value: formatCurrency(selectedGeneratedReport.resumo.taxa_plataforma?.split_recebido || 0), icon: DollarSign, color: '#16a34a' },
+                      { label: 'Desconto online aguardando', value: formatCurrency(selectedGeneratedReport.resumo.taxa_plataforma?.split_pendente || 0), icon: FileText, color: '#d97706' },
                       { label: 'Valor registrado', value: formatCurrency(selectedGeneratedReport.resumo.valor_bruto_total), icon: BarChart3, color: '#0f766e' },
-                      { label: 'Pedidos auditados', value: String(selectedGeneratedReport.resumo.quantidade_pedidos_total || selectedGeneratedReport.pedidos.length), icon: ShoppingCart, color: '#4f46e5' },
+                      { label: 'Pedidos conferidos', value: String(selectedGeneratedReport.resumo.quantidade_pedidos_total || selectedGeneratedReport.pedidos.length), icon: ShoppingCart, color: '#4f46e5' },
                     ].map((item) => (
                       <div key={item.label} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
                         <item.icon className="w-5 h-5 mb-3" style={{ color: item.color }} />
@@ -804,11 +805,11 @@ export function ReportsScreen() {
                           <tr>
                             <th className="px-4 py-3 text-left">Data</th>
                             <th className="px-4 py-3 text-right">Pedidos</th>
-                            <th className="px-4 py-3 text-right">Valor selecionado</th>
-                            <th className="px-4 py-3 text-right">Taxa líquida</th>
-                            <th className="px-4 py-3 text-right">Split recebido</th>
-                            <th className="px-4 py-3 text-right">Split pendente</th>
-                            <th className="px-4 py-3 text-right">A cobrar</th>
+                            <th className="px-4 py-3 text-right">Valor considerado</th>
+                            <th className="px-4 py-3 text-right">Taxa final</th>
+                            <th className="px-4 py-3 text-right">Já descontado online</th>
+                            <th className="px-4 py-3 text-right">Desconto aguardando</th>
+                            <th className="px-4 py-3 text-right">Taxa a pagar</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -830,24 +831,24 @@ export function ReportsScreen() {
 
                   <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
                     <div className="px-5 py-4 border-b border-gray-100">
-                      <h3 className="font-semibold text-gray-800">Auditoria por pedido</h3>
-                      <p className="text-xs text-gray-400 mt-0.5">Os valores abaixo consideram somente pagamentos, canais e situações selecionados pelo superadmin.</p>
+                      <h3 className="font-semibold text-gray-800">Detalhes por pedido</h3>
+                      <p className="text-xs text-gray-400 mt-0.5">Os valores abaixo usam as opções escolhidas quando este relatório foi criado.</p>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead className="bg-gray-50 text-xs uppercase text-gray-500">
                           <tr>
                             <th className="px-4 py-3 text-left">Pedido</th>
-                            <th className="px-4 py-3 text-left">Referência</th>
-                            <th className="px-4 py-3 text-left">Origem</th>
+                            <th className="px-4 py-3 text-left">Data considerada</th>
+                            <th className="px-4 py-3 text-left">Pedido feito por</th>
                             <th className="px-4 py-3 text-left">Formas</th>
-                            <th className="px-4 py-3 text-left">Canais</th>
+                            <th className="px-4 py-3 text-left">Onde recebeu</th>
                             <th className="px-4 py-3 text-left">Situações</th>
-                            <th className="px-4 py-3 text-right">Selecionado</th>
-                            <th className="px-4 py-3 text-right">Taxa líquida</th>
-                            <th className="px-4 py-3 text-right">Split recebido</th>
-                            <th className="px-4 py-3 text-right">Split pendente</th>
-                            <th className="px-4 py-3 text-right">A cobrar</th>
+                            <th className="px-4 py-3 text-right">Valor considerado</th>
+                            <th className="px-4 py-3 text-right">Taxa final</th>
+                            <th className="px-4 py-3 text-right">Já descontado online</th>
+                            <th className="px-4 py-3 text-right">Desconto aguardando</th>
+                            <th className="px-4 py-3 text-right">Taxa a pagar</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -884,10 +885,17 @@ export function ReportsScreen() {
       {!showGeneratedReports && (
         <>
 
+      <StoreFinancialOverview startDate={startDate} endDate={endDate} />
+
+      <div className="pt-2">
+        <h2 className="text-lg font-semibold text-gray-900">Desempenho das vendas</h2>
+        <p className="mt-0.5 text-sm text-gray-500">Pedidos, clientes, produtos e horários de maior movimento.</p>
+      </div>
+
       {/* KPI cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {[
-          { label: 'GMV operacional', value: formatCurrency(faturamentoTotal), sub: 'Pedidos do período', color: PRIMARY, icon: DollarSign },
+          { label: 'Valor vendido', value: formatCurrency(faturamentoTotal), sub: 'Pedidos do período', color: PRIMARY, icon: DollarSign },
           { label: 'Pedidos', value: pedidosTotal.toString(), sub: 'No período', color: '#2563eb', icon: ShoppingCart },
           { label: 'Ticket médio', value: formatCurrency(ticketMedio), sub: 'Por pedido', color: '#7c3aed', icon: TrendingUp },
           { label: 'Novos Clientes', value: metrics?.novosClientes?.toString() || '0', sub: 'No período', color: '#16a34a', icon: Users },
@@ -902,17 +910,13 @@ export function ReportsScreen() {
         ))}
       </div>
 
-      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-        Estes relatórios são operacionais e usam pedidos por período. Valores recebidos, fiado, estornos e divergências devem ser conferidos no caixa financeiro conciliado.
-      </div>
-
       {/* Charts row 1 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Area chart */}
         <div className="lg:col-span-2 bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="font-semibold text-gray-800">GMV operacional por dia</h3>
+              <h3 className="font-semibold text-gray-800">Valor vendido por dia</h3>
               <p className="text-xs text-gray-400 mt-0.5">Evolução no período selecionado</p>
             </div>
             <div className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-600 bg-white">
@@ -930,7 +934,7 @@ export function ReportsScreen() {
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
               <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} dy={10} />
               <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} tickFormatter={v => `R$${(v/1000).toFixed(0)}k`} />
-              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} formatter={(v: number) => [`R$ ${v.toLocaleString('pt-BR')}`, 'GMV operacional']} />
+              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} formatter={(v: number) => [`R$ ${v.toLocaleString('pt-BR')}`, 'Valor vendido']} />
               <Area type="monotone" dataKey="vendas" stroke={PRIMARY} strokeWidth={3} fill="url(#repGrad)" activeDot={{ r: 6, fill: PRIMARY }} />
             </AreaChart>
           </ResponsiveContainer>
@@ -939,7 +943,7 @@ export function ReportsScreen() {
         {/* Categories pie */}
         <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
           <h3 className="font-semibold text-gray-800 mb-1">Vendas por Categoria</h3>
-          <p className="text-xs text-gray-400 mb-4">Participação no GMV operacional</p>
+          <p className="text-xs text-gray-400 mb-4">Participação no valor vendido</p>
           <ResponsiveContainer width="100%" height={160}>
             <PieChart>
               <Pie data={categoryRevenueData.length ? categoryRevenueData : [{ name: 'Sem dados', value: 100 }]} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" stroke="none">
@@ -1021,7 +1025,7 @@ export function ReportsScreen() {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h3 className="font-semibold text-gray-800">Produtos vendidos no período</h3>
-              <p className="text-xs text-gray-400 mt-0.5">Quantidade vendida e GMV operacional por produto no intervalo selecionado.</p>
+              <p className="text-xs text-gray-400 mt-0.5">Quantidade e valor vendido por produto no intervalo selecionado.</p>
             </div>
             <div className="relative w-full lg:w-80">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -1043,7 +1047,7 @@ export function ReportsScreen() {
               <div className="mt-1 text-lg font-semibold text-gray-900">{soldProductsSummary.quantidade_total.toLocaleString('pt-BR')}</div>
             </div>
             <div className="rounded-lg border border-gray-100 bg-gray-50 p-3">
-              <div className="text-xs text-gray-500">GMV operacional filtrado</div>
+              <div className="text-xs text-gray-500">Valor vendido nos produtos</div>
               <div className="mt-1 text-lg font-semibold text-gray-900">{formatCurrency(soldProductsSummary.faturamento_total)}</div>
             </div>
           </div>
@@ -1068,7 +1072,7 @@ export function ReportsScreen() {
                 <th className="px-5 py-3 text-right">Quantidade vendida</th>
                 <th className="px-5 py-3 text-right">Pedidos</th>
                 <th className="px-5 py-3 text-right">Preço médio</th>
-                <th className="px-5 py-3 text-right">GMV operacional</th>
+                <th className="px-5 py-3 text-right">Valor vendido</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 bg-white">
