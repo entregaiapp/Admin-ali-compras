@@ -220,6 +220,56 @@ export function PromotionsScreen() {
     }
   };
 
+  const updatePromotionStatus = async (
+    target: PromotionTarget | any,
+    nextActive: boolean,
+    options: { closeModal?: boolean } = {},
+  ) => {
+    const promoPrice = Number(String(target.promoPrice ?? target.preco_promocional ?? '').replace(',', '.'));
+    const regularPrice = Number(target.price ?? target.preco);
+
+    if (!Number.isFinite(promoPrice) || promoPrice <= 0 || !Number.isFinite(regularPrice) || promoPrice >= regularPrice) {
+      showSystemNotice('Configure um preço promocional válido antes de ativar ou desativar.');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const promotionUntil = nextActive ? null : new Date().toISOString();
+      const storeProductId = target.storeProductId || target.produto_loja_id_origem;
+      const optionProductId = target.optionProductId || target.opcao_grupo_produto_id;
+
+      if (optionProductId && storeProductId) {
+        await api.patch(`/produtos_loja/${storeProductId}/configuracao/opcoes/${optionProductId}/promocao`, {
+          preco_promocional: promoPrice,
+          promocao_ate: promotionUntil,
+        });
+      } else {
+        await api.patch(`/produtos_loja/${target.id}`, {
+          preco_promocional: promoPrice,
+          promocao_ate: promotionUntil,
+        });
+      }
+
+      await fetchProducts(search, page, statusFilter);
+      if (showAddPromo) fetchAvailableProducts(addPromoSearch);
+      setEditingPrice((current) => current && current.id === target.id ? {
+        ...current,
+        active: nextActive,
+        promotionUntil: nextActive ? '' : promotionDateTimeValue(promotionUntil),
+      } : current);
+      if (options.closeModal) {
+        setEditingPrice(null);
+      }
+      showSystemNotice(nextActive ? 'Promoção ativada.' : 'Promoção desativada.');
+    } catch (error) {
+      console.error('Error updating promotion status:', error);
+      showSystemNotice('Não foi possível alterar o status da promoção.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleRemovePromotion = async (product: any) => {
     if (!window.confirm('Deseja remover a promoção deste produto?')) return;
     
@@ -402,6 +452,20 @@ export function PromotionsScreen() {
                     </div>
 
                     <div className="mt-4 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => updatePromotionStatus(product, !promotionActive)}
+                        disabled={saving}
+                        className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
+                          promotionActive
+                            ? 'border-red-100 bg-red-50 text-red-700 hover:bg-red-100'
+                            : 'border-green-100 bg-green-50 text-green-700 hover:bg-green-100'
+                        }`}
+                        title={promotionActive ? 'Desativar promoção' : 'Ativar promoção'}
+                      >
+                        <Power className="h-3.5 w-3.5" />
+                        {promotionActive ? 'Desativar' : 'Ativar'}
+                      </button>
                       <button
                         onClick={() => setEditingPrice({ 
                            id: product.id, 
@@ -663,9 +727,9 @@ export function PromotionsScreen() {
                               ? ''
                               : current.promotionUntil,
                           } : null)}
-                          className={`relative h-6 w-11 flex-shrink-0 rounded-full transition-colors ${editingPrice.active ? 'bg-green-600' : 'bg-gray-300'}`}
+                          className={`relative h-7 w-12 flex-shrink-0 rounded-full transition-colors focus:outline-none focus:ring-4 focus:ring-primary/10 ${editingPrice.active ? 'bg-green-600' : 'bg-gray-300'}`}
                         >
-                          <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${editingPrice.active ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                          <span className={`absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${editingPrice.active ? 'translate-x-5' : 'translate-x-0'}`} />
                         </button>
                       </div>
                     </div>
@@ -689,6 +753,19 @@ export function PromotionsScreen() {
               </div>
 
               <div className="px-6 py-4 bg-gray-50 flex gap-3">
+                 <button
+                   type="button"
+                   onClick={() => updatePromotionStatus(editingPrice, !editingPrice.active)}
+                   disabled={saving || !editingPrice.promoPrice}
+                   className={`inline-flex flex-1 items-center justify-center gap-2 rounded-xl border py-2.5 text-sm font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                     editingPrice.active
+                       ? 'border-red-100 bg-red-50 text-red-700 hover:bg-red-100'
+                       : 'border-green-100 bg-green-50 text-green-700 hover:bg-green-100'
+                   }`}
+                 >
+                   <Power className="h-4 w-4" />
+                   {editingPrice.active ? 'Desativar' : 'Ativar'}
+                 </button>
                  <button 
                    onClick={() => setEditingPrice(null)}
                    className="flex-1 py-2.5 text-sm font-semibold text-gray-500 hover:text-gray-700 transition-colors"
