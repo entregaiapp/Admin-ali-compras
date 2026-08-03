@@ -128,8 +128,8 @@ export function SecurityMfaPanel() {
               enabled: status?.refund_required || false,
             },
           ].map((preference) => (
-            <div key={preference.key} className="flex items-center justify-between gap-4 p-4">
-              <div>
+            <div key={preference.key} className="flex items-start justify-between gap-4 p-4 sm:items-center">
+              <div className="min-w-0">
                 <div className="text-sm font-semibold text-gray-800">{preference.title}</div>
                 <div className="mt-0.5 text-xs text-gray-500">{preference.description}</div>
               </div>
@@ -139,9 +139,9 @@ export function SecurityMfaPanel() {
                 aria-checked={preference.enabled}
                 onClick={() => void changePreference(preference.key, !preference.enabled)}
                 disabled={loading || !status}
-                className={`relative h-6 w-11 flex-shrink-0 rounded-full transition-colors disabled:opacity-60 ${preference.enabled ? "bg-blue-950" : "bg-gray-300"}`}
+                className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-60 ${preference.enabled ? "bg-blue-950" : "bg-gray-300"}`}
               >
-                <span className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform ${preference.enabled ? "translate-x-6" : "translate-x-1"}`} />
+                <span className={`absolute left-1 h-4 w-4 rounded-full bg-white shadow transition-transform ${preference.enabled ? "translate-x-5" : "translate-x-0"}`} />
               </button>
             </div>
           ))}
