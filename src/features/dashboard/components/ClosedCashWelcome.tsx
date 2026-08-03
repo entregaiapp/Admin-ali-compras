@@ -219,8 +219,8 @@ export function ClosedCashWelcome({
   }, [onStart, showStartMessage]);
 
   return (
-    <div className="flex h-full min-h-0 flex-1 overflow-y-auto bg-slate-50 p-4 sm:p-6 lg:p-8">
-      <section className="relative mx-auto flex min-h-full w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+    <div className="h-full min-h-0 overflow-y-auto bg-slate-50 p-4 sm:p-6 lg:p-8">
+      <section className="relative mx-auto w-full max-w-6xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
         {showStartMessage && (
           <div
             className={`absolute inset-0 z-50 flex items-center justify-center bg-white/75 p-6 text-center backdrop-blur-md transition-opacity duration-700 ease-in-out ${
@@ -256,7 +256,7 @@ export function ClosedCashWelcome({
           }}
         />
 
-        <div className="relative flex flex-1 flex-col px-5 py-7 sm:px-8 sm:py-9 lg:px-12 lg:py-11">
+        <div className="relative px-5 py-7 sm:px-8 sm:py-9 lg:px-12 lg:py-11">
           <div className="flex flex-col gap-7 lg:flex-row lg:items-start lg:justify-between">
             <div className="max-w-2xl">
               <div
@@ -370,7 +370,7 @@ export function ClosedCashWelcome({
             })}
           </div>
 
-          <div className="mt-auto flex flex-col items-center justify-between gap-4 border-t border-slate-100 pt-7 sm:flex-row">
+          <div className="mt-8 flex flex-col items-center justify-between gap-4 border-t border-slate-100 pt-7 sm:flex-row">
             <div className="flex items-center gap-2 text-sm text-slate-500">
               <CheckCircle2 className="h-4 w-4 text-emerald-600" />
               Você pode iniciar mesmo que ainda existam itens pendentes.
