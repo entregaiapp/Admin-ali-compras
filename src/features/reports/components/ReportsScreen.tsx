@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { Fragment, useState, useEffect } from 'react';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
-import { TrendingUp, ShoppingCart, Users, XCircle, DollarSign, BarChart3, Calendar, FileText, Download, Eye, ArrowLeft, Printer, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { TrendingUp, ShoppingCart, Users, XCircle, DollarSign, BarChart3, Calendar, FileText, Download, Eye, ArrowLeft, Printer, Search, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '@/shared/lib/api';
 import { dateInputInBrasilia } from '@/shared/lib/dateTime';
 import { systemToast } from '@/shared/components/SystemToast';
@@ -33,6 +33,25 @@ type SoldProduct = {
   faturamento_total: number;
   preco_medio: number;
   pedidos: number;
+  detalhes_configuracao?: SoldProductConfigurationGroup[];
+};
+
+type SoldProductConfigurationOption = {
+  opcao_id?: string | null;
+  nome_opcao: string;
+  quantidade_vendida: number;
+  faturamento_total: number;
+  preco_medio: number;
+  pedidos: number;
+};
+
+type SoldProductConfigurationGroup = {
+  grupo_id?: string | null;
+  nome_grupo: string;
+  quantidade_vendida: number;
+  faturamento_total: number;
+  pedidos: number;
+  opcoes: SoldProductConfigurationOption[];
 };
 
 type SoldProductsPayload = {
@@ -53,6 +72,15 @@ const formatCurrency = (value: number | string | null | undefined) => {
   const numericValue = typeof value === 'number' ? value : Number(value || 0);
   return numericValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
+
+const formatQuantity = (value: number | string | null | undefined) => {
+  const numericValue = typeof value === 'number' ? value : Number(value || 0);
+  return Math.round(numericValue).toLocaleString('pt-BR', { maximumFractionDigits: 0 });
+};
+
+const getConfigurationGroups = (product: SoldProduct) => (
+  (product.detalhes_configuracao || []).filter((group) => Array.isArray(group.opcoes) && group.opcoes.length > 0)
+);
 
 const formatDate = (value?: string | null) => {
   if (!value) return '-';
@@ -321,6 +349,7 @@ export function ReportsScreen() {
   const [soldProductsError, setSoldProductsError] = useState('');
   const [soldProductsSearch, setSoldProductsSearch] = useState('');
   const [soldProductsPage, setSoldProductsPage] = useState(1);
+  const [expandedSoldProductKey, setExpandedSoldProductKey] = useState<string | null>(null);
   const [soldProductsPagination, setSoldProductsPagination] = useState({
     page: 1,
     perPage: SOLD_PRODUCTS_PER_PAGE,
@@ -371,7 +400,12 @@ export function ReportsScreen() {
 
   useEffect(() => {
     setSoldProductsPage(1);
+    setExpandedSoldProductKey(null);
   }, [startDate, endDate, soldProductsSearch]);
+
+  useEffect(() => {
+    setExpandedSoldProductKey(null);
+  }, [soldProductsPage]);
 
   useEffect(() => {
     if (showGeneratedReports) return;
@@ -1011,22 +1045,98 @@ export function ReportsScreen() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 bg-white">
-              {soldProducts.length > 0 ? soldProducts.map((product) => (
-                <tr key={product.produto_key} className="hover:bg-gray-50">
-                  <td className="px-5 py-3">
-                    <div className="font-medium text-gray-800">{product.nome}</div>
-                    <div className="text-xs text-gray-400">
-                      {product.tipo_venda === 'peso' ? 'Venda por peso' : 'Venda por unidade'} · {product.unidade_medida || 'un'}
-                    </div>
-                  </td>
-                  <td className="px-5 py-3 text-right font-semibold text-gray-900">
-                    {product.quantidade_vendida.toLocaleString('pt-BR')}
-                  </td>
-                  <td className="px-5 py-3 text-right text-gray-600">{product.pedidos}</td>
-                  <td className="px-5 py-3 text-right text-gray-600">{formatCurrency(product.preco_medio)}</td>
-                  <td className="px-5 py-3 text-right font-semibold text-gray-900">{formatCurrency(product.faturamento_total)}</td>
-                </tr>
-              )) : (
+              {soldProducts.length > 0 ? soldProducts.map((product) => {
+                const configurationGroups = getConfigurationGroups(product);
+                const hasConfigurationDetails = configurationGroups.length > 0;
+                const isExpanded = expandedSoldProductKey === product.produto_key;
+
+                return (
+                  <Fragment key={product.produto_key}>
+                    <tr className={isExpanded ? 'bg-gray-50' : 'hover:bg-gray-50'}>
+                      <td className="px-5 py-3">
+                        <div className="flex items-start gap-2">
+                          {hasConfigurationDetails ? (
+                            <button
+                              type="button"
+                              onClick={() => setExpandedSoldProductKey(isExpanded ? null : product.produto_key)}
+                              className="mt-0.5 inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 hover:border-gray-300 hover:bg-gray-100"
+                              title={isExpanded ? 'Ocultar detalhes' : 'Ver detalhes'}
+                            >
+                              <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                            </button>
+                          ) : (
+                            <span className="h-7 w-7 flex-shrink-0" />
+                          )}
+                          <div className="min-w-0">
+                            {hasConfigurationDetails ? (
+                              <button
+                                type="button"
+                                onClick={() => setExpandedSoldProductKey(isExpanded ? null : product.produto_key)}
+                                className="max-w-full text-left font-medium text-gray-800 hover:text-primary"
+                              >
+                                {product.nome}
+                              </button>
+                            ) : (
+                              <div className="font-medium text-gray-800">{product.nome}</div>
+                            )}
+                            <div className="text-xs text-gray-400">
+                              {product.tipo_venda === 'peso' ? 'Venda por peso' : 'Venda por unidade'} · {product.unidade_medida || 'un'}
+                            </div>
+                            {hasConfigurationDetails && (
+                              <div className="mt-1 text-xs font-medium text-blue-700">
+                                {configurationGroups.length} grupo{configurationGroups.length === 1 ? '' : 's'} configurável{configurationGroups.length === 1 ? '' : 'eis'}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-3 text-right font-semibold text-gray-900">
+                        {formatQuantity(product.quantidade_vendida)}
+                      </td>
+                      <td className="px-5 py-3 text-right text-gray-600">{product.pedidos}</td>
+                      <td className="px-5 py-3 text-right text-gray-600">{formatCurrency(product.preco_medio)}</td>
+                      <td className="px-5 py-3 text-right font-semibold text-gray-900">{formatCurrency(product.faturamento_total)}</td>
+                    </tr>
+                    {isExpanded && hasConfigurationDetails && (
+                      <tr className="bg-gray-50/70">
+                        <td colSpan={5} className="px-5 pb-5 pt-0">
+                          <div className="ml-9 rounded-lg border border-gray-200 bg-white">
+                            <div className="grid grid-cols-12 border-b border-gray-100 px-4 py-2 text-xs font-semibold uppercase text-gray-500">
+                              <div className="col-span-5">Opção comprada</div>
+                              <div className="col-span-2 text-right">Quantidade</div>
+                              <div className="col-span-2 text-right">Pedidos</div>
+                              <div className="col-span-3 text-right">Valor atribuído</div>
+                            </div>
+                            <div className="divide-y divide-gray-100">
+                              {configurationGroups.map((group) => (
+                                <div key={group.grupo_id || group.nome_grupo}>
+                                  <div className="grid grid-cols-12 bg-gray-50 px-4 py-2 text-xs font-semibold text-gray-700">
+                                    <div className="col-span-5">{group.nome_grupo}</div>
+                                    <div className="col-span-2 text-right">{formatQuantity(group.quantidade_vendida)}</div>
+                                    <div className="col-span-2 text-right">{group.pedidos}</div>
+                                    <div className="col-span-3 text-right">{formatCurrency(group.faturamento_total)}</div>
+                                  </div>
+                                  {group.opcoes.map((option) => (
+                                    <div
+                                      key={option.opcao_id || `${group.grupo_id}-${option.nome_opcao}`}
+                                      className="grid grid-cols-12 gap-2 px-4 py-2 text-sm text-gray-600"
+                                    >
+                                      <div className="col-span-5 min-w-0 truncate pl-3">{option.nome_opcao}</div>
+                                      <div className="col-span-2 text-right font-medium text-gray-900">{formatQuantity(option.quantidade_vendida)}</div>
+                                      <div className="col-span-2 text-right">{option.pedidos}</div>
+                                      <div className="col-span-3 text-right font-medium text-gray-900">{formatCurrency(option.faturamento_total)}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              }) : (
                 <tr>
                   <td colSpan={5} className="px-5 py-10 text-center text-sm text-gray-500">
                     {soldProductsLoading ? 'Carregando produtos vendidos...' : 'Nenhum produto vendido no período.'}
