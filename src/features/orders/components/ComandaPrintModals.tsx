@@ -133,6 +133,7 @@ export function DisconnectedPrinterModal({
     details.printer?.display_name ||
     details.printer?.device_name ||
     "Impressora configurada";
+  const outsideBusinessHours = details.reason === "suspended_schedule";
 
   return (
     <div
@@ -151,10 +152,14 @@ export function DisconnectedPrinterModal({
             id="disconnected-printer-title"
             className="mt-5 text-2xl font-black tracking-tight sm:text-3xl"
           >
-            Impressora desconectada
+            {outsideBusinessHours
+              ? "Impressão pausada fora do horário"
+              : "Impressora desconectada"}
           </h2>
           <p className="mt-2 text-sm font-bold text-slate-800 sm:text-base">
-            A impressão foi bloqueada para evitar o envio ao equipamento errado.
+            {outsideBusinessHours
+              ? "O agente precisa de uma liberação local para imprimir neste período."
+              : "A impressão foi bloqueada para evitar o envio ao equipamento errado."}
           </p>
         </header>
 
@@ -178,13 +183,13 @@ export function DisconnectedPrinterModal({
             id="disconnected-printer-description"
             className="text-base font-semibold leading-relaxed text-slate-700 sm:text-lg"
           >
-            A impressora configurada para o seu usuário está inativa. No
-            Entregaí Print Agent, toque no botão{" "}
+            {outsideBusinessHours
+              ? "A loja está fora do horário de funcionamento. No Entregaí Print Agent, toque no botão "
+              : "A impressora configurada para o seu usuário está inativa. No Entregaí Print Agent, toque no botão "}
             <strong className="font-black text-slate-950">
               “Retomar agente de impressão”
-            </strong>{" "}
-            para ativar a impressão para este período. Depois, tente imprimir
-            novamente.
+            </strong>
+            {" para ativar a impressão para este período. Depois, tente imprimir novamente."}
           </p>
 
           <button
