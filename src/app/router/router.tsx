@@ -8,6 +8,7 @@ import { DashboardPage } from "@/pages/Dashboard/DashboardPage";
 import { OrdersPage } from "@/pages/Orders/OrdersPage";
 import { ProductsPage } from "@/pages/Products/ProductsPage";
 import { ProductCsvImportPage } from "@/pages/Products/ProductCsvImportPage";
+import { MenuImportPage } from "@/pages/Products/MenuImportPage";
 import { CategoriesPage } from "@/pages/Categories/CategoriesPage";
 import { PromotionsPage } from "@/pages/Promotions/PromotionsPage";
 import { BannersPage } from "@/pages/Banners/BannersPage";
@@ -58,6 +59,7 @@ export const router = createBrowserRouter([
           { path: "products", Component: ProductsPage },
           { path: "produtos", Component: ProductsPage },
           { path: "products/import", Component: ProductCsvImportPage },
+          { path: "products/import-ai", Component: MenuImportPage },
           { path: "products-import", element: <Navigate to="/products/import" replace /> },
           { path: "importar-produtos", element: <Navigate to="/products/import" replace /> },
           { path: "categories", Component: CategoriesPage },

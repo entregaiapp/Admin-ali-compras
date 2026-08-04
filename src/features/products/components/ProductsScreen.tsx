@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import { 
   AlertCircle, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Copy, Edit2,
   Eye, FileUp, Filter, Grid2X2, List, Package, PackagePlus, Plus, Power, Search, Star, Tag,
-  ImagePlus, Trash2, UtensilsCrossed, X, Zap
+  ImagePlus, Trash2, UtensilsCrossed, X, Zap, Sparkles
 } from 'lucide-react';
 import { showSystemNotice } from '@/shared/components/SystemToast';
 import api from '@/shared/lib/api';
@@ -1171,6 +1171,7 @@ export function ProductsScreen() {
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
   const [configurableEditor, setConfigurableEditor] = useState<{ product?: any; duplicate?: boolean } | null>(null);
   const [canManageImages, setCanManageImages] = useState(false);
+  const [menuImportEnabled, setMenuImportEnabled] = useState(false);
   const [departmentId, setDepartmentId] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [subcategoryId, setSubcategoryId] = useState('');
@@ -1205,6 +1206,9 @@ export function ProductsScreen() {
         setCanManageImages(['lanchonete', 'restaurante'].includes(store?.tipo_estabelecimento));
       })
       .catch(() => setCanManageImages(false));
+    api.get('/importacoes-cardapio/disponibilidade')
+      .then((response) => setMenuImportEnabled(response.data?.data?.enabled === true))
+      .catch(() => setMenuImportEnabled(false));
   }, []);
   const departments = getRootCategories(dbCategories);
   const categories = sortCategories(dbCategories.filter((category: any) => category.categoria_pai_id === departmentId));
@@ -1349,6 +1353,16 @@ export function ProductsScreen() {
             <span className="hidden sm:inline">Importar CSV</span>
             <span className="sm:hidden">CSV</span>
           </button>
+          {menuImportEnabled && (
+            <button
+              onClick={() => navigate('/products/import-ai')}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-violet-200 bg-violet-50 text-violet-700 text-sm font-medium transition-all hover:bg-violet-100 active:scale-95 flex-shrink-0"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span className="hidden sm:inline">Importar com IA</span>
+              <span className="sm:hidden">IA</span>
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
           <button

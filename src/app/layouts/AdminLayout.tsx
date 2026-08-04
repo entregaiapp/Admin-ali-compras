@@ -3,7 +3,7 @@ import { Outlet, useNavigate, useLocation, Navigate } from 'react-router';
 import {
   LayoutDashboard, ShoppingCart, Package,  Grid3X3, Tag, Image, Users, Truck, User,
   Ticket, CreditCard, BarChart3, UserCog, Settings, Bell, Menu, X, LogOut,
-  ChevronRight, Key, Bike, UtensilsCrossed, Wallet, PanelLeftClose, PanelLeftOpen, ClipboardList
+  ChevronRight, Key, Bike, UtensilsCrossed, Wallet, PanelLeftClose, PanelLeftOpen, ClipboardList, Sparkles
 } from 'lucide-react';
 import api from '@/shared/lib/api';
 import logo from '@/assets/logo.png';
@@ -18,6 +18,7 @@ const navItems = [
   { label: 'Pedidos', icon: ShoppingCart, path: '/orders', slug: 'pedidos' },
   { label: 'Salão', icon: UtensilsCrossed, path: '/salao', slug: 'salao' },
   { label: 'Produtos', icon: Package, path: '/products', slug: 'produtos' },
+  { label: 'Importação com IA', icon: Sparkles, path: '/products/import-ai', slug: 'produtos' },
   { label: 'Categorias', icon: Grid3X3, path: '/categories', slug: 'categorias' },
   { label: 'Promoções', icon: Tag, path: '/promotions', slug: 'produtos' }, // Using 'produtos' perm for promotions too or we can add 'promocoes'
   { label: 'Banners', icon: Image, path: '/banners', slug: 'banners' },
@@ -38,7 +39,7 @@ const navItems = [
 const navGroups = [
   { title: 'Visão geral', paths: ['/dashboard'] },
   { title: 'Operação', paths: ['/driver', '/orders', '/salao', '/deliveries', '/entregadores'] },
-  { title: 'Cardápio', paths: ['/products', '/categories'] },
+  { title: 'Cardápio', paths: ['/products', '/products/import-ai', '/categories'] },
   { title: 'Marketing e vendas', paths: ['/promotions', '/coupons', '/banners', '/notifications'] },
   { title: 'Clientes', paths: ['/customers'] },
   { title: 'Financeiro', paths: ['/payments', '/cash', '/fiados', '/reports'] },
@@ -67,19 +68,31 @@ const resolveNavItemForPath = (pathname: string) => {
     .find(([legacyPath]) => pathname === legacyPath || pathname.startsWith(`${legacyPath}/`));
   const normalizedPath = alias ? pathname.replace(alias[0], alias[1]) : pathname;
 
-  return navItems.find((item) => normalizedPath === item.path || normalizedPath.startsWith(`${item.path}/`)) || null;
+  return [...navItems]
+    .sort((left, right) => right.path.length - left.path.length)
+    .find((item) => normalizedPath === item.path || normalizedPath.startsWith(`${item.path}/`)) || null;
 };
 
-function RouteAccessDenied({ onGoHome }: { onGoHome: () => void }) {
+function RouteAccessDenied({
+  onGoHome,
+  featureUnavailable = false,
+}: {
+  onGoHome: () => void;
+  featureUnavailable?: boolean;
+}) {
   return (
     <div className="flex flex-1 items-center justify-center bg-gray-50 p-6">
       <div className="w-full max-w-md rounded-xl border border-amber-200 bg-white p-6 text-center shadow-sm">
         <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-50 text-amber-700">
           <Key className="h-5 w-5" />
         </div>
-        <h2 className="text-base font-semibold text-gray-900">Você não tem permissão para acessar esta rota</h2>
+        <h2 className="text-base font-semibold text-gray-900">
+          {featureUnavailable ? 'Importação inteligente indisponível' : 'Você não tem permissão para acessar esta rota'}
+        </h2>
         <p className="mt-2 text-sm text-gray-500">
-          Entre em contato com um administrador caso precise liberar este acesso.
+          {featureUnavailable
+            ? 'Este recurso não está habilitado para sua loja. Entre em contato com o suporte ou com o administrador do plano.'
+            : 'Entre em contato com um administrador caso precise liberar este acesso.'}
         </p>
         <button
           type="button"
@@ -105,6 +118,7 @@ export function AdminLayout() {
   });
   const [storeName, setStoreName] = useState('Carregando...');
   const [enabledStoreModules, setEnabledStoreModules] = useState<Set<string> | null>(null);
+  const [menuImportEnabled, setMenuImportEnabled] = useState<boolean | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();
@@ -154,7 +168,8 @@ export function AdminLayout() {
       Promise.allSettled([
         api.get(`/lojas/${user.loja_id}`),
         api.get(`/salao/lojas/${user.loja_id}/modulos`),
-      ]).then(([storeResult, modulesResult]) => {
+        api.get('/importacoes-cardapio/disponibilidade'),
+      ]).then(([storeResult, modulesResult, menuImportResult]) => {
         if (storeResult.status === 'fulfilled' && storeResult.value.data?.success) {
           setStoreName(storeResult.value.data.data.nome);
         } else {
@@ -169,10 +184,15 @@ export function AdminLayout() {
             ? modules.filter((module) => module.enabled === true).map((module) => module.slug)
             : []
         ));
+        setMenuImportEnabled(
+          menuImportResult.status === 'fulfilled'
+          && menuImportResult.value.data?.data?.enabled === true
+        );
       });
     } else {
       setStoreName('Admin Master');
       setEnabledStoreModules(new Set());
+      setMenuImportEnabled(false);
     }
   }, [user?.loja_id]);
 
@@ -222,6 +242,7 @@ export function AdminLayout() {
   }, [navigate]);
 
   const isActive = (path: string) => {
+    if (location.pathname.startsWith('/products/import-ai')) return path === '/products/import-ai';
     const legacyProductImportPath = location.pathname === '/products-import' || location.pathname === '/importar-produtos';
     return location.pathname === path || location.pathname.startsWith(path + '/') || (path === '/products' && legacyProductImportPath);
   };
@@ -243,6 +264,7 @@ export function AdminLayout() {
     if (item.path === '/driver') return false;
     if (item.path === '/salao' && !enabledStoreModules?.has('salao')) return false;
     if (item.path === '/fiados' && !enabledStoreModules?.has('fiado')) return false;
+    if (item.path === '/products/import-ai' && menuImportEnabled !== true) return false;
     if (item.path === '/activities') {
       return user?.perfil === 'administrador' && enabledStoreModules?.has('auditoria_operacional') === true;
     }
@@ -280,13 +302,16 @@ export function AdminLayout() {
 
   const currentNavItem = resolveNavItemForPath(location.pathname);
   const currentRouteModuleLoading =
-    enabledStoreModules === null && ['/salao', '/fiados', '/activities'].includes(currentNavItem?.path || '');
+    (enabledStoreModules === null && ['/salao', '/fiados', '/activities'].includes(currentNavItem?.path || ''))
+    || (menuImportEnabled === null && currentNavItem?.path === '/products/import-ai');
   const currentRouteAccessDenied =
     !currentRouteModuleLoading &&
     (
       (location.pathname.startsWith('/permissions') && user?.perfil !== 'superadmin') ||
       Boolean(currentNavItem && !canViewNavItem(currentNavItem))
     );
+  const currentRouteFeatureUnavailable =
+    currentNavItem?.path === '/products/import-ai' && menuImportEnabled === false;
   const firstAvailableRoute = visibleNavGroups[0]?.items[0]?.path || '/login';
   const handleGoToAvailableRoute = () => {
     navigate(firstAvailableRoute, { replace: true });
@@ -463,7 +488,10 @@ export function AdminLayout() {
               />
             </div>
           ) : currentRouteAccessDenied ? (
-            <RouteAccessDenied onGoHome={handleGoToAvailableRoute} />
+            <RouteAccessDenied
+              onGoHome={handleGoToAvailableRoute}
+              featureUnavailable={currentRouteFeatureUnavailable}
+            />
           ) : (
             <Outlet />
           )}
