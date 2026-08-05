@@ -544,6 +544,7 @@ export function SalaoPage() {
   const [kds, setKds] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [currentStore, setCurrentStore] = useState<any | null>(null);
+  const primaryColor = currentStore?.cor_primaria || PRIMARY;
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [creatingTable, setCreatingTable] = useState(false);
@@ -661,12 +662,14 @@ export function SalaoPage() {
       storeResult.status === "fulfilled"
         ? storeResult.value.data?.data || storeResult.value.data || {}
         : {};
-    const config =
+    const rawConfig =
       configResult.status === "fulfilled"
         ? configResult.value.data?.data || configResult.value.data || {}
         : {};
+    const config = Array.isArray(rawConfig) ? rawConfig[0] || {} : rawConfig;
     const nextStore = {
       ...store,
+      cor_primaria: config.cor_primaria || PRIMARY,
       slogan: config.slogan,
       whatsapp_suporte: config.whatsapp_suporte,
       impressao_pedido_modo:
@@ -2422,6 +2425,7 @@ export function SalaoPage() {
       className={`flex h-full min-h-0 max-w-full flex-col overflow-x-hidden bg-gray-50 ${
         salaoFullscreen ? "fixed inset-0 z-[9999]" : ""
       }`}
+      style={{ "--salao-primary": primaryColor } as CSSProperties}
     >
       <div className="border-b border-gray-200 bg-white px-2.5 py-2 lg:px-4 lg:py-0 lg:pt-2">
         <div className="lg:hidden">
@@ -2433,7 +2437,7 @@ export function SalaoPage() {
               <div className="mt-0.5 flex items-center gap-1.5">
                 <span
                   className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white shadow-sm"
-                  style={{ backgroundColor: PRIMARY }}
+                  style={{ backgroundColor: primaryColor }}
                 >
                   <ActiveSalaoTabIcon className="h-4 w-4" />
                 </span>
@@ -2453,7 +2457,7 @@ export function SalaoPage() {
                 onClick={() => void loadAll({ manual: true, includeProducts: true })}
                 disabled={loading || refreshing}
                 className="inline-flex h-8 w-8 items-center justify-center rounded-full text-white shadow-sm disabled:opacity-45"
-                style={{ backgroundColor: PRIMARY }}
+                style={{ backgroundColor: primaryColor }}
                 aria-label={loading || refreshing ? "Atualizando salão" : "Atualizar salão"}
               >
                 <RefreshCw
@@ -2468,7 +2472,7 @@ export function SalaoPage() {
                     ? "border-transparent text-white"
                     : "border-slate-200 bg-white text-slate-600"
                 }`}
-                style={salaoFullscreen ? { backgroundColor: PRIMARY } : undefined}
+                style={salaoFullscreen ? { backgroundColor: primaryColor } : undefined}
                 title={salaoFullscreen ? "Sair da tela cheia" : `Abrir ${activeSalaoTab.label} em tela cheia`}
                 aria-label={salaoFullscreen ? "Sair da tela cheia" : `Abrir ${activeSalaoTab.label} em tela cheia`}
                 aria-pressed={salaoFullscreen}
@@ -2502,7 +2506,7 @@ export function SalaoPage() {
                 step={activeCardScaleStep}
                 value={activeCardScale}
                 onChange={(event) => handleCardScaleChange(event.target.value)}
-                className="h-1.5 w-28 accent-[#122a4c]"
+                className="h-1.5 w-28 accent-[var(--salao-primary)]"
                 aria-label={activeCardScaleLabel}
               />
               <span className="w-9 text-right text-[11px] font-extrabold text-slate-600">
@@ -2519,7 +2523,7 @@ export function SalaoPage() {
           {kdsFullscreen && (
             <div
               className="inline-flex min-h-12 shrink-0 items-center gap-2 px-1 text-sm font-bold"
-              style={{ color: PRIMARY }}
+              style={{ color: primaryColor }}
             >
               <ChefHat className="h-4 w-4" />
               KDS
@@ -2544,7 +2548,7 @@ export function SalaoPage() {
                     : "border-transparent text-gray-500 hover:text-gray-800"
                 }`}
                 style={
-                  active ? { borderBottomColor: PRIMARY, color: PRIMARY } : undefined
+                  active ? { borderBottomColor: primaryColor, color: primaryColor } : undefined
                 }
               >
                 {active && (
@@ -2553,14 +2557,14 @@ export function SalaoPage() {
                       aria-hidden="true"
                       className="pointer-events-none absolute inset-x-0 bottom-0 h-7"
                       style={{
-                        background: `linear-gradient(to top, ${hexToRgba(PRIMARY, 0.13)} 0%, ${hexToRgba(PRIMARY, 0.055)} 38%, ${hexToRgba(PRIMARY, 0)} 100%)`,
+                        background: `linear-gradient(to top, ${hexToRgba(primaryColor, 0.13)} 0%, ${hexToRgba(primaryColor, 0.055)} 38%, ${hexToRgba(primaryColor, 0)} 100%)`,
                       }}
                     />
                     <span
                       aria-hidden="true"
                       className="pointer-events-none absolute inset-x-3 bottom-0 h-1 blur-md"
                       style={{
-                        backgroundColor: hexToRgba(PRIMARY, 0.22),
+                        backgroundColor: hexToRgba(primaryColor, 0.22),
                       }}
                     />
                   </>
@@ -2598,7 +2602,7 @@ export function SalaoPage() {
               }`}
               style={
                 salaoSoundEnabled && !hasPendingCustomerAttention
-                  ? { backgroundColor: PRIMARY }
+                  ? { backgroundColor: primaryColor }
                   : undefined
               }
               title={
@@ -2631,7 +2635,7 @@ export function SalaoPage() {
               onClick={() => void loadAll({ manual: true, includeProducts: true })}
               disabled={loading || refreshing}
               className="relative inline-flex h-9 w-9 flex-none items-center justify-center rounded-full text-white shadow-sm transition-all hover:opacity-90 disabled:cursor-default disabled:opacity-45"
-              style={{ backgroundColor: PRIMARY }}
+              style={{ backgroundColor: primaryColor }}
               title={loading || refreshing ? "Atualizando..." : "Atualizar"}
               aria-label={loading || refreshing ? "Atualizando salão" : "Atualizar salão"}
             >
@@ -2647,7 +2651,7 @@ export function SalaoPage() {
                   ? "border-transparent text-white"
                   : "border-gray-200 bg-white text-gray-600 hover:text-gray-900"
               }`}
-              style={salaoFullscreen ? { backgroundColor: PRIMARY } : undefined}
+              style={salaoFullscreen ? { backgroundColor: primaryColor } : undefined}
               title={salaoFullscreen ? "Sair da tela cheia" : `Abrir ${activeSalaoTab.label} em tela cheia`}
               aria-label={salaoFullscreen ? "Sair da tela cheia" : `Abrir ${activeSalaoTab.label} em tela cheia`}
               aria-pressed={salaoFullscreen}
@@ -2677,7 +2681,7 @@ export function SalaoPage() {
                   step={activeCardScaleStep}
                   value={activeCardScale}
                   onChange={(event) => handleCardScaleChange(event.target.value)}
-                  className="h-1.5 w-full accent-[#122a4c]"
+                  className="h-1.5 w-full accent-[var(--salao-primary)]"
                   aria-label={activeCardScaleLabel}
                 />
                 <span className="w-9 text-right text-[11px] font-bold text-gray-600">
@@ -2724,7 +2728,7 @@ export function SalaoPage() {
                 onClick={() => void handleTableSearchOrCreate()}
                 disabled={creatingTable || !tableSearchQuery}
                 className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-white disabled:opacity-60 sm:min-h-12 sm:gap-2 sm:rounded-xl sm:px-4 sm:text-sm"
-                style={{ backgroundColor: PRIMARY }}
+                style={{ backgroundColor: primaryColor }}
               >
                 {creatingTable ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin sm:h-4 sm:w-4" />
@@ -2912,7 +2916,7 @@ export function SalaoPage() {
                               setCloseMesaTarget(mesa);
                             }}
                             disabled={actionBusy === `close-${mesa.comanda_aberta.id}`}
-                            className="inline-flex items-center justify-center rounded-lg bg-[#122a4c] font-bold text-white disabled:opacity-60"
+                            className="inline-flex items-center justify-center rounded-lg bg-[var(--salao-primary)] font-bold text-white disabled:opacity-60"
                             style={{
                               minHeight: 28 * tableCardScale,
                               gap: 4 * tableCardScale,
@@ -3087,7 +3091,7 @@ export function SalaoPage() {
                           }`}
                           style={
                             active
-                              ? { borderBottomColor: PRIMARY, color: PRIMARY }
+                              ? { borderBottomColor: primaryColor, color: primaryColor }
                               : undefined
                           }
                         >
@@ -3097,14 +3101,14 @@ export function SalaoPage() {
                                 aria-hidden="true"
                                 className="pointer-events-none absolute inset-x-0 bottom-0 h-7"
                                 style={{
-                                  background: `linear-gradient(to top, ${hexToRgba(PRIMARY, 0.13)} 0%, ${hexToRgba(PRIMARY, 0.055)} 38%, ${hexToRgba(PRIMARY, 0)} 100%)`,
+                                  background: `linear-gradient(to top, ${hexToRgba(primaryColor, 0.13)} 0%, ${hexToRgba(primaryColor, 0.055)} 38%, ${hexToRgba(primaryColor, 0)} 100%)`,
                                 }}
                               />
                               <span
                                 aria-hidden="true"
                                 className="pointer-events-none absolute inset-x-3 bottom-0 h-1 blur-md"
                                 style={{
-                                  backgroundColor: hexToRgba(PRIMARY, 0.22),
+                                  backgroundColor: hexToRgba(primaryColor, 0.22),
                                 }}
                               />
                             </>
@@ -3293,7 +3297,7 @@ export function SalaoPage() {
                                 })
                               }
                               disabled={!selectedMesa || Boolean(actionBusy)}
-                              className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-[#122a4c] px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
+                              className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-[var(--salao-primary)] px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
                             >
                               <ArrowRightLeft className="h-4 w-4" />
                               Transferir mesa
@@ -3564,7 +3568,7 @@ export function SalaoPage() {
                             actionBusy === `close-${selectedComanda.id}`
                           }
                           className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50 sm:min-h-12 sm:gap-2 sm:rounded-xl sm:px-4 sm:py-2 sm:text-sm"
-                          style={{ backgroundColor: PRIMARY }}
+                          style={{ backgroundColor: primaryColor }}
                         >
                           {actionBusy === `close-${selectedComanda.id}` ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
@@ -3707,7 +3711,7 @@ export function SalaoPage() {
                           !canAdminAddItems
                         }
                         className="mt-2 inline-flex min-h-9 w-full items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50 sm:mt-3 sm:min-h-12 sm:gap-2 sm:rounded-xl sm:px-4 sm:py-2 sm:text-sm"
-                        style={{ backgroundColor: PRIMARY }}
+                        style={{ backgroundColor: primaryColor }}
                       >
                         {addingItem ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
@@ -3929,7 +3933,7 @@ export function SalaoPage() {
                   onClick={() => setTab(id)}
                   className={`relative flex min-h-10 flex-col items-center justify-center gap-0.5 rounded-lg px-1.5 text-[9px] font-extrabold transition-colors ${
                     active
-                      ? "bg-[#122a4c] text-white shadow-sm"
+                      ? "bg-[var(--salao-primary)] text-white shadow-sm"
                       : "text-slate-500 hover:bg-slate-100"
                   }`}
                   aria-current={active ? "page" : undefined}
@@ -3940,7 +3944,7 @@ export function SalaoPage() {
                     <span
                       className={`absolute right-2 top-1 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-[8px] font-black ${
                         active
-                          ? "bg-white text-[#122a4c]"
+                          ? "bg-white text-[var(--salao-primary)]"
                           : "bg-amber-100 text-amber-800"
                       }`}
                     >
@@ -4242,7 +4246,7 @@ export function SalaoPage() {
               <button
                 onClick={() => void closeMesa(closeMesaTarget)}
                 disabled={Boolean(actionBusy)}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#122a4c] px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--salao-primary)] px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
               >
                 {actionBusy === `close-${closeMesaTarget.comanda_aberta?.id || closeMesaTarget.id}` && (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -4275,7 +4279,7 @@ export function SalaoPage() {
               <button
                 onClick={() => void downloadQrCode(qrDownloadMesa, true)}
                 disabled={Boolean(actionBusy)}
-                className="rounded-xl bg-[#122a4c] px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+                className="rounded-xl bg-[var(--salao-primary)] px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
               >
                 Criar e baixar novo
               </button>
@@ -4436,7 +4440,7 @@ export function SalaoPage() {
                   )
                 }
                 inputMode="decimal"
-                className="h-12 w-full rounded-xl border border-slate-200 px-3 text-base outline-none focus:border-[#122a4c]"
+                className="h-12 w-full rounded-xl border border-slate-200 px-3 text-base outline-none focus:border-[var(--salao-primary)]"
               />
             </label>
             <label className="mt-4 block">
@@ -4451,7 +4455,7 @@ export function SalaoPage() {
                   )
                 }
                 maxLength={500}
-                className="min-h-24 w-full resize-y rounded-xl border border-slate-200 p-3 text-sm outline-none focus:border-[#122a4c]"
+                className="min-h-24 w-full resize-y rounded-xl border border-slate-200 p-3 text-sm outline-none focus:border-[var(--salao-primary)]"
                 placeholder="Ex.: sem cebola, molho separado..."
               />
             </label>
@@ -4468,7 +4472,7 @@ export function SalaoPage() {
                 type="button"
                 onClick={() => void saveSimpleComandaItemEdit()}
                 disabled={actionBusy === `edit-item-${editingSimpleItem.item.id}`}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#122a4c] px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--salao-primary)] px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
               >
                 {actionBusy === `edit-item-${editingSimpleItem.item.id}` && (
                   <Loader2 className="h-4 w-4 animate-spin" />

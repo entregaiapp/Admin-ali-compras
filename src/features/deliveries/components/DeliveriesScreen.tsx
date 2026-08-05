@@ -117,6 +117,57 @@ const hexToRgba = (hex: string, alpha: number) => {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
 
+function DeliveryTabButton({
+  active,
+  count,
+  label,
+  onClick,
+  primaryColor,
+}: {
+  active: boolean;
+  count: number;
+  label: string;
+  onClick: () => void;
+  primaryColor: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={`relative isolate inline-flex min-w-32 items-center justify-center gap-2 overflow-hidden border-b-2 px-4 py-3 text-sm font-semibold transition-all duration-200 ${active ? 'text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
+      style={active ? { borderBottomColor: primaryColor, color: primaryColor } : undefined}
+    >
+      {active && (
+        <>
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-7"
+            style={{
+              background: `linear-gradient(to top, ${hexToRgba(primaryColor, 0.13)} 0%, ${hexToRgba(primaryColor, 0.055)} 38%, ${hexToRgba(primaryColor, 0)} 100%)`,
+            }}
+          />
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-3 bottom-0 h-1 blur-md"
+            style={{ backgroundColor: hexToRgba(primaryColor, 0.22) }}
+          />
+        </>
+      )}
+      <span className="relative z-10 whitespace-nowrap">{label}</span>
+      {count > 0 && (
+        <span
+          className="relative z-10 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white"
+          style={{ backgroundColor: primaryColor }}
+        >
+          {count > 99 ? '99+' : count}
+        </span>
+      )}
+    </button>
+  );
+}
+
 export function DeliveriesScreen() {
   const [routes, setRoutes] = useState<any[]>([]);
   const [periodTab, setPeriodTab] = useState<PeriodTab>('today');
@@ -178,7 +229,8 @@ export function DeliveriesScreen() {
 
     api.get(`/lojas/${user.loja_id}/configuracoes`)
       .then((res) => {
-        const config = res.data?.data || res.data;
+        const rawConfig = res.data?.data || res.data;
+        const config = Array.isArray(rawConfig) ? rawConfig[0] : rawConfig;
         if (config?.cor_primaria) setPrimaryColor(config.cor_primaria);
       })
       .catch(() => setPrimaryColor(PRIMARY));
@@ -211,6 +263,13 @@ export function DeliveriesScreen() {
     running: periodFilteredRoutes.filter(route => getRouteLabel(route) === 'Em andamento').length,
     done: periodFilteredRoutes.filter(route => getRouteLabel(route) === 'Concluída').length,
   }), [periodFilteredRoutes]);
+  const statusCounts: Record<string, number> = {
+    Todos: periodFilteredRoutes.length,
+    'Aguardando rota': stats.waiting,
+    'Rota gerada': stats.planned,
+    'Em andamento': stats.running,
+    Concluída: stats.done,
+  };
 
   const generateRoute = async (routeId: string) => {
     try {
@@ -276,73 +335,38 @@ export function DeliveriesScreen() {
     <div className="p-5 space-y-5 overflow-y-auto flex-1 h-full relative">
       {loading && (
         <div className="absolute inset-0 flex items-center justify-center bg-white/50 z-10">
-          <div className="w-8 h-8 border-4 border-gray-200 border-t-primary rounded-full animate-spin" style={{ borderColor: `${PRIMARY}40`, borderTopColor: PRIMARY }}></div>
+          <div className="w-8 h-8 border-4 border-gray-200 border-t-primary rounded-full animate-spin" style={{ borderColor: `${primaryColor}40`, borderTopColor: primaryColor }}></div>
         </div>
       )}
 
       <div className="-mx-5 -mt-5 border-b border-gray-200 bg-white px-5">
-        <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Período das entregas">
-          {periodTabs.map((period) => {
-            const active = periodTab === period.value;
-            const count = period.value === 'today'
-              ? todayRoutes.length
-              : otherRoutes.length;
-
-            return (
-              <button
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 gap-1 overflow-x-auto" role="tablist" aria-label="Período das entregas">
+            {periodTabs.map((period) => (
+              <DeliveryTabButton
                 key={period.value}
-                type="button"
-                role="tab"
-                aria-selected={active}
+                active={periodTab === period.value}
+                count={period.value === 'today' ? todayRoutes.length : otherRoutes.length}
+                label={period.label}
+                primaryColor={primaryColor}
                 onClick={() => {
                   setPeriodTab(period.value);
                   setTab('Todos');
                 }}
-                className={`relative isolate inline-flex min-w-36 items-center justify-center gap-2 overflow-hidden border-b-2 px-4 py-3 text-sm font-semibold transition-all duration-200 ${active ? 'text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
-                style={active ? { borderBottomColor: primaryColor, color: primaryColor } : undefined}
-              >
-                {active && (
-                  <>
-                    <span
-                      aria-hidden="true"
-                      className="pointer-events-none absolute inset-x-0 bottom-0 h-7"
-                      style={{
-                        background: `linear-gradient(to top, ${hexToRgba(primaryColor, 0.13)} 0%, ${hexToRgba(primaryColor, 0.055)} 38%, ${hexToRgba(primaryColor, 0)} 100%)`,
-                      }}
-                    />
-                    <span
-                      aria-hidden="true"
-                      className="pointer-events-none absolute inset-x-3 bottom-0 h-1 blur-md"
-                      style={{ backgroundColor: hexToRgba(primaryColor, 0.22) }}
-                    />
-                  </>
-                )}
-                <span className="relative z-10">{period.label}</span>
-                {count > 0 && (
-                  <span
-                    className="relative z-10 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white"
-                    style={{ backgroundColor: primaryColor }}
-                  >
-                    {count > 99 ? '99+' : count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+              />
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={fetchDeliveries}
+            disabled={loading}
+            className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border border-gray-200 px-3 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label={loading ? 'Atualizando entregas' : 'Atualizar entregas'}
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">Atualizar</span>
+          </button>
         </div>
-      </div>
-
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-gray-900 font-semibold">Entregas</h2>
-          <p className="text-sm text-gray-500 mt-0.5">Acompanhe as entregas criadas a partir dos pedidos.</p>
-        </div>
-        <button
-          onClick={fetchDeliveries}
-          className="px-3 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center gap-2"
-        >
-          <RefreshCw className="w-4 h-4" /> Atualizar
-        </button>
       </div>
 
       {periodTab === 'other' && (
@@ -400,17 +424,19 @@ export function DeliveriesScreen() {
         ))}
       </div>
 
-      <div className="flex items-center gap-2 overflow-x-auto pb-1">
-        {tabs.map(t => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className="px-4 py-1.5 rounded-full text-xs font-medium whitespace-nowrap flex-shrink-0 transition-colors"
-            style={tab === t ? { backgroundColor: PRIMARY, color: 'white' } : { backgroundColor: '#f3f4f6', color: '#6b7280' }}
-          >
-            {t}
-          </button>
-        ))}
+      <div className="-mx-5 border-y border-gray-200 bg-white px-5">
+        <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Status das entregas">
+          {tabs.map((status) => (
+            <DeliveryTabButton
+              key={status}
+              active={tab === status}
+              count={statusCounts[status] || 0}
+              label={status}
+              primaryColor={primaryColor}
+              onClick={() => setTab(status)}
+            />
+          ))}
+        </div>
       </div>
 
       <div className="space-y-3">

@@ -1,0 +1,1 @@
+import{j as r}from"./index-Bna4xhoh.js";import{M as i}from"./MyDeliveriesScreen-Ddw3yMIS.js";import"./refresh-cw-FREz5GGa.js";import"./cloud-upload-3LnJGLgD.js";import"./triangle-alert-Cmv6e_ZB.js";import"./inbox-BHo5ABYo.js";import"./map-pin-B3_G8xJ4.js";import"./clock-BxLJNG6Z.js";import"./chevron-left-CPhLyiSv.js";function f(){return r.jsx(i,{})}export{f as MyDeliveriesPage};

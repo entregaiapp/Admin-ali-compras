@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, type ReactNode } from "react";
 import {
   Store,
   Clock,
   Truck,
-  CreditCard,
   Save,
   Bell,
+  ChevronDown,
   Link as LinkIcon,
   Copy,
   CheckCircle,
@@ -15,7 +15,7 @@ import {
   MapPin,
   Plus,
   Trash2,
-  Map,
+  Map as MapIcon,
   Palette,
   Edit2,
 } from "lucide-react";
@@ -25,10 +25,53 @@ import { showSystemNotice } from '@/shared/components/SystemToast';
 import { getApiList } from '@/shared/utils/apiData';
 import { SecurityMfaPanel } from './SecurityMfaPanel';
 import { PrintingSettingsPanel, type StorePrintMode } from '@/features/printing/components/PrintingSettingsPanel';
+import { ADMIN_STORE_THEME_UPDATED_EVENT } from '@/shared/constants/uiEvents';
 
 const PRIMARY = "#122a4c";
 const TENANT_ROOT_DOMAIN = import.meta.env.VITE_TENANT_ROOT_DOMAIN || "entregaiapp.com.br";
 const WEEK_MINUTES = 7 * 24 * 60;
+
+type PaymentSettingsSection = "methods" | "gateway" | "pagarme" | "mercadopago";
+
+function SettingsAccordionSection({
+  title,
+  description,
+  open,
+  onToggle,
+  status,
+  children,
+}: {
+  title: string;
+  description: string;
+  open: boolean;
+  onToggle: () => void;
+  status?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-gray-50"
+      >
+        <span className="min-w-0">
+          <span className="block font-semibold text-gray-900">{title}</span>
+          <span className="mt-0.5 block text-sm font-normal text-gray-500">{description}</span>
+        </span>
+        <span className="flex shrink-0 items-center gap-3">
+          {status}
+          <ChevronDown
+            aria-hidden="true"
+            className={`h-5 w-5 text-gray-500 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+          />
+        </span>
+      </button>
+      {open && <div className="border-t border-gray-200 p-5">{children}</div>}
+    </section>
+  );
+}
 
 const parseScheduleTime = (value: string) => {
   const [hours, minutes] = String(value || "").split(":").map(Number);
@@ -111,6 +154,16 @@ const emptyPagarmeRecipientForm = {
   transfer_day: "0",
 };
 
+const emptyDeliveryAreaForm = {
+  nome: "",
+  bairro: "",
+  cidade: "",
+  estado: "",
+  taxa_entrega: 0,
+  tempo_estimado_minutos: 30,
+  ativa: true,
+};
+
 const sections = [
   "Dados do Mercado",
   "Horário de Funcionamento",
@@ -133,6 +186,15 @@ const mpOAuthErrorMessages: Record<string, string> = {
 
 export function SettingsScreen() {
   const [activeSection, setActiveSection] = useState("Dados do Mercado");
+  const [openPaymentSections, setOpenPaymentSections] = useState<Record<PaymentSettingsSection, boolean>>({
+    methods: true,
+    gateway: false,
+    pagarme: false,
+    mercadopago: false,
+  });
+  const [expandedScheduleDays, setExpandedScheduleDays] = useState<Set<number>>(
+    () => new Set([new Date().getDay()]),
+  );
   const [saved, setSaved] = useState(false);
   const [mpStatus, setMpStatus] = useState<any>(null);
   const [pagarmeStatus, setPagarmeStatus] = useState<any>(null);
@@ -148,16 +210,30 @@ export function SettingsScreen() {
   const [areasEntrega, setAreasEntrega] = useState<any[]>([]);
   const [loadingAreas, setLoadingAreas] = useState(false);
   const [showAreaModal, setShowAreaModal] = useState(false);
-  const [newArea, setNewArea] = useState({
-    nome: "",
-    bairro: "",
-    cidade: "",
-    estado: "",
-    taxa_entrega: 0,
-    tempo_estimado_minutos: 30,
-    ativa: true,
-  });
+  const [newArea, setNewArea] = useState({ ...emptyDeliveryAreaForm });
   const [editingAreaId, setEditingAreaId] = useState<string | null>(null);
+  const [addingNewAreaCity, setAddingNewAreaCity] = useState(false);
+
+  const togglePaymentSection = (section: PaymentSettingsSection) => {
+    setOpenPaymentSections((current) => ({ ...current, [section]: !current[section] }));
+  };
+
+  const deliveryAreaCities = useMemo(() => {
+    const cities = new Map<string, { key: string; cidade: string; estado: string }>();
+
+    areasEntrega.forEach((area) => {
+      const cidade = String(area?.cidade || "").trim();
+      const estado = String(area?.estado || "").trim().toUpperCase();
+      if (!cidade || !estado) return;
+
+      const key = `${cidade.toLocaleLowerCase("pt-BR")}|${estado}`;
+      if (!cities.has(key)) cities.set(key, { key, cidade, estado });
+    });
+
+    return Array.from(cities.values()).sort((first, second) =>
+      first.cidade.localeCompare(second.cidade, "pt-BR", { sensitivity: "base" }),
+    );
+  }, [areasEntrega]);
 
   const [formData, setFormData] = useState<any>({
     nome: "",
@@ -397,6 +473,7 @@ export function SettingsScreen() {
           formData.tempo_medio_entrega_minutos,
         ),
         whatsapp_suporte: formData.whatsapp_suporte,
+        cor_primaria: formData.cor_primaria,
         formas_pagamento: formData.formas_pagamento,
         preferencias_notificacao: formData.preferencias_notificacao,
         impressao_pedido_modo: formData.impressao_pedido_modo,
@@ -421,6 +498,10 @@ export function SettingsScreen() {
       await api.post("/horarios_funcionamento", {
         horarios: formData.horarios,
       });
+
+      window.dispatchEvent(new CustomEvent(ADMIN_STORE_THEME_UPDATED_EVENT, {
+        detail: { primaryColor: formData.cor_primaria },
+      }));
 
       setShowSuccess(true);
       setTimeout(() => {
@@ -455,6 +536,7 @@ export function SettingsScreen() {
   };
 
   const addSchedule = (day: number) => {
+    setExpandedScheduleDays((current) => new Set(current).add(day));
     setFormData((prev: any) => {
       const count = prev.horarios.filter((schedule: any) => Number(schedule.dia_semana) === day).length;
       return {
@@ -467,6 +549,15 @@ export function SettingsScreen() {
           horario_fechamento: "12:00",
         }],
       };
+    });
+  };
+
+  const toggleScheduleDay = (day: number) => {
+    setExpandedScheduleDays((current) => {
+      const next = new Set(current);
+      if (next.has(day)) next.delete(day);
+      else next.add(day);
+      return next;
     });
   };
 
@@ -722,6 +813,68 @@ export function SettingsScreen() {
     }
   };
 
+  const closeAreaModal = () => {
+    setShowAreaModal(false);
+    setEditingAreaId(null);
+    setAddingNewAreaCity(false);
+    setNewArea({ ...emptyDeliveryAreaForm });
+  };
+
+  const openNewAreaModal = () => {
+    setEditingAreaId(null);
+    setAddingNewAreaCity(deliveryAreaCities.length === 0);
+    setNewArea({ ...emptyDeliveryAreaForm });
+    setShowAreaModal(true);
+  };
+
+  const openEditAreaModal = (area: any) => {
+    const cidade = String(area.cidade || "").trim();
+    const estado = String(area.estado || "").trim().toUpperCase();
+    const cityAlreadyRegistered = deliveryAreaCities.some(
+      (city) =>
+        city.cidade.localeCompare(cidade, "pt-BR", { sensitivity: "base" }) === 0 &&
+        city.estado === estado,
+    );
+
+    setEditingAreaId(area.id);
+    setAddingNewAreaCity(!cityAlreadyRegistered);
+    setNewArea({
+      nome: area.nome || "",
+      bairro: area.bairro || "",
+      cidade,
+      estado,
+      taxa_entrega: Number(area.taxa_entrega || 0),
+      tempo_estimado_minutos: Number(area.tempo_estimado_minutos || 30),
+      ativa: area.ativa !== false,
+    });
+    setShowAreaModal(true);
+  };
+
+  const handleAreaCitySelection = (value: string) => {
+    if (value === "__new_city__") {
+      setAddingNewAreaCity(true);
+      setNewArea((current) => ({ ...current, cidade: "", estado: "" }));
+      return;
+    }
+
+    const selectedCity = deliveryAreaCities.find((city) => city.key === value);
+    setAddingNewAreaCity(false);
+    setNewArea((current) => ({
+      ...current,
+      cidade: selectedCity?.cidade || "",
+      estado: selectedCity?.estado || "",
+    }));
+  };
+
+  const selectedAreaCityKey = addingNewAreaCity
+    ? "__new_city__"
+    : deliveryAreaCities.find(
+        (city) =>
+          city.cidade.localeCompare(newArea.cidade, "pt-BR", {
+            sensitivity: "base",
+          }) === 0 && city.estado === newArea.estado,
+      )?.key || "";
+
   const handleSaveArea = async () => {
     if (!newArea.nome || !newArea.cidade || !newArea.estado) {
       showSystemNotice("Por favor, preencha o nome, cidade e estado.");
@@ -744,17 +897,7 @@ export function SettingsScreen() {
           tempo_estimado_minutos: Number(newArea.tempo_estimado_minutos),
         });
       }
-      setShowAreaModal(false);
-      setEditingAreaId(null);
-      setNewArea({
-        nome: "",
-        bairro: "",
-        cidade: "",
-        estado: "",
-        taxa_entrega: 0,
-        tempo_estimado_minutos: 30,
-        ativa: true,
-      });
+      closeAreaModal();
       loadAreasEntrega();
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 1500);
@@ -828,33 +971,48 @@ export function SettingsScreen() {
         </button>
       </div>
 
-      <div className="flex gap-5 flex-col lg:flex-row">
+      <div className="min-w-0">
         {/* Section nav */}
-        <div className="lg:w-48 flex-shrink-0">
-          <nav className="space-y-1">
-            {sections.map((s) => (
+        <nav
+          className="mb-5 flex min-w-0 gap-1 overflow-x-auto border-b border-gray-200 bg-white"
+          role="tablist"
+          aria-label="Seções das configurações da loja"
+        >
+          {sections.map((section) => {
+            const active = activeSection === section;
+
+            return (
               <button
-                key={s}
-                onClick={() => setActiveSection(s)}
-                className="w-full text-left px-3 py-2.5 rounded-lg text-sm transition-colors"
+                key={section}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setActiveSection(section)}
+                className={`relative isolate flex min-h-12 shrink-0 items-center justify-center overflow-hidden whitespace-nowrap border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${
+                  active
+                    ? "text-slate-900"
+                    : "border-transparent text-gray-500 hover:text-gray-800"
+                }`}
                 style={
-                  activeSection === s
-                    ? {
-                        backgroundColor: "#eef2f9",
-                        color: PRIMARY,
-                        fontWeight: 600,
-                      }
-                    : { color: "#6b7280" }
+                  active
+                    ? { borderBottomColor: PRIMARY, color: PRIMARY }
+                    : undefined
                 }
               >
-                {s}
+                {active && (
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-[#122a4c]/10 to-transparent"
+                  />
+                )}
+                <span className="relative z-10">{section}</span>
               </button>
-            ))}
-          </nav>
-        </div>
+            );
+          })}
+        </nav>
 
         {/* Content */}
-        <div className="flex-1 space-y-4">
+        <div className="space-y-4">
           {activeSection === "Dados do Mercado" && (
             <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
               <div className="flex items-center gap-2 mb-2">
@@ -1069,39 +1227,64 @@ export function SettingsScreen() {
               </div>
 
               <div className="space-y-4">
-                {daysOfWeek.map((dayName, day) => {
-                  const daySchedules = formData.horarios
+                 {daysOfWeek.map((dayName, day) => {
+                   const daySchedules = formData.horarios
                     .map((schedule: any, index: number) => ({ schedule, index }))
-                    .filter(({ schedule }: any) => Number(schedule.dia_semana) === day)
-                    .sort(({ schedule: first }: any, { schedule: second }: any) =>
-                      String(first.horario_abertura || "").localeCompare(String(second.horario_abertura || "")));
-                  return (
-                    <div key={day} className="rounded-xl border border-gray-200 bg-gray-50/50 p-4">
-                      <div className="mb-3 flex items-center justify-between gap-3">
-                        <div>
-                          <div className="font-semibold text-gray-800">{dayName}</div>
-                          <div className="text-xs text-gray-500">
-                            {daySchedules.filter(({ schedule }: any) => schedule.aberto).length} turno(s) ativo(s)
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => addSchedule(day)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:border-gray-300"
-                        >
-                          <Plus className="h-3.5 w-3.5" /> Adicionar turno
-                        </button>
-                      </div>
+                     .filter(({ schedule }: any) => Number(schedule.dia_semana) === day)
+                     .sort(({ schedule: first }: any, { schedule: second }: any) =>
+                       String(first.horario_abertura || "").localeCompare(String(second.horario_abertura || "")));
+                   const expanded = expandedScheduleDays.has(day);
+                   const activeSchedulesCount = daySchedules.filter(
+                     ({ schedule }: any) => schedule.aberto,
+                   ).length;
+                   return (
+                     <div key={day} className="overflow-hidden rounded-xl border border-gray-200 bg-gray-50/50">
+                       <div className="flex items-center gap-2 p-3 sm:gap-3">
+                         <button
+                           type="button"
+                           onClick={() => toggleScheduleDay(day)}
+                           className="flex min-w-0 flex-1 items-center justify-between gap-3 rounded-lg px-1 py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-[#122a4c]/30"
+                           aria-expanded={expanded}
+                           aria-controls={`schedule-day-${day}`}
+                         >
+                           <span className="min-w-0">
+                             <span className="block font-semibold text-gray-800">
+                               {dayName}
+                             </span>
+                             <span className="block text-xs text-gray-500">
+                               {daySchedules.length === 0
+                                 ? "Fechado — nenhum turno configurado"
+                                 : `${activeSchedulesCount} turno${activeSchedulesCount === 1 ? " ativo" : "s ativos"}`}
+                             </span>
+                           </span>
+                           <ChevronDown
+                             className={`h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`}
+                           />
+                         </button>
+                         <button
+                           type="button"
+                           onClick={() => addSchedule(day)}
+                           className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-xs font-semibold text-gray-700 hover:border-gray-300 sm:px-3"
+                         >
+                           <Plus className="h-3.5 w-3.5" />
+                           <span className="hidden sm:inline">Adicionar turno</span>
+                         </button>
+                       </div>
 
-                      {daySchedules.length === 0 ? (
-                        <div className="rounded-lg border border-dashed border-gray-200 bg-white px-4 py-5 text-center text-sm text-gray-500">
-                          Fechado — nenhum turno configurado.
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          {daySchedules.map(({ schedule: h, index: idx }: any) => (
-                            <div key={h.id || `${day}-${idx}`} className="grid gap-3 rounded-lg border border-gray-100 bg-white p-3 md:grid-cols-[minmax(150px,1fr)_auto_auto_auto] md:items-end">
-                              <label className="block">
+                       {expanded && (
+                         <div
+                           id={`schedule-day-${day}`}
+                           className="border-t border-gray-200 p-3 sm:p-4"
+                         >
+                           {daySchedules.length === 0 ? (
+                             <div className="rounded-lg border border-dashed border-gray-200 bg-white px-4 py-5 text-center text-sm text-gray-500">
+                               Fechado — nenhum turno configurado.
+                             </div>
+                           ) : (
+                             <div className="space-y-2">
+                               {daySchedules.map(({ schedule: h, index: idx }: any) => (
+                                 <div key={h.id || `${day}-${idx}`} className="grid gap-3 rounded-lg border border-gray-100 bg-white p-3 md:grid-cols-[minmax(150px,1fr)_auto_auto_auto] md:items-end">
+                               <label className="block">
                                 <span className="mb-1 block text-xs font-medium text-gray-500">Nome do turno</span>
                                 <input
                                   value={h.nome_turno || ""}
@@ -1127,10 +1310,12 @@ export function SettingsScreen() {
                                   <Trash2 className="h-4 w-4" />
                                 </button>
                               </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                                 </div>
+                               ))}
+                             </div>
+                           )}
+                         </div>
+                       )}
                     </div>
                   );
                 })}
@@ -1278,7 +1463,7 @@ export function SettingsScreen() {
                   </h3>
                 </div>
                 <button
-                  onClick={() => setShowAreaModal(true)}
+                  onClick={openNewAreaModal}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-medium transition-all"
                   style={{ backgroundColor: PRIMARY }}
                 >
@@ -1293,7 +1478,7 @@ export function SettingsScreen() {
                 </div>
               ) : areasEntrega.length === 0 ? (
                 <div className="text-center py-12 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                  <Map className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+                  <MapIcon className="w-10 h-10 text-gray-300 mx-auto mb-2" />
                   <p className="text-gray-500 text-sm">
                     Nenhuma área de entrega cadastrada.
                   </p>
@@ -1324,19 +1509,7 @@ export function SettingsScreen() {
                             <CheckCircle className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => {
-                              setEditingAreaId(area.id);
-                              setNewArea({
-                                nome: area.nome,
-                                bairro: area.bairro || "",
-                                cidade: area.cidade,
-                                estado: area.estado,
-                                taxa_entrega: area.taxa_entrega,
-                                tempo_estimado_minutos: area.tempo_estimado_minutos,
-                                ativa: area.ativa,
-                              });
-                              setShowAreaModal(true);
-                            }}
+                            onClick={() => openEditAreaModal(area)}
                             className="w-8 h-8 rounded-lg flex items-center justify-center bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
                             title="Editar"
                           >
@@ -1373,44 +1546,59 @@ export function SettingsScreen() {
           )}
 
           {activeSection === "Pagamentos" && (
-            <div className="bg-white border border-gray-200 rounded-xl p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <CreditCard className="w-4 h-4" style={{ color: PRIMARY }} />
-                <h3 className="font-semibold text-gray-800">
-                  Formas de Pagamento
-                </h3>
-              </div>
-              <div className="space-y-3">
-                {paymentMethods.map((method) => (
-                  <div
-                    key={method}
-                    className="flex items-center justify-between p-3 border border-gray-200 rounded-lg"
-                  >
-                    <span className="text-sm text-gray-700">{method}</span>
-                    <button
-                      onClick={() => togglePayment(method)}
-                      className="relative inline-flex h-5 w-9 rounded-full transition-colors"
-                      style={{
-                        backgroundColor: formData.formas_pagamento.includes(
-                          method,
-                        )
-                          ? PRIMARY
-                          : "#d1d5db",
-                      }}
+            <div className="space-y-4">
+              <SettingsAccordionSection
+                title="Formas de pagamento"
+                description="Defina quais opções estarão disponíveis para os clientes."
+                open={openPaymentSections.methods}
+                onToggle={() => togglePaymentSection("methods")}
+                status={(
+                  <span className="hidden rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 sm:inline-flex">
+                    {formData.formas_pagamento.length} ativas
+                  </span>
+                )}
+              >
+                <div className="space-y-3">
+                  {paymentMethods.map((method) => (
+                    <div
+                      key={method}
+                      className="flex items-center justify-between rounded-lg border border-gray-200 p-3"
                     >
-                      <span
-                        className="inline-block w-4 h-4 bg-white rounded-full shadow transition-transform mt-0.5"
+                      <span className="text-sm text-gray-700">{method}</span>
+                      <button
+                        onClick={() => togglePayment(method)}
+                        className="relative inline-flex h-5 w-9 rounded-full transition-colors"
                         style={{
-                          transform: `translateX(${formData.formas_pagamento.includes(method) ? 18 : 2}px)`,
+                          backgroundColor: formData.formas_pagamento.includes(
+                            method,
+                          )
+                            ? PRIMARY
+                            : "#d1d5db",
                         }}
-                      />
-                    </button>
-                  </div>
-                ))}
-              </div>
+                      >
+                        <span
+                          className="mt-0.5 inline-block h-4 w-4 rounded-full bg-white shadow transition-transform"
+                          style={{
+                            transform: `translateX(${formData.formas_pagamento.includes(method) ? 18 : 2}px)`,
+                          }}
+                        />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </SettingsAccordionSection>
 
-              <div className="mt-8 border-t border-gray-100 pt-6">
-                <h4 className="mb-3 text-sm font-semibold text-gray-800">Gateway para novas vendas</h4>
+              <SettingsAccordionSection
+                title="Gateway para novas vendas"
+                description="Escolha por qual integração os novos pagamentos serão processados."
+                open={openPaymentSections.gateway}
+                onToggle={() => togglePaymentSection("gateway")}
+                status={(
+                  <span className="hidden rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 sm:inline-flex">
+                    {formData.gateway_pagamento_padrao === "pagarme" ? "Stone (Pagar.me)" : "Mercado Pago"}
+                  </span>
+                )}
+              >
                 <div className="grid grid-cols-2 gap-2" role="group" aria-label="Gateway de pagamento">
                   {([
                     ["mercadopago", "Mercado Pago"],
@@ -1430,22 +1618,20 @@ export function SettingsScreen() {
                   })}
                 </div>
                 <p className="mt-2 text-xs text-gray-500">A alteração afeta apenas novos pagamentos. O histórico continua vinculado ao meio de pagamento original.</p>
-              </div>
+              </SettingsAccordionSection>
 
-              <div className="mt-8 border-t border-gray-100 pt-6">
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#00a868] text-xs font-bold text-white">ST</div>
-                    <div>
-                      <h4 className="text-sm font-semibold text-gray-800">Dados para recebimento Stone/Pagar.me</h4>
-                      <p className="text-xs text-gray-500">Cadastro do recebedor da loja, sem chaves secretas</p>
-                    </div>
-                  </div>
-                  <div className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${pagarmeStatus?.connected ? "border-green-100 bg-green-50 text-green-600" : "border-amber-100 bg-amber-50 text-amber-600"}`}>
+              <SettingsAccordionSection
+                title="Dados para recebimento Stone/Pagar.me"
+                description="Cadastre o recebedor da loja e acompanhe a validação da conta."
+                open={openPaymentSections.pagarme}
+                onToggle={() => togglePaymentSection("pagarme")}
+                status={(
+                  <span className={`hidden items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium sm:flex ${pagarmeStatus?.connected ? "border-green-100 bg-green-50 text-green-600" : "border-amber-100 bg-amber-50 text-amber-600"}`}>
                     {pagarmeStatus?.connected ? <CheckCircle className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
                     {pagarmeRecipient?.status || "Não cadastrado"}
-                  </div>
-                </div>
+                  </span>
+                )}
+              >
 
                 <div className="mb-4 grid gap-3 rounded-xl border border-gray-100 bg-gray-50 p-4 text-xs text-gray-600 md:grid-cols-3">
                   <div><span className="text-gray-400">Ambiente</span><br /><strong>{pagarmeStatus?.environment === "sandbox" ? "Sandbox" : "Produção"}</strong></div>
@@ -1590,38 +1776,27 @@ export function SettingsScreen() {
                     </button>
                   </div>
                 </div>
-              </div>
+              </SettingsAccordionSection>
 
-              <div className="mt-8 pt-6 border-t border-gray-100">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-full bg-[#009ee3] flex items-center justify-center flex-shrink-0">
-                      <span className="text-white font-bold text-xs">MP</span>
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-semibold text-gray-800">
-                        Split de Pagamentos (Mercado Pago)
-                      </h4>
-                      <p className="text-xs text-gray-500">
-                        Conecte sua conta para receber pagamentos e split
-                        automático
-                      </p>
-                    </div>
-                  </div>
-                  {loadingMp ? (
-                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-primary border-t-transparent" />
-                  ) : mpStatus?.connected ? (
-                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-50 text-green-600 text-xs font-medium border border-green-100">
+              <SettingsAccordionSection
+                title="Split de pagamentos (Mercado Pago)"
+                description="Conecte sua conta para receber pagamentos e realizar o split automático."
+                open={openPaymentSections.mercadopago}
+                onToggle={() => togglePaymentSection("mercadopago")}
+                status={loadingMp ? (
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                ) : mpStatus?.connected ? (
+                    <span className="hidden items-center gap-1.5 rounded-full border border-green-100 bg-green-50 px-2.5 py-1 text-xs font-medium text-green-600 sm:flex">
                       <CheckCircle className="w-3.5 h-3.5" />
                       Conectado
-                    </div>
+                    </span>
                   ) : (
-                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-600 text-xs font-medium border border-amber-100">
+                    <span className="hidden items-center gap-1.5 rounded-full border border-amber-100 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-600 sm:flex">
                       <XCircle className="w-3.5 h-3.5" />
                       Não conectado
-                    </div>
+                    </span>
                   )}
-                </div>
+              >
 
                 <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
                   {mpStatus?.connected ? (
@@ -1663,7 +1838,7 @@ export function SettingsScreen() {
                     </div>
                   )}
                 </div>
-              </div>
+              </SettingsAccordionSection>
             </div>
           )}
 
@@ -1732,10 +1907,10 @@ export function SettingsScreen() {
             <div className="p-6 border-b border-gray-100 flex items-center justify-between">
               <h3 className="font-bold text-gray-900 flex items-center gap-2">
                 <MapPin className="w-5 h-5 text-primary" />
-                Nova Área de Entrega
+                {editingAreaId ? "Editar Área de Entrega" : "Nova Área de Entrega"}
               </h3>
               <button
-                onClick={() => setShowAreaModal(false)}
+                onClick={closeAreaModal}
                 className="p-2 hover:bg-gray-100 rounded-full transition-colors"
               >
                 <XCircle className="w-5 h-5 text-gray-400" />
@@ -1777,14 +1952,36 @@ export function SettingsScreen() {
                   <label className="block text-xs font-semibold text-gray-400 uppercase mb-1">
                     Cidade
                   </label>
-                  <input
-                    type="text"
-                    value={newArea.cidade}
-                    onChange={(e) =>
-                      setNewArea({ ...newArea, cidade: e.target.value })
-                    }
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
-                  />
+                  <select
+                    value={selectedAreaCityKey}
+                    onChange={(event) => handleAreaCitySelection(event.target.value)}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  >
+                    <option value="" disabled>
+                      Selecione a cidade
+                    </option>
+                    {deliveryAreaCities.map((city) => (
+                      <option key={city.key} value={city.key}>
+                        {city.cidade} - {city.estado}
+                      </option>
+                    ))}
+                    <option value="__new_city__">Adicionar outra cidade...</option>
+                  </select>
+                  {addingNewAreaCity && (
+                    <input
+                      type="text"
+                      value={newArea.cidade}
+                      onChange={(event) =>
+                        setNewArea((current) => ({
+                          ...current,
+                          cidade: event.target.value,
+                        }))
+                      }
+                      className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
+                      placeholder="Digite a nova cidade"
+                      autoFocus
+                    />
+                  )}
                 </div>
               </div>
 
@@ -1797,13 +1994,18 @@ export function SettingsScreen() {
                     type="text"
                     maxLength={2}
                     value={newArea.estado}
-                    onChange={(e) =>
-                      setNewArea({
-                        ...newArea,
-                        estado: e.target.value.toUpperCase(),
-                      })
+                    onChange={(event) =>
+                      setNewArea((current) => ({
+                        ...current,
+                        estado: event.target.value.toUpperCase(),
+                      }))
                     }
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                    readOnly={!addingNewAreaCity}
+                    className={`w-full rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none transition-all ${
+                      addingNewAreaCity
+                        ? "bg-white focus:border-primary focus:ring-2 focus:ring-primary/20"
+                        : "cursor-default bg-gray-50 text-gray-500"
+                    }`}
                     placeholder="SP"
                   />
                 </div>
@@ -1844,7 +2046,7 @@ export function SettingsScreen() {
 
             <div className="p-6 bg-gray-50 border-t border-gray-100 flex gap-3">
               <button
-                onClick={() => setShowAreaModal(false)}
+                onClick={closeAreaModal}
                 className="flex-1 px-4 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-white transition-colors"
               >
                 Cancelar
@@ -1854,7 +2056,7 @@ export function SettingsScreen() {
                 className="flex-1 px-4 py-2 rounded-lg text-white text-sm font-semibold transition-all hover:brightness-110 shadow-sm"
                 style={{ backgroundColor: PRIMARY }}
               >
-                Criar Área
+                {editingAreaId ? "Salvar alterações" : "Criar Área"}
               </button>
             </div>
           </div>

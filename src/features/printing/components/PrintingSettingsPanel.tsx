@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Archive, Laptop, Link, PauseCircle, Printer, RefreshCw, TestTube2, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Archive, ChevronDown, Laptop, Link, PauseCircle, Printer, RefreshCw, TestTube2, Trash2 } from "lucide-react";
 import { showSystemNotice } from "@/shared/components/SystemToast";
 import { formatBrasiliaDate } from "@/shared/lib/dateTime";
 import api from "@/shared/lib/api";
@@ -31,6 +31,42 @@ type PrintingSettingsPanelProps = {
 
 type PrintSettingsTab = "printers" | "user-printers";
 type PrinterStatusTab = "active" | "inactive";
+type PrintingSection = "mode" | "agent" | "automation" | "printers";
+
+function PrintingAccordionSection({
+  title,
+  description,
+  open,
+  onToggle,
+  children,
+}: {
+  title: string;
+  description: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left transition-colors hover:bg-gray-50"
+      >
+        <span className="min-w-0">
+          <span className="block font-semibold text-gray-900">{title}</span>
+          <span className="mt-0.5 block text-sm font-normal text-gray-500">{description}</span>
+        </span>
+        <ChevronDown
+          aria-hidden="true"
+          className={`h-5 w-5 shrink-0 text-gray-500 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      {open && <div className="border-t border-gray-200 p-5">{children}</div>}
+    </section>
+  );
+}
 
 function safeDate(value?: string | null) {
   if (!value) return "Nunca";
@@ -135,6 +171,16 @@ export function PrintingSettingsPanel({ printMode, onPrintModeChange }: Printing
   const [activeTab, setActiveTab] = useState<PrintSettingsTab>("printers");
   const [printerStatusTab, setPrinterStatusTab] = useState<PrinterStatusTab>("active");
   const [showArchivedAgents, setShowArchivedAgents] = useState(false);
+  const [openSections, setOpenSections] = useState<Record<PrintingSection, boolean>>({
+    mode: true,
+    agent: false,
+    automation: false,
+    printers: false,
+  });
+
+  const toggleSection = (section: PrintingSection) => {
+    setOpenSections((current) => ({ ...current, [section]: !current[section] }));
+  };
 
   const activeAgents = useMemo(() => agents.filter((agent) => !agent.revoked_at), [agents]);
   const archivedAgents = useMemo(() => agents.filter((agent) => agent.revoked_at), [agents]);
@@ -254,13 +300,13 @@ export function PrintingSettingsPanel({ printMode, onPrintModeChange }: Printing
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-gray-200 bg-white p-5">
-        <h3 className="font-semibold text-gray-900">Modo de impressão dos pedidos</h3>
-        <p className="mt-1 text-sm text-gray-500">
-          Escolha como o botão Imprimir do pedido deve funcionar no Admin.
-        </p>
-
-        <div className="mt-4 grid gap-3">
+      <PrintingAccordionSection
+        title="Modo de impressão dos pedidos"
+        description="Escolha como o botão Imprimir do pedido deve funcionar no Admin."
+        open={openSections.mode}
+        onToggle={() => toggleSection("mode")}
+      >
+        <div className="grid gap-3">
           {[
             {
               value: "agent_com_fallback" as StorePrintMode,
@@ -298,15 +344,16 @@ export function PrintingSettingsPanel({ printMode, onPrintModeChange }: Printing
             </label>
           ))}
         </div>
-      </div>
+      </PrintingAccordionSection>
 
-      <div className="rounded-xl border border-gray-200 bg-white p-5">
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h3 className="font-semibold text-gray-900">Entregaí Print Agent</h3>
-            <p className="text-sm text-gray-500">Computadores vinculados para impressão silenciosa da loja.</p>
-          </div>
-          <div className="flex gap-2">
+      <PrintingAccordionSection
+        title="Entregaí Print Agent"
+        description="Computadores vinculados para impressão silenciosa da loja."
+        open={openSections.agent}
+        onToggle={() => toggleSection("agent")}
+      >
+        <div className="mb-4 flex justify-end">
+          <div className="flex flex-wrap justify-end gap-2">
             <button type="button" onClick={() => void load()} className="inline-flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700">
               <RefreshCw className="h-4 w-4" />
               Atualizar
@@ -424,14 +471,15 @@ export function PrintingSettingsPanel({ printMode, onPrintModeChange }: Printing
             )}
           </div>
         )}
-      </div>
+      </PrintingAccordionSection>
 
-      <div className="rounded-xl border border-gray-200 bg-white p-5">
-        <h3 className="font-semibold text-gray-900">Automação de pedidos</h3>
-        <p className="mt-1 text-sm text-gray-500">
-          A automação usa apenas pedidos com pagamento online confirmado pelo backend.
-        </p>
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
+      <PrintingAccordionSection
+        title="Automação de pedidos"
+        description="A automação usa apenas pedidos com pagamento online confirmado pelo backend."
+        open={openSections.automation}
+        onToggle={() => toggleSection("automation")}
+      >
+        <div className="grid gap-3 md:grid-cols-2">
           {(["delivery", "retirada"] as PrintAutomationSetting["source"][]).map((source) => {
             const setting = automationSettings.find((item) => item.source === source) || {
               source,
@@ -463,9 +511,15 @@ export function PrintingSettingsPanel({ printMode, onPrintModeChange }: Printing
             );
           })}
         </div>
-      </div>
+      </PrintingAccordionSection>
 
-      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+      <PrintingAccordionSection
+        title="Impressoras conectadas"
+        description="Gerencie as impressoras detectadas pelo Print Agent e as preferências por usuário."
+        open={openSections.printers}
+        onToggle={() => toggleSection("printers")}
+      >
+        <div className="-m-5 overflow-hidden">
         <div className="border-b border-gray-200 px-4">
           <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Configurações de impressoras">
             <PrintTabButton
@@ -485,11 +539,7 @@ export function PrintingSettingsPanel({ printMode, onPrintModeChange }: Printing
 
         {activeTab === "printers" && (
           <div className="p-5">
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h3 className="font-semibold text-gray-900">Impressoras conectadas</h3>
-                <p className="text-sm text-gray-500">Gerencie as impressoras detectadas pelo Print Agent.</p>
-              </div>
+            <div className="mb-4 flex justify-end">
               <div className="flex gap-2 overflow-x-auto" role="tablist" aria-label="Status das impressoras">
                 <PrintTabButton
                   active={printerStatusTab === "active"}
@@ -625,7 +675,8 @@ export function PrintingSettingsPanel({ printMode, onPrintModeChange }: Printing
             )}
           </div>
         )}
-      </div>
+        </div>
+      </PrintingAccordionSection>
     </div>
   );
 }

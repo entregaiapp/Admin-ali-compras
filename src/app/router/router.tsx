@@ -1,32 +1,19 @@
+import type { ComponentType } from "react";
 import { createBrowserRouter, Navigate } from "react-router";
 import { AdminLayout } from "@/app/layouts/AdminLayout";
 import { AuthLayout } from "@/app/layouts/AuthLayout";
 import { DriverLayout } from "@/app/layouts/DriverLayout";
 import { RootLayout } from "@/app/layouts/RootLayout";
-import { LoginPage } from "@/pages/Login/LoginPage";
-import { DashboardPage } from "@/pages/Dashboard/DashboardPage";
-import { OrdersPage } from "@/pages/Orders/OrdersPage";
-import { ProductsPage } from "@/pages/Products/ProductsPage";
-import { ProductCsvImportPage } from "@/pages/Products/ProductCsvImportPage";
-import { MenuImportPage } from "@/pages/Products/MenuImportPage";
-import { CategoriesPage } from "@/pages/Categories/CategoriesPage";
-import { PromotionsPage } from "@/pages/Promotions/PromotionsPage";
-import { BannersPage } from "@/pages/Banners/BannersPage";
-import { CustomersPage } from "@/pages/Customers/CustomersPage";
-import { DeliveriesPage } from "@/pages/Deliveries/DeliveriesPage";
-import { CouponsPage } from "@/pages/Coupons/CouponsPage";
-import { PaymentsPage } from "@/pages/Payments/PaymentsPage";
-import { FiadosPage } from "@/pages/Fiados/FiadosPage";
-import { CashPage } from "@/pages/Cash/CashPage";
-import { ReportsPage } from "@/pages/Reports/ReportsPage";
-import { UsersPage } from "@/pages/Users/UsersPage";
-import { SystemPermissionsPage } from "@/pages/SystemPermissions/SystemPermissionsPage";
-import { SettingsPage } from "@/pages/Settings/SettingsPage";
-import { EntregadoresPage } from "@/pages/Entregadores/EntregadoresPage";
-import { MyDeliveriesPage } from "@/pages/Driver/MyDeliveriesPage";
-import { RouteDetailPage } from "@/pages/Driver/RouteDetailPage";
-import { SalaoPage } from "@/pages/Salao/SalaoPage";
-import { AuditLogsPage } from "@/pages/AuditLogs/AuditLogsPage";
+
+type PageModule = Record<string, ComponentType>;
+
+const lazyPage = (
+  importer: () => Promise<PageModule>,
+  exportName: string,
+) => async () => {
+  const pageModule = await importer();
+  return { Component: pageModule[exportName] };
+};
 
 export const router = createBrowserRouter([
   {
@@ -35,16 +22,34 @@ export const router = createBrowserRouter([
       {
         Component: AuthLayout,
         children: [
-          { path: "/login", Component: LoginPage },
-          { path: "/reset-password", Component: LoginPage },
+          {
+            path: "/login",
+            lazy: lazyPage(() => import("@/pages/Login/LoginPage"), "LoginPage"),
+          },
+          {
+            path: "/reset-password",
+            lazy: lazyPage(() => import("@/pages/Login/LoginPage"), "LoginPage"),
+          },
         ],
       },
       {
         path: "/driver",
         Component: DriverLayout,
         children: [
-          { index: true, element: <MyDeliveriesPage /> },
-          { path: "route/:id", Component: RouteDetailPage },
+          {
+            index: true,
+            lazy: lazyPage(
+              () => import("@/pages/Driver/MyDeliveriesPage"),
+              "MyDeliveriesPage",
+            ),
+          },
+          {
+            path: "route/:id",
+            lazy: lazyPage(
+              () => import("@/pages/Driver/RouteDetailPage"),
+              "RouteDetailPage",
+            ),
+          },
         ],
       },
       {
@@ -52,41 +57,173 @@ export const router = createBrowserRouter([
         Component: AdminLayout,
         children: [
           { index: true, element: <Navigate to="/dashboard" replace /> },
-          { path: "dashboard", Component: DashboardPage },
-          { path: "orders", Component: OrdersPage },
-          { path: "pedidos", Component: OrdersPage },
-          { path: "salao", Component: SalaoPage },
-          { path: "products", Component: ProductsPage },
-          { path: "produtos", Component: ProductsPage },
-          { path: "products/import", Component: ProductCsvImportPage },
-          { path: "products/import-ai", Component: MenuImportPage },
+          {
+            path: "dashboard",
+            lazy: lazyPage(
+              () => import("@/pages/Dashboard/DashboardPage"),
+              "DashboardPage",
+            ),
+          },
+          {
+            path: "orders",
+            lazy: lazyPage(() => import("@/pages/Orders/OrdersPage"), "OrdersPage"),
+          },
+          {
+            path: "pedidos",
+            lazy: lazyPage(() => import("@/pages/Orders/OrdersPage"), "OrdersPage"),
+          },
+          {
+            path: "salao",
+            lazy: lazyPage(() => import("@/pages/Salao/SalaoPage"), "SalaoPage"),
+          },
+          {
+            path: "products",
+            lazy: lazyPage(
+              () => import("@/pages/Products/ProductsPage"),
+              "ProductsPage",
+            ),
+          },
+          {
+            path: "produtos",
+            lazy: lazyPage(
+              () => import("@/pages/Products/ProductsPage"),
+              "ProductsPage",
+            ),
+          },
+          {
+            path: "products/import",
+            lazy: lazyPage(
+              () => import("@/pages/Products/ProductCsvImportPage"),
+              "ProductCsvImportPage",
+            ),
+          },
+          {
+            path: "products/import-ai",
+            lazy: lazyPage(
+              () => import("@/pages/Products/MenuImportPage"),
+              "MenuImportPage",
+            ),
+          },
           { path: "products-import", element: <Navigate to="/products/import" replace /> },
           { path: "importar-produtos", element: <Navigate to="/products/import" replace /> },
-          { path: "categories", Component: CategoriesPage },
-          { path: "categorias", Component: CategoriesPage },
-          { path: "promotions", Component: PromotionsPage },
-          { path: "banners", Component: BannersPage },
-          { path: "customers", Component: CustomersPage },
-          { path: "clientes", Component: CustomersPage },
-          { path: "deliveries", Component: DeliveriesPage },
-          { path: "coupons", Component: CouponsPage },
-          { path: "payments", Component: PaymentsPage },
-          { path: "cash", Component: CashPage },
-          { path: "caixa", Component: CashPage },
-          { path: "fiados", Component: FiadosPage },
-          { path: "reports", Component: ReportsPage },
-          { path: "users", Component: UsersPage },
-          { path: "activities", Component: AuditLogsPage },
-          { path: "permissions", Component: SystemPermissionsPage },
-          { path: "settings", Component: SettingsPage },
-          { path: "configuracoes", Component: SettingsPage },
-          { path: "entregadores", Component: EntregadoresPage },
+          {
+            path: "categories",
+            lazy: lazyPage(
+              () => import("@/pages/Categories/CategoriesPage"),
+              "CategoriesPage",
+            ),
+          },
+          {
+            path: "categorias",
+            lazy: lazyPage(
+              () => import("@/pages/Categories/CategoriesPage"),
+              "CategoriesPage",
+            ),
+          },
+          {
+            path: "promotions",
+            lazy: lazyPage(
+              () => import("@/pages/Promotions/PromotionsPage"),
+              "PromotionsPage",
+            ),
+          },
+          {
+            path: "banners",
+            lazy: lazyPage(() => import("@/pages/Banners/BannersPage"), "BannersPage"),
+          },
+          {
+            path: "customers",
+            lazy: lazyPage(
+              () => import("@/pages/Customers/CustomersPage"),
+              "CustomersPage",
+            ),
+          },
+          {
+            path: "clientes",
+            lazy: lazyPage(
+              () => import("@/pages/Customers/CustomersPage"),
+              "CustomersPage",
+            ),
+          },
+          {
+            path: "deliveries",
+            lazy: lazyPage(
+              () => import("@/pages/Deliveries/DeliveriesPage"),
+              "DeliveriesPage",
+            ),
+          },
+          {
+            path: "coupons",
+            lazy: lazyPage(() => import("@/pages/Coupons/CouponsPage"), "CouponsPage"),
+          },
+          {
+            path: "payments",
+            lazy: lazyPage(
+              () => import("@/pages/Payments/PaymentsPage"),
+              "PaymentsPage",
+            ),
+          },
+          {
+            path: "cash",
+            lazy: lazyPage(() => import("@/pages/Cash/CashPage"), "CashPage"),
+          },
+          {
+            path: "caixa",
+            lazy: lazyPage(() => import("@/pages/Cash/CashPage"), "CashPage"),
+          },
+          {
+            path: "fiados",
+            lazy: lazyPage(() => import("@/pages/Fiados/FiadosPage"), "FiadosPage"),
+          },
+          {
+            path: "reports",
+            lazy: lazyPage(() => import("@/pages/Reports/ReportsPage"), "ReportsPage"),
+          },
+          {
+            path: "users",
+            lazy: lazyPage(() => import("@/pages/Users/UsersPage"), "UsersPage"),
+          },
+          {
+            path: "activities",
+            lazy: lazyPage(
+              () => import("@/pages/AuditLogs/AuditLogsPage"),
+              "AuditLogsPage",
+            ),
+          },
+          {
+            path: "permissions",
+            lazy: lazyPage(
+              () => import("@/pages/SystemPermissions/SystemPermissionsPage"),
+              "SystemPermissionsPage",
+            ),
+          },
+          {
+            path: "settings",
+            lazy: lazyPage(
+              () => import("@/pages/Settings/SettingsPage"),
+              "SettingsPage",
+            ),
+          },
+          {
+            path: "configuracoes",
+            lazy: lazyPage(
+              () => import("@/pages/Settings/SettingsPage"),
+              "SettingsPage",
+            ),
+          },
+          {
+            path: "entregadores",
+            lazy: lazyPage(
+              () => import("@/pages/Entregadores/EntregadoresPage"),
+              "EntregadoresPage",
+            ),
+          },
           {
             path: "notifications",
-            lazy: async () => {
-              const { NotificationsPage } = await import("@/pages/Notifications/NotificationsPage");
-              return { Component: NotificationsPage };
-            },
+            lazy: lazyPage(
+              () => import("@/pages/Notifications/NotificationsPage"),
+              "NotificationsPage",
+            ),
           },
         ],
       },

@@ -6,6 +6,7 @@ type CompactOrderStatusTimelineProps = {
   order: any;
   primaryColor?: string;
   confirmationPending?: boolean;
+  comfortable?: boolean;
 };
 
 const COMPACT_LABELS: Record<string, string> = {
@@ -41,6 +42,7 @@ export function CompactOrderStatusTimeline({
   order,
   primaryColor = PRIMARY,
   confirmationPending = false,
+  comfortable = false,
 }: CompactOrderStatusTimelineProps) {
   if (getOrderType(order) === "salao") return null;
 
@@ -49,7 +51,7 @@ export function CompactOrderStatusTimeline({
   if (normalizedStatus === "cancelado") {
     return (
       <div
-        className="mt-2 flex max-w-md items-center gap-1.5 text-[9px] font-semibold text-red-700"
+        className={`${comfortable ? "w-full text-xs" : "mt-2 max-w-md text-[9px]"} flex items-center gap-1.5 font-semibold text-red-700`}
         aria-label="Progresso do pedido: cancelado"
       >
         <CircleX className="h-3.5 w-3.5 shrink-0 text-red-600" />
@@ -67,7 +69,7 @@ export function CompactOrderStatusTimeline({
 
   return (
     <div
-      className="mt-2 grid max-w-md"
+      className={`${comfortable ? "w-full" : "mt-2 max-w-md"} grid`}
       style={{ gridTemplateColumns: `repeat(${visibleFlow.length}, minmax(0, 1fr))` }}
       aria-label={`Progresso do pedido: ${currentStatus}`}
     >
@@ -84,7 +86,7 @@ export function CompactOrderStatusTimeline({
           <div key={status} className="relative flex min-w-0 flex-col items-center">
             {index < visibleFlow.length - 1 && (
               <span
-                className="absolute left-1/2 top-[6px] h-px w-full -translate-y-1/2"
+                className={`absolute left-1/2 h-px w-full -translate-y-1/2 ${comfortable ? "top-2" : "top-[6px]"}`}
                 style={{
                   backgroundColor: connectorReached
                     ? connectorFailed ? "#dc2626" : primaryColor
@@ -95,7 +97,7 @@ export function CompactOrderStatusTimeline({
             )}
 
             <span
-              className="relative z-[1] flex h-3 w-3 shrink-0 items-center justify-center rounded-full"
+              className={`relative z-[1] flex shrink-0 items-center justify-center rounded-full ${comfortable ? "h-4 w-4" : "h-3 w-3"}`}
               style={{
                 backgroundColor: isPendingConfirmation ? "#f59e0b" : "#ffffff",
                 ...(isCurrent
@@ -109,21 +111,21 @@ export function CompactOrderStatusTimeline({
               aria-hidden="true"
             >
               {isFailed ? (
-                <CircleX className="h-3 w-3 fill-red-600 text-white" />
+                <CircleX className={`${comfortable ? "h-4 w-4" : "h-3 w-3"} fill-red-600 text-white`} />
               ) : isPendingConfirmation ? (
-                <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                <span className={`${comfortable ? "h-2 w-2" : "h-1.5 w-1.5"} rounded-full bg-white`} />
               ) : isReached ? (
                 <CheckCircle2
-                  className="h-3 w-3 text-white"
+                  className={`${comfortable ? "h-4 w-4" : "h-3 w-3"} text-white`}
                   style={{ fill: primaryColor }}
                 />
               ) : (
-                <span className="h-2 w-2 rounded-full bg-gray-300" />
+                <span className={`${comfortable ? "h-2.5 w-2.5" : "h-2 w-2"} rounded-full bg-gray-300`} />
               )}
             </span>
 
             <span
-              className={`mt-1 w-full truncate px-0.5 text-center text-[8px] leading-none ${
+              className={`${comfortable ? "mt-1.5 text-[10px] leading-tight" : "mt-1 text-[8px] leading-none"} w-full truncate px-0.5 text-center ${
                 isCurrent
                   ? isFailed
                     ? "font-semibold text-red-700"

@@ -1,53 +1,32 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import type { MouseEvent } from "react";
+import { lazy, Suspense, useState, useEffect, useMemo, useRef } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { useSearchParams } from "react-router";
 import {
-  Search,
-  Bell,
-  BellOff,
   Eye,
   X,
-  Phone,
   MapPin,
-  CreditCard,
   User,
   Package,
   ArrowLeft,
-  CircleX,
   CheckCircle2,
-  MessageCircle,
   Printer,
-  List,
   Archive,
   CalendarDays,
-  Map as MapIcon,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   TruckIcon,
   Navigation,
   Loader2,
-  RefreshCw,
   AlertTriangle,
-  RotateCcw,
-  Store,
-  Plus,
-  Pencil,
-  Trash2,
-  SlidersHorizontal,
-  Maximize2,
-  Minimize2,
 } from "lucide-react";
 import api from "@/shared/lib/api";
-import { formatBrasiliaDate } from "@/shared/lib/dateTime";
 import {
-  allStatuses,
   bairroColors,
   CREATE_ORDER_SHORTCUT_PARAM,
   frontendToBackendStatus,
   PRIMARY,
   statusColor,
-  statusFlow,
   statusLabels,
 } from "@/features/orders/constants";
 import {
@@ -68,8 +47,6 @@ import {
   getApiErrorMessage,
   getApiList,
   getBackendStatus,
-  getOrderAddress,
-  getOrderItemConfigurationLines,
   getOrderItemChecklistId,
   getOrderItemName,
   getOrderItemQuantity,
@@ -88,20 +65,18 @@ import {
   isOrderPaid,
   isOrderPendingCash,
 } from "@/features/orders/utils/orderUtils";
-import { DeliveryAssignmentModal } from "@/features/orders/components/DeliveryAssignmentModal";
-import { OrderItemsChecklistModal } from "@/features/orders/components/OrderItemsChecklistModal";
-import { ManualDeliveryOrderModal } from "@/features/orders/components/ManualDeliveryOrderModal";
-import { AddOrderItemsModal } from "@/features/orders/components/AddOrderItemsModal";
-import { EditOrderItemModal } from "@/features/orders/components/EditOrderItemModal";
-import { PendingPaymentMethodModal } from "@/features/orders/components/PendingPaymentMethodModal";
-import { RetryDeliveryFeeModal } from "@/features/orders/components/RetryDeliveryFeeModal";
-import { DeliveryToPickupModal } from "@/features/orders/components/DeliveryToPickupModal";
 import { CompactOrderStatusTimeline } from "@/features/orders/components/CompactOrderStatusTimeline";
+import { OrdersToolbar } from "@/features/orders/components/OrdersToolbar";
+import { OrderListRows } from "@/features/orders/components/OrderListRows";
+import { OrderDetailsTimeline } from "@/features/orders/components/OrderDetailsTimeline";
+import { OrderCustomerDetailsCard } from "@/features/orders/components/OrderCustomerDetailsCard";
+import { OrderItemsCard } from "@/features/orders/components/OrderItemsCard";
+import { OrderPaymentCard } from "@/features/orders/components/OrderPaymentCard";
+import { OrderDetailsHeader } from "@/features/orders/components/OrderDetailsHeader";
 import {
-  ComandaPrintModeModal,
-  DisconnectedPrinterModal,
-  KitchenPrintSelectionModal,
-} from "@/features/orders/components/ComandaPrintModals";
+  OrderDetailsActions,
+  OrderDetailsStickyAction,
+} from "@/features/orders/components/OrderDetailsActions";
 import { showSystemNotice, systemToast } from "@/shared/components/SystemToast";
 import { ADMIN_COLLAPSE_SIDEBAR_EVENT } from "@/shared/constants/uiEvents";
 import {
@@ -130,7 +105,6 @@ import {
   getResumeAlertFromReadiness,
   type PrintAgentResumeAlert,
 } from "@/features/printing/utils/printAvailability";
-import { AdminPixChargePanel } from "@/features/adminPixCharges/components/AdminPixChargePanel";
 import { adminPixChargeService } from "@/features/adminPixCharges/services/adminPixChargeService";
 import type { AdminPixCharge } from "@/features/adminPixCharges/types/adminPixCharge";
 import {
@@ -138,574 +112,131 @@ import {
   usePersistentAttentionSound,
 } from "@/shared/hooks/usePersistentAttentionSound";
 
-const getWhatsappPhone = (phone: any) => {
-  const digits = String(phone || "").replace(/\D/g, "");
-  if (digits.length < 10) return null;
-  return digits.startsWith("55") ? digits : `55${digits}`;
-};
+import {
+  buildWhatsappUrl,
+  getListGroupAccentColor,
+  getOrderCustomerPhone,
+  getCancellationRequest,
+  hasPendingCancellationRequest,
+  parseCurrencyInput,
+  parseCurrencyNumber,
+  formatCurrency,
+  getPaymentSplitGroupId,
+  getReceiptInitialMethods,
+  getOrderPaymentMethodsLabel,
+  getDailyTicketNumber,
+  firstPresent,
+  normalizePaymentText,
+  isCardOnDeliveryPayment,
+  calculateMissingItemsRefundAfterDiscount,
+  formatCashChangeInfo,
+  getOrderEmbeddedPayments,
+  getCashChangeStatusLabel,
+  hasPendingPaymentForDisplay,
+  canOrderProceedForFulfillment,
+  ACTIVE_WORK_STATUS_KEYS,
+  REFUND_ACTIVE_STATUSES,
+  ORDER_TABS,
+  type OrderTab,
+  type OperationalTabCache,
+  OPERATIONAL_TAB_DEFINITIONS,
+  EMPTY_OPERATIONAL_AVAILABILITY,
+  type ArchivedOrderTypeFilter,
+  type ArchivedDailySummary,
+  getPreferredArchivedDayKey,
+  type OrderType,
+  type OrderCounterKey,
+  type QuickOrderFilter,
+  getOrderType,
+  canTakeSalaoOrderToTable,
+  canForceFinalizeOrder,
+  canQuickArchiveOrder,
+  EMPTY_ADMIN_ORDER_ADDRESS,
+  normalizeDeliveryArea,
+  getDeliveryAreaLabel,
+  getOrderCreatedTimestamp,
+  getArchivedOrderTimestamp,
+  getValidDate,
+  getDateKey,
+  formatArchivedDayLabel,
+  formatArchivedDayDescription,
+  canSelectOrderForDeliveryAssignment,
+  isAppOrderAwaitingPrint,
+} from "@/features/orders/utils/ordersScreenUtils";
+import { OrderCustomerSummary } from "@/features/orders/components/OrderCustomerSummary";
 
-const buildWhatsappUrl = (phone: any, message: string) => {
-  const normalizedPhone = getWhatsappPhone(phone);
-  if (!normalizedPhone) return null;
-  return `https://wa.me/${normalizedPhone}?text=${encodeURIComponent(message)}`;
-};
+const ManualDeliveryOrderModal = lazy(() =>
+  import("@/features/orders/components/ManualDeliveryOrderModal").then(
+    ({ ManualDeliveryOrderModal: Component }) => ({ default: Component }),
+  ),
+);
+const AddOrderItemsModal = lazy(() =>
+  import("@/features/orders/components/AddOrderItemsModal").then(
+    ({ AddOrderItemsModal: Component }) => ({ default: Component }),
+  ),
+);
+const EditOrderItemModal = lazy(() =>
+  import("@/features/orders/components/EditOrderItemModal").then(
+    ({ EditOrderItemModal: Component }) => ({ default: Component }),
+  ),
+);
+const PendingPaymentMethodModal = lazy(() =>
+  import("@/features/orders/components/PendingPaymentMethodModal").then(
+    ({ PendingPaymentMethodModal: Component }) => ({ default: Component }),
+  ),
+);
+const RetryDeliveryFeeModal = lazy(() =>
+  import("@/features/orders/components/RetryDeliveryFeeModal").then(
+    ({ RetryDeliveryFeeModal: Component }) => ({ default: Component }),
+  ),
+);
+const DeliveryToPickupModal = lazy(() =>
+  import("@/features/orders/components/DeliveryToPickupModal").then(
+    ({ DeliveryToPickupModal: Component }) => ({ default: Component }),
+  ),
+);
+const DeliveryAssignmentModal = lazy(() =>
+  import("@/features/orders/components/DeliveryAssignmentModal").then(
+    ({ DeliveryAssignmentModal: Component }) => ({ default: Component }),
+  ),
+);
+const OrderItemsChecklistModal = lazy(() =>
+  import("@/features/orders/components/OrderItemsChecklistModal").then(
+    ({ OrderItemsChecklistModal: Component }) => ({ default: Component }),
+  ),
+);
+const ComandaPrintModeModal = lazy(() =>
+  import("@/features/orders/components/ComandaPrintModals").then(
+    ({ ComandaPrintModeModal: Component }) => ({ default: Component }),
+  ),
+);
+const DisconnectedPrinterModal = lazy(() =>
+  import("@/features/orders/components/ComandaPrintModals").then(
+    ({ DisconnectedPrinterModal: Component }) => ({ default: Component }),
+  ),
+);
+const KitchenPrintSelectionModal = lazy(() =>
+  import("@/features/orders/components/ComandaPrintModals").then(
+    ({ KitchenPrintSelectionModal: Component }) => ({ default: Component }),
+  ),
+);
 
-const getListGroupAccentColor = (groupKey: string) => {
-  const colors: Record<string, string> = {
-    falta_imprimir: "#dc2626",
-    andamento: "#2563eb",
-    cancelamentos: "#dc2626",
-    saiu_para_entrega: statusColor.saiu_para_entrega?.text || "#ea580c",
-    entregues: statusColor.entregue?.text || "#16a34a",
-    entregues_aguardando_pagamento: "#d97706",
-    nao_entregues: statusColor.nao_entregue?.text || "#dc2626",
-    cancelados: statusColor.cancelado?.text || "#dc2626",
-  };
-
-  return colors[groupKey] || PRIMARY;
-};
-
-const getOrderCustomerPhone = (order: any) =>
-  order?.cliente?.telefone ||
-  order?.cliente?.celular ||
-  order?.cliente?.phone ||
-  order?.telefone_cliente ||
-  order?.customer_phone ||
-  order?.customerPhone ||
-  order?.phone ||
-  "";
-
-const getCancellationRequest = (order: any) =>
-  order?.solicitacao_cancelamento || null;
-const hasPendingCancellationRequest = (order: any) =>
-  getCancellationRequest(order)?.status === "pendente";
-const parseCurrencyInput = (value: string) => Number(value.replace(",", "."));
-const parseCurrencyNumber = (value: unknown) => {
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-
-  const text = String(value ?? "").trim();
-  if (!text) return 0;
-
-  const normalized = text.includes(",")
-    ? text.replace(/\./g, "").replace(",", ".")
-    : text;
-  const number = Number(normalized);
-  return Number.isFinite(number) ? number : 0;
-};
-const formatCurrency = (value: unknown) =>
-  `R$ ${parseCurrencyNumber(value)
-    .toFixed(2)
-    .replace(".", ",")}`;
-const getPaymentSplitGroupId = (payment: any) =>
-  payment?.metadata?.grupo_pagamento_admin || payment?.grupo_pagamento_admin || "";
-const RECEIPT_PAYMENT_METHODS = new Set(["pix", "cartao_credito", "cartao_debito", "dinheiro"]);
-const getReceiptInitialMethods = (payments: any[]) => [...new Set(
-  payments
-    .filter(isCurrentPaymentRecord)
-    .flatMap((payment) => {
-      const plannedMethods = payment?.metadata?.formas_pagamento_planejadas;
-      return Array.isArray(plannedMethods) && plannedMethods.length
-        ? plannedMethods
-        : [getCurrentPaymentMethodValue(payment)];
-    })
-    .map((method) => String(method || "").toLowerCase())
-    .filter((method) => RECEIPT_PAYMENT_METHODS.has(method))
-)];
-const getOrderPaymentMethodsLabel = (order: any, payments: any[], preferredPayment: any) => {
-  const splitGroupId = getPaymentSplitGroupId(preferredPayment);
-  const splitPayments = splitGroupId
-    ? payments.filter((payment) =>
-        getPaymentSplitGroupId(payment) === splitGroupId && isCurrentPaymentRecord(payment)
-      )
-    : [];
-
-  return splitPayments.length > 1
-    ? splitPayments
-        .map((payment) => getOrderPaymentMethod({ pagamento: payment }, payment))
-        .join(" + ")
-    : getOrderPaymentMethod(order, preferredPayment);
-};
-const getDailyTicketNumber = (order: any) => {
-  const formatted = String(order?.numero_comanda_codigo || "").trim();
-  if (formatted) return formatted;
-
-  const numeric = Number(order?.numero_comanda_diario);
-  return Number.isFinite(numeric) && numeric > 0
-    ? String(numeric).padStart(5, "0")
-    : "";
-};
-const toCurrencyCents = (value: unknown) =>
-  Math.round(parseCurrencyNumber(value) * 100);
-const firstPresent = (...values: unknown[]) =>
-  values.find((value) => value !== undefined && value !== null && value !== "");
-const normalizePaymentText = (value: any) =>
-  String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
-const getPaymentOnDeliveryMethod = (payment: any) =>
-  normalizePaymentText(
-    firstPresent(
-      payment?.pagamento_entrega_tipo,
-      payment?.paymentOnDeliveryMethod,
-      payment?.metadata?.pagamento_entrega_tipo,
-    ),
-  );
-const isCardOnDeliveryPayment = (payment: any) =>
-  getPaymentOnDeliveryMethod(payment) === "cartao";
-const calculateMissingItemsRefundAfterDiscount = (
-  order: any,
-  grossRefundValue: number,
-  itemsSubtotal: number,
-) => {
-  const grossRefundInCents = toCurrencyCents(grossRefundValue);
-  const subtotalInCents = toCurrencyCents(order?.subtotal || itemsSubtotal);
-  const discountInCents = Math.min(
-    Math.max(0, toCurrencyCents(order?.desconto)),
-    Math.max(0, subtotalInCents),
-  );
-
-  if (subtotalInCents <= 0 || discountInCents <= 0) {
-    return grossRefundInCents / 100;
-  }
-
-  const allocatedDiscountInCents = Math.round(
-    (grossRefundInCents * discountInCents) / subtotalInCents,
-  );
-  return Math.max(0, grossRefundInCents - allocatedDiscountInCents) / 100;
-};
-const formatCashChangeInfo = (payment: any, order?: any) => {
-  const method = normalizePaymentText(
-    firstPresent(
-      payment?.forma_pagamento,
-      payment?.metodo,
-      payment?.method,
-      order?.pagamento?.forma_pagamento,
-      order?.pagamento?.metodo,
-      order?.pagamento?.method,
-      order?.payment,
-    ),
-  );
-  const paymentOnDeliveryMethod =
-    getPaymentOnDeliveryMethod(payment) ||
-    getPaymentOnDeliveryMethod(order?.pagamento);
-  const isCashPayment =
-    method === "dinheiro" || paymentOnDeliveryMethod === "dinheiro";
-
-  if (!isCashPayment) {
-    return "";
-  }
-
-  if (
-    isCardOnDeliveryPayment(payment) ||
-    isCardOnDeliveryPayment(order?.pagamento)
-  ) {
-    return "Cobrar com cartão na entrega";
-  }
-
-  if (payment?.sem_troco === true) return "Não precisa de troco";
-
-  if (order?.pagamento?.sem_troco === true) return "Não precisa de troco";
-
-  const changeFor = firstPresent(
-    payment?.troco_para,
-    order?.pagamento?.troco_para,
-    order?.troco_para,
-  );
-
-  if (changeFor !== undefined) {
-    const explicitChange = firstPresent(
-      payment?.troco_valor,
-      order?.pagamento?.troco_valor,
-      order?.troco_valor,
-    );
-    const orderTotal = firstPresent(
-      payment?.valor,
-      order?.valor_total,
-      order?.total,
-    );
-    const changeValue =
-      explicitChange !== undefined
-        ? parseCurrencyNumber(explicitChange)
-        : parseCurrencyNumber(changeFor) - parseCurrencyNumber(orderTotal);
-    const safeChangeValue = Number.isFinite(changeValue)
-      ? Math.max(0, changeValue)
-      : 0;
-
-    return `Troco para ${formatCurrency(changeFor)} · devolver ${formatCurrency(safeChangeValue)}`;
-  }
-
-  return "";
-};
-const getOrderEmbeddedPayments = (order: any) =>
-  Array.isArray(order?.pagamentos) ? order.pagamentos : [];
-const getCashChangeStatusLabel = (payment: any, order?: any) => {
-  if (!isDeliveryOrder(order || {})) return "";
-  if (isCardOnDeliveryPayment(payment) || isCardOnDeliveryPayment(order?.pagamento)) {
-    return "";
-  }
-
-  const method = normalizePaymentText(
-    firstPresent(
-      payment?.forma_pagamento,
-      payment?.metodo,
-      payment?.method,
-      order?.pagamento?.forma_pagamento,
-      order?.pagamento?.metodo,
-      order?.pagamento?.method,
-      order?.payment,
-    ),
-  );
-  const paymentOnDeliveryMethod =
-    getPaymentOnDeliveryMethod(payment) ||
-    getPaymentOnDeliveryMethod(order?.pagamento);
-  const isCashPayment =
-    method === "dinheiro" || paymentOnDeliveryMethod === "dinheiro";
-
-  if (!isCashPayment) return "";
-
-  const explicitChangeValue = firstPresent(
-    payment?.troco_valor,
-    order?.pagamento?.troco_valor,
-    order?.troco_valor,
-  );
-  const changeFor = firstPresent(
-    payment?.troco_para,
-    order?.pagamento?.troco_para,
-    order?.troco_para,
-  );
-  const orderTotal = firstPresent(
-    payment?.valor,
-    order?.valor_total,
-    order?.total,
-  );
-  const changeValue =
-    explicitChangeValue !== undefined
-      ? parseCurrencyNumber(explicitChangeValue)
-      : parseCurrencyNumber(changeFor) - parseCurrencyNumber(orderTotal);
-  if (changeValue <= 0) return "";
-
-  return payment?.troco_pago_ao_entregador === true ||
-    order?.pagamento?.troco_pago_ao_entregador === true
-    ? "Troco repassado"
-    : "Falta o troco";
-};
-const isPendingCardPaymentForDelivery = (order: any, payments: any[] = []) => {
-  const payment = getPreferredOrderPayment(order, payments);
-  const status = normalizePaymentText(getOrderPaymentStatus(order, payment));
-  const method = normalizePaymentText(getOrderPaymentMethod(order, payment));
-  const blockedStatuses = new Set(["aprovado", "confirmado", "rejeitado", "cancelado", "estornado", "expirado"]);
+function OrderModalBoundary({ children }: { children: ReactNode }) {
   return (
-    !isOrderPaid(order, payments) &&
-    !blockedStatuses.has(status) &&
-    (method.includes("cartao") ||
-      isCardOnDeliveryPayment(payment) ||
-      isCardOnDeliveryPayment(order?.pagamento))
-  );
-};
-const hasPendingPaymentForDisplay = (order: any, payments: any[] = []) => {
-  if (isOrderPaid(order, payments)) return false;
-  if (order?.has_admin_pix_charge === true) return true;
-
-  const payment = getPreferredOrderPayment(order, payments);
-  return (
-    normalizePaymentText(getOrderPaymentStatus(order, payment)) === "pendente" ||
-    isOrderPendingCash(order, payments) ||
-    isPendingCardPaymentForDelivery(order, payments)
-  );
-};
-const canOrderProceedForFulfillment = (order: any, payments: any[] = []) =>
-  isOrderPaid(order, payments) ||
-  isFiadoOrder(order, payments) ||
-  isOrderPendingCash(order, payments) ||
-  isPendingCardPaymentForDelivery(order, payments);
-const DELIVERY_ASSIGNMENT_BLOCKED_STATUSES = new Set([
-  "entregue",
-  "nao_entregue",
-  "cancelado",
-]);
-const ACTIVE_WORK_STATUS_KEYS = [
-  "pendente",
-  "confirmado",
-  "em_separacao",
-  "pronto",
-];
-const REFUND_ACTIVE_STATUSES = new Set(["pendente", "processando", "aprovado"]);
-const ORDER_TABS = [
-  { value: "Entrega", label: "Delivery" },
-  { value: "Retirada", label: "Retirada" },
-  { value: "Salao", label: "Salão" },
-] as const;
-type OrderTab = (typeof ORDER_TABS)[number]["value"];
-type OperationalTabCache = {
-  orders: any[];
-  nextCursor: string | null;
-  hasMore: boolean;
-  firstPageIds: string[];
-};
-const OPERATIONAL_TAB_DEFINITIONS: Array<{
-  key: OperationalOrderTabKey;
-  title: string;
-  description: string;
-  defaultExpanded: boolean;
-}> = [
-  { key: "falta_imprimir", title: "Falta imprimir", description: "Pedidos do app aguardando impressão da comanda", defaultExpanded: true },
-  { key: "andamento", title: "Em andamento", description: "Recebidos, confirmados, em separação e prontos", defaultExpanded: true },
-  { key: "cancelamentos", title: "Cancelamentos para análise", description: "Pedidos bloqueados até a decisão da loja", defaultExpanded: true },
-  { key: "saiu_para_entrega", title: "Saiu para entrega", description: "Pedidos em rota com entregador", defaultExpanded: false },
-  { key: "entregues", title: "Entregues", description: "Finalizados prontos para arquivar", defaultExpanded: false },
-  { key: "entregues_aguardando_pagamento", title: "Entregues aguardando pagamento", description: "Finalizados com pagamento pendente", defaultExpanded: false },
-  { key: "nao_entregues", title: "Não entregues", description: "Pedidos com problema relatado pelo entregador", defaultExpanded: false },
-  { key: "cancelados", title: "Cancelados", description: "Pedidos cancelados", defaultExpanded: false },
-];
-const EMPTY_OPERATIONAL_AVAILABILITY = Object.fromEntries(
-  OPERATIONAL_TAB_DEFINITIONS.map(({ key }) => [key, { disponivel: false, total: 0 }]),
-) as OperationalTabAvailability;
-type ArchivedOrderTypeFilter = "Todos" | OrderTab;
-type ArchivedDailySummary = {
-  date: string;
-  count: number;
-  total: number;
-};
-const getPreferredArchivedDayKey = (
-  summary: Array<{ date: string }>,
-  currentKey = "",
-) => {
-  const todayKey = getDateKey(new Date());
-  const currentKeyExists = summary.some((item) => item.date === currentKey);
-  return (
-    summary.find((item) => item.date === todayKey)?.date ||
-    (currentKeyExists ? currentKey : "") ||
-    summary[0]?.date ||
-    currentKey
-  );
-};
-type OrderType = "entrega" | "retirada" | "salao";
-type OrderCounterKey = OrderType;
-const getOrderType = (order: any): OrderType => {
-  const type = String(order?.tipo_pedido || order?.type || "").toLowerCase();
-  return type === "salao" || type === "retirada" ? type : "entrega";
-};
-const getOrderTypeLabel = (order: any) => ({
-  entrega: "Entrega",
-  retirada: "Retirada",
-  salao: "Salão",
-})[getOrderType(order)];
-
-const formatElapsedOrderTime = (elapsedMinutes: number) => {
-  const safeMinutes = Math.max(0, Math.floor(elapsedMinutes));
-  if (safeMinutes < 1) return "menos de 1 min";
-  if (safeMinutes < 60) return `${safeMinutes} min`;
-
-  if (safeMinutes >= 1_440) {
-    const days = Math.floor(safeMinutes / 1_440);
-    const remainingHours = Math.floor((safeMinutes % 1_440) / 60);
-    return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
-  }
-
-  const hours = Math.floor(safeMinutes / 60);
-  const minutes = safeMinutes % 60;
-  return minutes > 0 ? `${hours}h ${minutes}min` : `${hours}h`;
-};
-
-const interpolateColor = (start: [number, number, number], end: [number, number, number], amount: number) => {
-  const ratio = Math.min(1, Math.max(0, amount));
-  const channel = (index: number) => Math.round(start[index] + (end[index] - start[index]) * ratio);
-  return `rgb(${channel(0)}, ${channel(1)}, ${channel(2)})`;
-};
-
-const getWaitingTimeColor = (elapsedMinutes: number, averageDeliveryMinutes: number) => {
-  const safeLimit = Math.max(1, averageDeliveryMinutes);
-  const progress = Math.min(1, Math.max(0, elapsedMinutes / safeLimit));
-  const blue: [number, number, number] = [37, 99, 235];
-  const amber: [number, number, number] = [217, 119, 6];
-  const red: [number, number, number] = [220, 38, 38];
-
-  return progress < 0.7
-    ? interpolateColor(blue, amber, progress / 0.7)
-    : interpolateColor(amber, red, (progress - 0.7) / 0.3);
-};
-
-const getTransparentRgb = (color: string, opacity: number) =>
-  color.replace("rgb(", "rgba(").replace(")", `, ${opacity})`);
-
-const OrderCustomerSummary = ({
-  order,
-  payment,
-  paymentLabel,
-  timestamp,
-  cashChangeStatusLabel,
-  nowMs,
-  averageDeliveryMinutes,
-}: {
-  order: any;
-  payment: any;
-  paymentLabel?: string;
-  timestamp: Date | string;
-  cashChangeStatusLabel?: string;
-  nowMs: number;
-  averageDeliveryMinutes: number;
-}) => {
-  const timestampMs = new Date(timestamp).getTime();
-  const elapsedMinutes = Number.isFinite(timestampMs)
-    ? Math.max(0, (nowMs - timestampMs) / 60_000)
-    : 0;
-  const status = getBackendStatus(order?.status || "");
-  const tracksDeliveryWait =
-    isDeliveryOrder(order) && !["entregue", "cancelado"].includes(status);
-  const reachedDeliveryLimit =
-    tracksDeliveryWait && elapsedMinutes >= averageDeliveryMinutes;
-  const waitingColor = getWaitingTimeColor(
-    elapsedMinutes,
-    averageDeliveryMinutes,
-  );
-
-  return (
-    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
-      <span className="min-w-0 max-w-full truncate font-medium text-gray-600 sm:max-w-[220px]">
-        {order.cliente?.nome || order.customer || "Desconhecido"}
-      </span>
-      <span className="text-gray-300" aria-hidden="true">|</span>
-      {tracksDeliveryWait ? (
-        <span
-          className="inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 font-semibold"
-          style={{
-            color: waitingColor,
-            borderColor: waitingColor,
-            backgroundColor: getTransparentRgb(waitingColor, 0.1),
-          }}
-          title={`Tempo médio de entrega configurado: ${averageDeliveryMinutes} min`}
-        >
-          {reachedDeliveryLimit && <AlertTriangle className="h-3.5 w-3.5" />}
-          Aguardando há {formatElapsedOrderTime(elapsedMinutes)}
-        </span>
-      ) : (
-        <span className="whitespace-nowrap text-gray-400">
-          Realizado há {formatElapsedOrderTime(elapsedMinutes)}
-        </span>
+    <Suspense
+      fallback={(
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/30">
+          <div className="flex items-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-medium text-gray-700 shadow-xl">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Carregando...
+          </div>
+        </div>
       )}
-      <span className="text-gray-300" aria-hidden="true">|</span>
-      <span className="whitespace-nowrap text-gray-400">
-        {paymentLabel || getOrderPaymentMethod(order, payment)}
-      </span>
-      {isDeliveryOrder(order) && (
-        <>
-          <span className="text-gray-300" aria-hidden="true">|</span>
-          <span className="whitespace-nowrap text-gray-400">
-            {getOrderNeighborhood(order)}
-          </span>
-        </>
-      )}
-      {cashChangeStatusLabel && (
-        <>
-          <span className="text-gray-300" aria-hidden="true">|</span>
-          <span
-            className={`whitespace-nowrap font-semibold ${
-              cashChangeStatusLabel === "Troco repassado"
-                ? "text-green-600"
-                : "text-red-600"
-            }`}
-          >
-            {cashChangeStatusLabel}
-          </span>
-        </>
-      )}
-    </div>
+    >
+      {children}
+    </Suspense>
   );
-};
-const getSalaoComandaStatus = (order: any) =>
-  String(order?.salao_comanda?.status || order?.comanda?.status || "").toLowerCase();
-const canTakeSalaoOrderToTable = (order: any) =>
-  getOrderType(order) === "salao" &&
-  getBackendStatus(order?.status || "") === "pronto" &&
-  getSalaoComandaStatus(order) === "aberta";
-const canForceFinalizeOrder = (order: any) =>
-  Boolean(order?.id) && getBackendStatus(order?.status || "") !== "entregue";
-const canQuickArchiveOrder = (order: any) =>
-  Boolean(order?.id) &&
-  !order?.arquivado &&
-  getBackendStatus(order?.status || "") === "entregue";
-const EMPTY_ADMIN_ORDER_ADDRESS = {
-  rua: "",
-  numero: "",
-  complemento: "",
-  bairro: "",
-  cidade: "",
-  estado: "",
-  cep: "",
-  ponto_referencia: "",
-  area_entrega_id: "",
-};
-const normalizeDeliveryArea = (area: any) => ({
-  ...area,
-  bairro: String(area?.bairro || area?.nome || "").trim(),
-  cidade: String(area?.cidade || "").trim(),
-  estado: String(area?.estado || "").trim().toUpperCase(),
-  taxa_entrega: Math.max(0, Number(area?.taxa_entrega || 0)),
-  ativa: area?.ativa !== false,
-});
-const getDeliveryAreaLabel = (area: any) =>
-  [
-    area.bairro,
-    area.cidade ? `${area.cidade}${area.estado ? ` - ${area.estado}` : ""}` : "",
-  ].filter(Boolean).join(" · ");
-const formatOrderDateTime = (value: Date | string) =>
-  formatBrasiliaDate(value, { dateStyle: "short", timeStyle: "short" });
-const getOrderCreatedTimestamp = (order: any) =>
-  order?.criado_em ||
-  order?.created_at ||
-  order?.realizado_em ||
-  new Date();
-const getArchivedOrderTimestamp = (order: any) =>
-  order?.realizado_em || getOrderCreatedTimestamp(order);
-const getValidDate = (value: any) => {
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? new Date() : date;
-};
-const padDatePart = (value: number) => String(value).padStart(2, "0");
-const getDateKey = (value: any) => {
-  const date = getValidDate(value);
-  return [
-    date.getFullYear(),
-    padDatePart(date.getMonth() + 1),
-    padDatePart(date.getDate()),
-  ].join("-");
-};
-const formatArchivedDayLabel = (value: any) => {
-  const date = getValidDate(value);
-  return `[${padDatePart(date.getDate())}/${padDatePart(date.getMonth() + 1)}]`;
-};
-const formatArchivedDayDescription = (value: any) =>
-  getValidDate(value).toLocaleDateString("pt-BR", {
-    weekday: "long",
-    day: "2-digit",
-    month: "long",
-    year: "numeric",
-  });
-const canSelectOrderForDeliveryAssignment = (
-  order: any,
-  assignedOrderIds: Set<any>,
-) =>
-  isDeliveryOrder(order) &&
-  !assignedOrderIds.has(order?.id) &&
-  !hasPendingCancellationRequest(order) &&
-  !DELIVERY_ASSIGNMENT_BLOCKED_STATUSES.has(
-    getBackendStatus(order?.status || ""),
-  );
-
-const isAppOrderAwaitingPrint = (order: any) => {
-  const type = getOrderType(order);
-  const status = getBackendStatus(order?.status || "");
-  return (
-    (type === "entrega" || type === "retirada") &&
-    !order?.arquivado &&
-    String(order?.origem_checkout || "").toLowerCase() !== "admin_dashboard" &&
-    !order?.comanda_impressa_em &&
-    ACTIVE_WORK_STATUS_KEYS.includes(status) &&
-    !hasPendingCancellationRequest(order)
-  );
-};
-
+}
 export function OrdersScreen() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [orders, setOrders] = useState<any[]>([]);
@@ -714,6 +245,8 @@ export function OrdersScreen() {
   const [search, setSearch] = useState("");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
+  const [quickOrderFilter, setQuickOrderFilter] =
+    useState<QuickOrderFilter>(null);
   const [ordersFullscreen, setOrdersFullscreen] = useState(false);
   const [statusFilter, setStatusFilter] = useState("Todos");
   const [typeFilter, setTypeFilter] = useState<OrderTab>("Entrega");
@@ -820,6 +353,8 @@ export function OrdersScreen() {
   });
   const [newOrderCursorsReady, setNewOrderCursorsReady] = useState(false);
   const [checkingNewOrders, setCheckingNewOrders] = useState(false);
+  const [refreshingOrders, setRefreshingOrders] = useState(false);
+  const [refreshCooldownActive, setRefreshCooldownActive] = useState(false);
   const [pendingPrintAlerts, setPendingPrintAlerts] = useState({
     entrega: false,
     retirada: false,
@@ -874,7 +409,9 @@ export function OrdersScreen() {
   const searchEffectReadyRef = useRef(false);
   const archivedDaysCarouselRef = useRef<HTMLDivElement | null>(null);
   const ordersScreenRef = useRef<HTMLDivElement | null>(null);
+  const advancedFiltersRef = useRef<HTMLDivElement | null>(null);
   const orderCardClickTimeoutRef = useRef<number | null>(null);
+  const refreshCooldownTimeoutRef = useRef<number | null>(null);
 
   if (!reconciliationSchedulerRef.current) {
     reconciliationSchedulerRef.current = createOrdersReconciliationScheduler({
@@ -887,13 +424,16 @@ export function OrdersScreen() {
   }
 
   useEffect(() => {
-    const intervalId = window.setInterval(() => setCurrentTimeMs(Date.now()), 30_000);
+    const intervalId = window.setInterval(() => setCurrentTimeMs(Date.now()), 60_000);
     return () => window.clearInterval(intervalId);
   }, []);
 
   useEffect(() => () => {
     if (orderCardClickTimeoutRef.current !== null) {
       window.clearTimeout(orderCardClickTimeoutRef.current);
+    }
+    if (refreshCooldownTimeoutRef.current !== null) {
+      window.clearTimeout(refreshCooldownTimeoutRef.current);
     }
   }, []);
 
@@ -907,6 +447,45 @@ export function OrdersScreen() {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
     };
   }, []);
+
+  useEffect(() => {
+    if (!advancedFiltersOpen) return;
+
+    const handlePointerDown = (event: Event) => {
+      if (!advancedFiltersRef.current?.contains(event.target as Node)) {
+        setAdvancedFiltersOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setAdvancedFiltersOpen(false);
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [advancedFiltersOpen]);
+
+  useEffect(() => {
+    if (!selected) return;
+
+    const handleCloseDetailsShortcut = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (advancedFiltersOpen || document.querySelector(".fixed.inset-0")) {
+        return;
+      }
+
+      event.preventDefault();
+      setSelected(null);
+    };
+
+    document.addEventListener("keydown", handleCloseDetailsShortcut);
+    return () => {
+      document.removeEventListener("keydown", handleCloseDetailsShortcut);
+    };
+  }, [advancedFiltersOpen, selected]);
   const { enabled: deliverySoundEnabled, setEnabled: setDeliverySoundEnabled } =
     useAlertSoundPreference(user?.loja_id, "entrega");
   const { enabled: pickupSoundEnabled, setEnabled: setPickupSoundEnabled } =
@@ -1298,10 +877,11 @@ export function OrdersScreen() {
         storeResult.status === "fulfilled"
           ? storeResult.value.data?.data || storeResult.value.data || {}
           : {};
-      const config =
+      const rawConfig =
         configResult.status === "fulfilled"
           ? configResult.value.data?.data || configResult.value.data || {}
           : {};
+      const config = Array.isArray(rawConfig) ? rawConfig[0] || {} : rawConfig;
 
       setPrimaryColor(config.cor_primaria || PRIMARY);
       const configuredAverageDeliveryTime = Number(
@@ -1762,16 +1342,23 @@ export function OrdersScreen() {
   }, []);
 
   const refreshCurrentOrderTab = async () => {
-    setPage(1);
-    reconciliationSchedulerRef.current?.schedule({
-      reason: "manual",
-      full: true,
-      immediate: true,
-    });
-    await Promise.all([
-      reconciliationSchedulerRef.current?.flush(),
-      fetchAuxiliaryData(),
-    ]);
+    if (refreshingOrders) return;
+
+    setRefreshingOrders(true);
+    try {
+      setPage(1);
+      reconciliationSchedulerRef.current?.schedule({
+        reason: "manual",
+        full: true,
+        immediate: true,
+      });
+      await Promise.all([
+        reconciliationSchedulerRef.current?.flush(),
+        fetchAuxiliaryData(),
+      ]);
+    } finally {
+      setRefreshingOrders(false);
+    }
   };
 
   const fetchArchivedDayOrders = async (
@@ -1819,10 +1406,20 @@ export function OrdersScreen() {
 
   const changeViewMode = (nextMode: "lista" | "bairros" | "arquivados") => {
     if (nextMode === viewMode) return;
+    setQuickOrderFilter(null);
+    setAdvancedFiltersOpen(false);
     setViewMode(nextMode);
   };
 
   const handleNewOrdersButton = () => {
+    if (refreshingOrders || refreshCooldownTimeoutRef.current !== null) return;
+
+    setRefreshCooldownActive(true);
+    refreshCooldownTimeoutRef.current = window.setTimeout(() => {
+      refreshCooldownTimeoutRef.current = null;
+      setRefreshCooldownActive(false);
+    }, 5_000);
+
     const activeType = getOrderCounterKey();
     if (newOrdersCount[activeType] > 0) {
       void refreshCurrentOrderTab();
@@ -1835,7 +1432,10 @@ export function OrdersScreen() {
       ...(salaoEnabled ? ["salao" as const] : []),
     ] as OrderCounterKey[])
       .find((type) => newOrdersCount[type] > 0);
-    if (!nextType) return;
+    if (!nextType) {
+      void refreshCurrentOrderTab();
+      return;
+    }
     setTypeFilter(({ entrega: "Entrega", retirada: "Retirada", salao: "Salao" } as const)[nextType]);
   };
 
@@ -3435,42 +3035,99 @@ export function OrdersScreen() {
     order?.delivery_failure_reason ||
     "";
 
-  const filtered = orders.filter((o) => {
-    const customerName = (o.cliente?.nome || o.customer || "").toLowerCase();
-    const orderId = (o.numero_pedido || o.id || "").toLowerCase();
-    const dailyTicket = getDailyTicketNumber(o).toLowerCase();
-    const matchSearch =
+  const searchFilteredOrders = useMemo(() => orders.filter((order) => {
+    const customerName = (
+      order.cliente?.nome || order.customer || ""
+    ).toLowerCase();
+    const orderId = (order.numero_pedido || order.id || "").toLowerCase();
+    const dailyTicket = getDailyTicketNumber(order).toLowerCase();
+
+    return (
       customerName.includes(normalizedGlobalSearchTerm) ||
       dailyTicket.includes(normalizedGlobalSearchTerm) ||
-      orderId.includes(normalizedGlobalSearchTerm);
+      orderId.includes(normalizedGlobalSearchTerm)
+    );
+  }), [normalizedGlobalSearchTerm, orders]);
 
-    // No longer filtering by status/type in memory as we do it in API
-    return matchSearch;
-  });
+  const { delayedOrdersCount, filtered, pendingPaymentsCount } = useMemo(() => {
+    const isDelayedOrder = (order: any) => {
+      if (!isDeliveryOrder(order)) return false;
+      const status = getBackendStatus(order?.status || "");
+      if (["entregue", "cancelado"].includes(status)) return false;
 
-  const deliveryByOrderId = new Map(
-    deliveryRecords.map((delivery) => [delivery.pedido_id, delivery]),
+      const createdAtMs = new Date(
+        order?.realizado_em || getOrderCreatedTimestamp(order),
+      ).getTime();
+      return Number.isFinite(createdAtMs) &&
+        currentTimeMs - createdAtMs >= averageDeliveryTimeMinutes * 60_000;
+    };
+    const hasPendingPayment = (order: any) =>
+      hasPendingPaymentForDisplay(order, getOrderEmbeddedPayments(order));
+
+    return {
+      delayedOrdersCount: viewMode === "lista"
+        ? searchFilteredOrders.filter(isDelayedOrder).length
+        : 0,
+      pendingPaymentsCount: viewMode === "lista"
+        ? searchFilteredOrders.filter(hasPendingPayment).length
+        : 0,
+      filtered: quickOrderFilter === "delayed"
+        ? searchFilteredOrders.filter(isDelayedOrder)
+        : quickOrderFilter === "pending"
+          ? searchFilteredOrders.filter(hasPendingPayment)
+          : searchFilteredOrders,
+    };
+  }, [
+    averageDeliveryTimeMinutes,
+    currentTimeMs,
+    quickOrderFilter,
+    searchFilteredOrders,
+    viewMode,
+  ]);
+
+  const deliveryByOrderId = useMemo(
+    () => new Map(
+      deliveryRecords.map((delivery) => [delivery.pedido_id, delivery]),
+    ),
+    [deliveryRecords],
   );
-  const assignedOrderIds = new Set(
-    deliveryRecords
-      .filter((delivery) => Boolean(delivery.entregador_id))
-      .map((delivery) => delivery.pedido_id),
+  const assignedOrderIds = useMemo(
+    () => new Set(
+      deliveryRecords
+        .filter((delivery) => Boolean(delivery.entregador_id))
+        .map((delivery) => delivery.pedido_id),
+    ),
+    [deliveryRecords],
   );
-  const allDeliveryOrders = filtered.filter(isDeliveryOrder);
-  const bairroOptions = Array.from(
-    new Set(allDeliveryOrders.map(getOrderNeighborhood)),
-  ).sort((a, b) => a.localeCompare(b));
-  const bairroFilteredDeliveryOrders =
-    bairroFilter === "Todos"
+  const allDeliveryOrders = useMemo(
+    () => filtered.filter(isDeliveryOrder),
+    [filtered],
+  );
+  const bairroOptions = useMemo(
+    () => Array.from(
+      new Set(allDeliveryOrders.map(getOrderNeighborhood)),
+    ).sort((a, b) => a.localeCompare(b)),
+    [allDeliveryOrders],
+  );
+  const bairroFilteredDeliveryOrders = useMemo(
+    () => bairroFilter === "Todos"
       ? allDeliveryOrders
       : allDeliveryOrders.filter(
           (order) => getOrderNeighborhood(order) === bairroFilter,
-        );
-  const listDeliveryOrders = allDeliveryOrders.filter(
-    (order) => canSelectOrderForDeliveryAssignment(order, assignedOrderIds),
+        ),
+    [allDeliveryOrders, bairroFilter],
   );
-  const deliveryOrders = bairroFilteredDeliveryOrders.filter(
-    (order) => canSelectOrderForDeliveryAssignment(order, assignedOrderIds),
+  const listDeliveryOrders = useMemo(
+    () => allDeliveryOrders.filter(
+      (order) => canSelectOrderForDeliveryAssignment(order, assignedOrderIds),
+    ),
+    [allDeliveryOrders, assignedOrderIds],
+  );
+  const deliveryOrders = useMemo(
+    () => bairroFilteredDeliveryOrders.filter(
+      (order) => canSelectOrderForDeliveryAssignment(order, assignedOrderIds),
+    ),
+    [assignedOrderIds, bairroFilteredDeliveryOrders],
   );
   const selectableDeliveryOrders =
     viewMode === "bairros"
@@ -3495,6 +3152,7 @@ export function OrdersScreen() {
           search,
           statusFilter !== "Todos",
           bairroFilter !== "Todos",
+          Boolean(quickOrderFilter),
         ].filter(Boolean).length;
   const availableOrderTabs = ORDER_TABS.filter(
     (tab) =>
@@ -4271,6 +3929,7 @@ export function OrdersScreen() {
       ref={ordersScreenRef}
       className="flex h-full w-full min-w-0 overflow-hidden bg-white"
     >
+      <OrderModalBoundary>
       {manualOrderOpen && canCreateManualOrder && user?.loja_id && (
         <ManualDeliveryOrderModal
           lojaId={user.loja_id}
@@ -4377,552 +4036,73 @@ export function OrdersScreen() {
           onPrint={handlePrintSelectedKitchenItems}
         />
       )}
+      </OrderModalBoundary>
       {/* Left panel: list or bairros */}
       <div
         className={`min-w-0 overflow-hidden flex flex-col ${selected ? "hidden lg:flex lg:w-1/2 xl:w-3/5" : "flex-1"}`}
       >
-        <div className="border-b border-gray-200 bg-white px-4 pt-2">
-          {viewMode === "arquivados" ? (
-            <div className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-3">
-                <div
-                  className="flex h-10 w-10 items-center justify-center rounded-lg text-white"
-                  style={{ backgroundColor: primaryColor }}
-                >
-                  <Archive className="h-5 w-5" />
-                </div>
-                <div>
-                  <h1 className="text-lg font-bold text-gray-900">
-                    Arquivados
-                  </h1>
-                  <p className="text-xs text-gray-500">
-                    Pedidos agrupados pelo dia em que foram realizados
-                  </p>
-                </div>
-              </div>
-              <span className="inline-flex w-fit items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600">
-                <CalendarDays className="h-4 w-4" />
-                {archivedGroups.length} dia{archivedGroups.length !== 1 ? "s" : ""} · {archivedTotalOrders} pedido{archivedTotalOrders !== 1 ? "s" : ""}
-              </span>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <div
-                className="flex min-w-0 flex-1 gap-1 overflow-x-auto"
-                role="tablist"
-                aria-label="Tipos de pedido"
-              >
-                {availableOrderTabs.map((tab) => {
-                const active = typeFilter === tab.value;
-                const type = tab.value.toLowerCase() as OrderCounterKey;
-                const count = newOrdersCount[type];
-                return (
-                  <button
-                    key={tab.value}
-                    type="button"
-                    role="tab"
-                    aria-selected={active}
-                    onClick={() => {
-                      if (tab.value !== "Entrega") {
-                        setBairroFilter("Todos");
-                        if (viewMode === "bairros") changeViewMode("lista");
-                      }
-                      if (active && count > 0) {
-                        void refreshCurrentOrderTab();
-                      } else {
-                        setTypeFilter(tab.value);
-                      }
-                    }}
-                    className={`relative isolate inline-flex min-w-24 items-center justify-center gap-2 overflow-hidden border-b-2 px-4 py-3 text-sm font-semibold transition-all duration-200 ${active ? "text-gray-900" : "border-transparent text-gray-500 hover:text-gray-800"}`}
-                    style={active ? { borderBottomColor: primaryColor, color: primaryColor } : undefined}
-                  >
-                    {active && (
-                      <>
-                        <span
-                          aria-hidden="true"
-                          className="pointer-events-none absolute inset-x-0 bottom-0 h-7"
-                          style={{
-                            background: `linear-gradient(to top, ${hexToRgba(primaryColor, 0.13)} 0%, ${hexToRgba(primaryColor, 0.055)} 38%, ${hexToRgba(primaryColor, 0)} 100%)`,
-                          }}
-                        />
-                        <span
-                          aria-hidden="true"
-                          className="pointer-events-none absolute inset-x-3 bottom-0 h-1 blur-md"
-                          style={{
-                            backgroundColor: hexToRgba(primaryColor, 0.22),
-                          }}
-                        />
-                      </>
-                    )}
-                    <span className="relative z-10 flex flex-col items-center leading-tight">
-                      <span>{tab.label}</span>
-                      {(type === "entrega" || type === "retirada") && (
-                        <span
-                          className={`mt-1 text-[10px] font-medium ${
-                            active ? "opacity-80" : "text-gray-400"
-                          }`}
-                        >
-                          {inProgressOrdersCount[type]} em andamento
-                        </span>
-                      )}
-                    </span>
-                    {count > 0 && (
-                      <span
-                        className="relative z-10 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white"
-                        style={{ backgroundColor: primaryColor }}
-                        title={`${count} pedido${count === 1 ? " novo" : "s novos"}`}
-                      >
-                        {count > 99 ? "99+" : count}
-                      </span>
-                    )}
-                    {active && checkingNewOrders && (
-                      <span className="absolute right-1 top-1 h-1.5 w-1.5 animate-pulse rounded-full bg-gray-300" />
-                    )}
-                  </button>
-                );
-                })}
-              </div>
-              <div className="flex shrink-0 items-center justify-end gap-2 border-t border-gray-100 py-2 sm:border-l sm:border-t-0 sm:py-0 sm:pl-3">
-                <button
-                type="button"
-                disabled={totalNewOrdersCount === 0}
-                onClick={handleNewOrdersButton}
-                className="relative ml-auto inline-flex h-11 w-11 flex-none items-center justify-center rounded-full text-white shadow-sm transition-all hover:opacity-90 disabled:cursor-default disabled:opacity-45 sm:my-1.5 sm:h-9 sm:w-9"
-                style={{ backgroundColor: primaryColor }}
-                title={totalNewOrdersCount > 0 ? `${totalNewOrdersCount} pedido${totalNewOrdersCount === 1 ? " novo" : "s novos"}` : "Nenhum pedido novo"}
-                aria-label={totalNewOrdersCount > 0 ? `Atualizar ${totalNewOrdersCount} pedidos novos` : "Nenhum pedido novo"}
-              >
-                <RefreshCw className={`h-4 w-4 ${checkingNewOrders ? "animate-spin" : ""}`} />
-                {totalNewOrdersCount > 0 && (
-                  <span className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-white bg-red-500 px-1 text-[10px] font-bold text-white">
-                    {totalNewOrdersCount > 99 ? "99+" : totalNewOrdersCount}
-                  </span>
-                )}
-                </button>
-                <button
-                type="button"
-                onClick={() => {
-                  if (deliverySoundEnabled && deliverySound.autoplayBlocked) {
-                    deliverySound.arm();
-                    return;
-                  }
-                  const nextEnabled = !deliverySoundEnabled;
-                  setDeliverySoundEnabled(nextEnabled);
-                  if (nextEnabled) deliverySound.arm();
-                }}
-                className={`relative inline-flex h-11 w-11 flex-none items-center justify-center rounded-full border shadow-sm transition-all sm:my-1.5 sm:h-9 sm:w-9 ${
-                  deliverySoundEnabled && deliverySound.autoplayBlocked
-                    ? "animate-pulse border-amber-400 bg-amber-500 text-white"
-                    : hasPendingDeliveryPrint && deliverySoundEnabled
-                    ? "animate-pulse border-red-300 bg-red-600 text-white"
-                    : deliverySoundEnabled
-                      ? "border-transparent text-white"
-                      : "border-gray-200 bg-white text-gray-400"
-                }`}
-                style={
-                  deliverySoundEnabled && !hasPendingDeliveryPrint
-                    ? { backgroundColor: primaryColor }
-                    : undefined
-                }
-                title={
-                  deliverySoundEnabled && deliverySound.autoplayBlocked
-                    ? "Clique para liberar o som do Delivery"
-                    : deliverySoundEnabled
-                      ? "Som do Delivery ativado"
-                      : "Som do Delivery desativado"
-                }
-                aria-label={
-                  deliverySoundEnabled && deliverySound.autoplayBlocked
-                    ? "Liberar som do Delivery"
-                    : deliverySoundEnabled
-                      ? "Som do Delivery ativado"
-                      : "Som do Delivery desativado"
-                }
-                aria-pressed={deliverySoundEnabled}
-              >
-                {deliverySoundEnabled ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
-                {hasPendingDeliveryPrint && (
-                  <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-white bg-amber-400" />
-                )}
-                </button>
-                <button
-                type="button"
-                onClick={() => {
-                  if (pickupSoundEnabled && pickupSound.autoplayBlocked) {
-                    pickupSound.arm();
-                    return;
-                  }
-                  const nextEnabled = !pickupSoundEnabled;
-                  setPickupSoundEnabled(nextEnabled);
-                  if (nextEnabled) pickupSound.arm();
-                }}
-                className={`relative inline-flex h-11 w-11 flex-none items-center justify-center rounded-full border shadow-sm transition-all sm:my-1.5 sm:h-9 sm:w-9 ${
-                  pickupSoundEnabled && pickupSound.autoplayBlocked
-                    ? "animate-pulse border-amber-400 bg-amber-500 text-white"
-                    : hasPendingPickupPrint && pickupSoundEnabled
-                    ? "animate-pulse border-red-300 bg-red-600 text-white"
-                    : pickupSoundEnabled
-                      ? "border-transparent text-white"
-                      : "border-gray-200 bg-white text-gray-400"
-                }`}
-                style={
-                  pickupSoundEnabled && !hasPendingPickupPrint
-                    ? { backgroundColor: primaryColor }
-                    : undefined
-                }
-                title={
-                  pickupSoundEnabled && pickupSound.autoplayBlocked
-                    ? "Clique para liberar o som da Retirada"
-                    : pickupSoundEnabled
-                      ? "Som da Retirada ativado"
-                      : "Som da Retirada desativado"
-                }
-                aria-label={
-                  pickupSoundEnabled && pickupSound.autoplayBlocked
-                    ? "Liberar som da Retirada"
-                    : pickupSoundEnabled
-                      ? "Som da Retirada ativado"
-                      : "Som da Retirada desativado"
-                }
-                aria-pressed={pickupSoundEnabled}
-              >
-                {pickupSoundEnabled ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
-                {hasPendingPickupPrint && (
-                  <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border border-white bg-amber-400" />
-                )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void toggleOrdersFullscreen()}
-                  className={`relative inline-flex h-11 w-11 flex-none items-center justify-center rounded-full border shadow-sm transition-all hover:bg-gray-50 sm:my-1.5 sm:h-9 sm:w-9 ${
-                    ordersFullscreen
-                      ? "border-transparent text-white"
-                      : "border-gray-200 bg-white text-gray-500"
-                  }`}
-                  style={ordersFullscreen ? { backgroundColor: primaryColor } : undefined}
-                  title={ordersFullscreen ? "Sair da tela cheia" : "Abrir pedidos em tela cheia"}
-                  aria-label={ordersFullscreen ? "Sair da tela cheia" : "Abrir pedidos em tela cheia"}
-                  aria-pressed={ordersFullscreen}
-                >
-                  {ordersFullscreen ? (
-                    <Minimize2 className="h-4 w-4" />
-                  ) : (
-                    <Maximize2 className="h-4 w-4" />
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-        {/* Filters bar */}
-        <div className="border-b border-gray-200 bg-white px-3 py-2.5 sm:px-4 sm:py-3">
-          <div className="flex items-center gap-2 md:hidden">
-            <button
-              type="button"
-              onClick={() => setMobileFiltersOpen((open) => !open)}
-              className="flex h-11 flex-1 items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm font-semibold text-gray-700"
-              aria-expanded={mobileFiltersOpen}
-              aria-controls="pedidos-filtros"
-            >
-              <span className="flex items-center gap-2">
-                <SlidersHorizontal className="h-4 w-4" />
-                Filtros e visualização
-                {activeFiltersCount > 0 && (
-                  <span
-                    className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white"
-                    style={{ backgroundColor: primaryColor }}
-                  >
-                    {activeFiltersCount}
-                  </span>
-                )}
-              </span>
-              <ChevronDown
-                className={`h-4 w-4 transition-transform ${mobileFiltersOpen ? "rotate-180" : ""}`}
-              />
-            </button>
-            {canCreateManualOrder && (
-              <button
-                type="button"
-                onClick={() => setManualOrderOpen(true)}
-                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-semibold text-white"
-                style={{ backgroundColor: primaryColor }}
-              >
-                <Plus className="h-4 w-4" />
-                Criar
-              </button>
-            )}
-          </div>
-
-          <div
-            id="pedidos-filtros"
-            className={`${mobileFiltersOpen ? "flex" : "hidden"} mt-3 flex-col gap-3 md:mt-0 md:flex xl:flex-row xl:items-end xl:justify-between`}
-          >
-            <div className="flex min-w-0 flex-1 flex-col gap-3 lg:flex-row lg:items-end">
-              {canCreateManualOrder && (
-                <button
-                  type="button"
-                  onClick={() => setManualOrderOpen(true)}
-                  className="hidden h-10 shrink-0 rounded-lg px-3 py-2 text-sm font-semibold text-white md:block"
-                  style={{ backgroundColor: primaryColor }}
-                >
-                  + Criar pedido
-                </button>
-              )}
-
-              <div
-                className={`grid min-w-0 flex-1 grid-cols-1 gap-3 sm:grid-cols-2 ${viewMode === "arquivados" ? "xl:grid-cols-3 2xl:grid-cols-5" : viewMode === "bairros" ? "xl:grid-cols-3" : ""}`}
-              >
-                <div className="relative">
-                  <label className="block text-[11px] font-semibold uppercase text-gray-400 mb-1">
-                    Busca global
-                  </label>
-                  <Search className="absolute left-3 bottom-2.5 w-4 h-4 text-gray-400" />
-                  <input
-                    value={search}
-                    onChange={(e) => {
-                      const nextSearch = e.target.value;
-                      setSearch(nextSearch);
-                      if (nextSearch.trim() && viewMode === "bairros") {
-                        setViewMode("lista");
-                      }
-                    }}
-                    placeholder="Comanda, pedido ou cliente em todos os tipos"
-                    className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1"
-                  />
-                </div>
-
-                {viewMode === "lista" && (
-                  <button
-                    type="button"
-                    onClick={() => setAdvancedFiltersOpen((open) => !open)}
-                    className="flex h-10 items-center justify-between self-end rounded-lg border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900"
-                    aria-expanded={advancedFiltersOpen}
-                    aria-controls="pedidos-filtros-avancados"
-                  >
-                    <span className="flex items-center gap-2">
-                      <SlidersHorizontal className="h-4 w-4" />
-                      Filtros avançados
-                      {statusFilter !== "Todos" && (
-                        <span
-                          className="inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-white"
-                          style={{ backgroundColor: primaryColor }}
-                        >
-                          1
-                        </span>
-                      )}
-                    </span>
-                    <ChevronDown
-                      className={`h-4 w-4 transition-transform ${advancedFiltersOpen ? "rotate-180" : ""}`}
-                    />
-                  </button>
-                )}
-
-                {(viewMode !== "lista" || advancedFiltersOpen) && <div id="pedidos-filtros-avancados">
-                  <label className="block text-[11px] font-semibold uppercase text-gray-400 mb-1">
-                    Status
-                  </label>
-                  <select
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-700 focus:outline-none focus:ring-1"
-                  >
-                    {allStatuses.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
-                </div>}
-
-                {viewMode === "arquivados" && (
-                  <div>
-                    <label className="block text-[11px] font-semibold uppercase text-gray-400 mb-1">
-                      Tipo
-                    </label>
-                    <select
-                      value={archivedTypeFilter}
-                      onChange={(e) =>
-                        setArchivedTypeFilter(e.target.value as ArchivedOrderTypeFilter)
-                      }
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-700 focus:outline-none focus:ring-1"
-                    >
-                      {archivedTypeOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {viewMode === "arquivados" && (
-                  <>
-                    <div>
-                      <label className="block text-[11px] font-semibold uppercase text-gray-400 mb-1">
-                        Data inicial
-                      </label>
-                      <input
-                        type="date"
-                        value={archivedStartDate}
-                        max={archivedEndDate || undefined}
-                        onChange={(e) => setArchivedStartDate(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-700 focus:outline-none focus:ring-1"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-semibold uppercase text-gray-400 mb-1">
-                        Data final
-                      </label>
-                      <input
-                        type="date"
-                        value={archivedEndDate}
-                        min={archivedStartDate || undefined}
-                        onChange={(e) => setArchivedEndDate(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-700 focus:outline-none focus:ring-1"
-                      />
-                    </div>
-                  </>
-                )}
-
-                {viewMode === "bairros" && (
-                  <div>
-                    <label className="block text-[11px] font-semibold uppercase text-gray-400 mb-1">
-                      Bairro
-                    </label>
-                    <select
-                      value={bairroFilter}
-                      onChange={(e) => setBairroFilter(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-700 focus:outline-none focus:ring-1"
-                    >
-                      <option value="Todos">Todos os bairros</option>
-                      {bairroOptions.map((bairro) => (
-                        <option key={bairro} value={bairro}>
-                          {bairro}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-
-              {activeFiltersCount > 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearch("");
-                    setStatusFilter("Todos");
-                    if (viewMode === "arquivados") {
-                      setArchivedTypeFilter("Todos");
-                      setArchivedStartDate("");
-                      setArchivedEndDate("");
-                    } else {
-                      setBairroFilter("Todos");
-                    }
-                  }}
-                  className="h-10 shrink-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                >
-                  Limpar
-                </button>
-              )}
-            </div>
-
-            <div className="grid w-full shrink-0 grid-cols-2 gap-0.5 self-start rounded-lg bg-gray-100 p-0.5 sm:flex sm:w-auto xl:self-end">
-              <button
-                onClick={() => changeViewMode("lista")}
-                className="flex min-h-11 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all sm:min-h-10"
-                style={
-                  viewMode === "lista"
-                    ? { backgroundColor: PRIMARY, color: "white" }
-                    : { color: "#6b7280" }
-                }
-              >
-                <List className="w-3.5 h-3.5" /> Lista
-              </button>
-              {typeFilter === "Entrega" && (
-                <button
-                  onClick={() => changeViewMode("bairros")}
-                  className="flex min-h-11 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all sm:min-h-10"
-                  style={
-                    viewMode === "bairros"
-                      ? { backgroundColor: PRIMARY, color: "white" }
-                      : { color: "#6b7280" }
-                  }
-                >
-                  <MapIcon className="w-3.5 h-3.5" /> Por bairro
-                </button>
-              )}
-              <button
-                onClick={() => changeViewMode("arquivados")}
-                className="flex min-h-11 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-all sm:min-h-10"
-                style={
-                  viewMode === "arquivados"
-                    ? { backgroundColor: PRIMARY, color: "white" }
-                    : { color: "#6b7280" }
-                }
-              >
-                <Archive className="w-3.5 h-3.5" /> Arquivados
-              </button>
-            </div>
-          </div>
-
-          {viewMode === "bairros" && (
-            <div className="mt-3 text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
-              A visualização por bairro mostra pedidos de entrega e também
-              respeita busca, status e bairro selecionado.
-            </div>
-          )}
-        </div>
-
-        {/* Count bar */}
-        <div className="px-4 py-2 bg-gray-50 border-b border-gray-100">
-          {viewMode === "lista" ? (
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-xs text-gray-500">
-                {filtered.length} pedido{filtered.length !== 1 ? "s" : ""}{" "}
-                encontrado{filtered.length !== 1 ? "s" : ""}
-                {isGlobalSearchActive ? " em todos os tipos" : ""}
-              </span>
-              {selectedDeliveryCount > 0 && (
-                <button
-                  onClick={openSelectedOrdersModal}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
-                  style={{ backgroundColor: PRIMARY }}
-                >
-                  Adicionar {selectedDeliveryCount} à entrega
-                </button>
-              )}
-            </div>
-          ) : viewMode === "arquivados" ? (
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs text-gray-500">
-                {archivedTotalOrders} pedido{archivedTotalOrders !== 1 ? "s" : ""}{" "}
-                arquivado{archivedTotalOrders !== 1 ? "s" : ""} em{" "}
-                {archivedGroups.length} dia{archivedGroups.length !== 1 ? "s" : ""}
-              </span>
-              {activeListGroup && (
-                <span className="text-xs font-semibold text-gray-700">
-                  Dia selecionado: {activeListGroup.title}
-                </span>
-              )}
-            </div>
-          ) : (
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-xs text-gray-500">
-                Pedidos não atribuídos: {deliveryOrders.length} · Já atribuídos:{" "}
-                {allDeliveryOrders.length - deliveryOrders.length}
-              </span>
-              {selectedDeliveryCount > 0 && (
-                <button
-                  onClick={openSelectedOrdersModal}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
-                  style={{ backgroundColor: PRIMARY }}
-                >
-                  Adicionar {selectedDeliveryCount} à entrega
-                </button>
-              )}
-            </div>
-          )}
-        </div>
+<OrdersToolbar
+          activeFiltersCount={activeFiltersCount}
+          activeListGroup={activeListGroup}
+          advancedFiltersOpen={advancedFiltersOpen}
+          advancedFiltersRef={advancedFiltersRef}
+          allDeliveryOrders={allDeliveryOrders}
+          archivedEndDate={archivedEndDate}
+          archivedGroups={archivedGroups}
+          archivedStartDate={archivedStartDate}
+          archivedTotalOrders={archivedTotalOrders}
+          archivedTypeFilter={archivedTypeFilter}
+          archivedTypeOptions={archivedTypeOptions}
+          availableOrderTabs={availableOrderTabs}
+          bairroFilter={bairroFilter}
+          bairroOptions={bairroOptions}
+          canCreateManualOrder={canCreateManualOrder}
+          changeViewMode={changeViewMode}
+          checkingNewOrders={checkingNewOrders}
+          delayedOrdersCount={delayedOrdersCount}
+          deliveryOrders={deliveryOrders}
+          deliverySound={deliverySound}
+          deliverySoundEnabled={deliverySoundEnabled}
+          filtered={filtered}
+          handleNewOrdersButton={handleNewOrdersButton}
+          hasPendingDeliveryPrint={hasPendingDeliveryPrint}
+          hasPendingPickupPrint={hasPendingPickupPrint}
+          isGlobalSearchActive={isGlobalSearchActive}
+          inProgressOrdersCount={inProgressOrdersCount}
+          mobileFiltersOpen={mobileFiltersOpen}
+          newOrdersCount={newOrdersCount}
+          openSelectedOrdersModal={openSelectedOrdersModal}
+          ordersFullscreen={ordersFullscreen}
+          pendingPaymentsCount={pendingPaymentsCount}
+          pickupSound={pickupSound}
+          pickupSoundEnabled={pickupSoundEnabled}
+          primaryColor={primaryColor}
+          quickOrderFilter={quickOrderFilter}
+          refreshCooldownActive={refreshCooldownActive}
+          refreshCurrentOrderTab={refreshCurrentOrderTab}
+          refreshingOrders={refreshingOrders}
+          search={search}
+          selectedDeliveryCount={selectedDeliveryCount}
+          setAdvancedFiltersOpen={setAdvancedFiltersOpen}
+          setArchivedEndDate={setArchivedEndDate}
+          setArchivedStartDate={setArchivedStartDate}
+          setArchivedTypeFilter={setArchivedTypeFilter}
+          setBairroFilter={setBairroFilter}
+          setDeliverySoundEnabled={setDeliverySoundEnabled}
+          setManualOrderOpen={setManualOrderOpen}
+          setMobileFiltersOpen={setMobileFiltersOpen}
+          setPickupSoundEnabled={setPickupSoundEnabled}
+          setQuickOrderFilter={setQuickOrderFilter}
+          setSearch={setSearch}
+          setStatusFilter={setStatusFilter}
+          setTypeFilter={setTypeFilter}
+          setViewMode={setViewMode}
+          statusFilter={statusFilter}
+          toggleOrdersFullscreen={toggleOrdersFullscreen}
+          totalNewOrdersCount={totalNewOrdersCount}
+          typeFilter={typeFilter}
+          viewMode={viewMode}
+        />
 
         {/* ── LISTA VIEW ─────────────────────────────── */}
         {(viewMode === "lista" || viewMode === "arquivados") && (
@@ -5023,7 +4203,7 @@ export function OrdersScreen() {
             )}
 
             {listGroups.length > 0 && viewMode !== "arquivados" && (
-              <div className="border-b border-gray-200 bg-white px-4">
+              <div className="mx-3 mt-3 rounded-t-xl border border-gray-200 bg-white px-3 sm:mx-4 sm:px-4">
                 <div
                   className="flex gap-1 overflow-x-auto"
                   role="tablist"
@@ -5040,7 +4220,7 @@ export function OrdersScreen() {
                         aria-selected={active}
                         title={group.description}
                         onClick={() => setActiveListGroupKey(group.key)}
-                        className={`relative isolate inline-flex min-w-max items-center justify-center gap-2 overflow-hidden border-b-2 px-4 py-3 text-sm font-semibold transition-all duration-200 ${
+                        className={`relative isolate inline-flex min-w-max items-center justify-center gap-2 overflow-hidden border-b-2 px-5 py-4 text-sm font-semibold transition-all duration-200 ${
                           active
                             ? "text-gray-900"
                             : "border-transparent text-gray-500 hover:text-gray-800"
@@ -5096,7 +4276,7 @@ export function OrdersScreen() {
               </div>
             )}
 
-            <div className="min-w-0 flex-1 space-y-3 overflow-x-hidden overflow-y-auto bg-slate-50/50 p-2.5 sm:space-y-4 sm:p-4">
+            <div className="min-w-0 flex-1 space-y-3 overflow-x-hidden overflow-y-auto bg-slate-50/60 p-2.5 sm:space-y-4 sm:p-4">
               {loading && orders.length === 0 && (
                 <div className="flex min-h-[320px] flex-col items-center justify-center text-gray-400">
                   <div
@@ -5109,292 +4289,31 @@ export function OrdersScreen() {
               {activeListGroup && (
                 <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
                   <div className="divide-y divide-gray-100">
-                    {activeListGroup.orders.map((order, orderIndex) => {
-                    const statusDisplay = getStatusLabel(order.status);
-                    const sc = statusColor[order.status] ||
-                      statusColor["Recebido"] || {
-                        bg: "#fffbeb",
-                        text: "#d97706",
-                      };
-                    const isEntrega = isDeliveryOrder(order);
-                    const orderPayments =
-                      selected?.id === order.id
-                        ? selectedPayments
-                        : getOrderEmbeddedPayments(order);
-                    const orderPayment = getPreferredOrderPayment(
-                      order,
-                      orderPayments,
-                    );
-                    const orderPaymentLabel = getOrderPaymentMethodsLabel(
-                      order,
-                      orderPayments,
-                      orderPayment,
-                    );
-                    const orderPaymentIsPending =
-                      hasPendingPaymentForDisplay(order, orderPayments);
-                    const cashChangeStatusLabel = getCashChangeStatusLabel(
-                      orderPayment,
-                      order,
-                    );
-                    const canSelectForDelivery =
-                      viewMode !== "arquivados" &&
-                      canSelectOrderForDeliveryAssignment(
-                        order,
-                        assignedOrderIds,
-                      );
-                    const isSelectedForDelivery = selectedOrderIds.includes(
-                      order.id,
-                    );
-                    const assignedDelivery = deliveryByOrderId.get(order.id);
-                    const failureReason = getDeliveryFailureReason(order);
-                    const dailyTicketNumber = getDailyTicketNumber(order);
-                    const operationalActionLabel = getOperationalRowActionLabel(
-                      order,
-                      activeListGroup.key,
-                    );
-                    const operationalActionBusy =
-                      updatingStatusOrderId === order.id ||
-                      resolvingCancellationOrderId === order.id;
-                    const rowBgClass = isSelectedForDelivery
-                      ? ""
-                      : orderIndex % 2 === 0
-                        ? "bg-white"
-                        : "bg-slate-50";
-
-                    return (
-                      <div
-                        key={order.id}
-                        onClick={() => handleOrderCardClick(order)}
-                        onDoubleClick={(event) => {
-                          if ((event.target as HTMLElement).closest("button, a, input, select, textarea")) return;
-                          event.preventDefault();
-                          handleOrderCardDoubleClick(order, canSelectForDelivery);
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            handleSelectOrder(order);
-                          }
-                        }}
-                        role="button"
-                        tabIndex={0}
-                        className={`cursor-pointer border-l-2 px-3 py-3.5 transition-colors duration-150 sm:px-4 ${rowBgClass} hover:bg-slate-200 focus:outline-none focus:ring-2 focus:ring-inset ${isSelectedForDelivery ? "" : "border-transparent"}`}
-                        style={
-                          isSelectedForDelivery
-                            ? {
-                                backgroundColor: hexToRgba(primaryColor, 0.12),
-                                borderLeftColor: primaryColor,
-                                boxShadow: `inset 0 0 0 1px ${hexToRgba(primaryColor, 0.22)}`,
-                              }
-                            : ({
-                                borderLeftColor: "transparent",
-                                "--tw-ring-color": hexToRgba(
-                                  primaryColor,
-                                  0.35,
-                                ),
-                              } as any)
-                        }
-                      >
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-2">
-                          <div className="flex items-start gap-3 flex-1 min-w-0">
-                            {canSelectForDelivery && (
-                              <button
-                                type="button"
-                                aria-label={
-                                  isSelectedForDelivery
-                                    ? "Remover pedido da entrega"
-                                    : "Selecionar pedido para entrega"
-                                }
-                                aria-checked={isSelectedForDelivery}
-                                role="checkbox"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  toggleOrderSelection(order.id);
-                                }}
-                                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border sm:mt-0.5 sm:h-5 sm:w-5 sm:rounded-md"
-                                style={{
-                                  borderColor: isSelectedForDelivery
-                                    ? primaryColor
-                                    : "#cbd5e1",
-                                  backgroundColor: isSelectedForDelivery
-                                    ? primaryColor
-                                    : "#fff",
-                                }}
-                              >
-                                {isSelectedForDelivery && (
-                                  <CheckCircle2 className="h-3.5 w-3.5 text-white" />
-                                )}
-                              </button>
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                {dailyTicketNumber ? (
-                                  <span className="rounded-md border border-slate-300 bg-white px-2 py-0.5 font-mono text-sm font-black text-slate-900">
-                                    Comanda {dailyTicketNumber}
-                                  </span>
-                                ) : (
-                                  <span className="text-sm font-semibold text-gray-800">
-                                    Pedido {order.numero_pedido || order.id}
-                                  </span>
-                                )}
-                                {viewMode === "arquivados" && (
-                                  <>
-                                    <span
-                                      className="px-2 py-0.5 rounded-full text-[11px] font-medium"
-                                      style={{
-                                        backgroundColor: sc.bg,
-                                        color: sc.text,
-                                      }}
-                                    >
-                                      {statusDisplay}
-                                    </span>
-                                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
-                                      {getOrderTypeLabel(order)}
-                                    </span>
-                                  </>
-                                )}
-                                {orderPaymentIsPending && (
-                                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
-                                    Pagamento pendente
-                                  </span>
-                                )}
-                                {hasPendingCancellationRequest(order) && (
-                                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-red-50 text-red-700">
-                                    Cancelamento para análise
-                                  </span>
-                                )}
-                                {isEntrega &&
-                                  assignedDelivery?.entregador_id && (
-                                    <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
-                                      <span>Atribuído</span>
-                                      <button
-                                        type="button"
-                                        title="Desvincular entregador"
-                                        aria-label="Desvincular entregador"
-                                        disabled={
-                                          unassigningDeliveryId ===
-                                          assignedDelivery.id
-                                        }
-                                        onClick={(event) =>
-                                          handleUnassignCourier(
-                                            assignedDelivery,
-                                            event,
-                                          )
-                                        }
-                                        className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full text-blue-700 hover:bg-blue-100 disabled:opacity-50"
-                                      >
-                                        {unassigningDeliveryId ===
-                                        assignedDelivery.id ? (
-                                          <Loader2 className="h-3 w-3 animate-spin" />
-                                        ) : (
-                                          <ArrowLeft className="h-3 w-3" />
-                                        )}
-                                      </button>
-                                    </span>
-                                  )}
-                              </div>
-                              <OrderCustomerSummary
-                                order={order}
-                                payment={orderPayment}
-                                paymentLabel={orderPaymentLabel}
-                                nowMs={currentTimeMs}
-                                averageDeliveryMinutes={averageDeliveryTimeMinutes}
-                                timestamp={
-                                  viewMode === "arquivados"
-                                    ? getOrderCreatedTimestamp(order)
-                                    : order.realizado_em ||
-                                      order.criado_em ||
-                                      order.created_at ||
-                                      new Date()
-                                }
-                                cashChangeStatusLabel={cashChangeStatusLabel}
-                              />
-                              {order.status === "nao_entregue" && (
-                                <div className="mt-1 rounded-md border border-red-100 bg-red-50 px-2 py-1 text-xs font-medium text-red-700">
-                                  Problema na entrega
-                                  {failureReason ? `: ${failureReason}` : ""}
-                                </div>
-                              )}
-                              <CompactOrderStatusTimeline
-                                order={order}
-                                primaryColor={primaryColor}
-                                confirmationPending={orderPaymentIsPending}
-                              />
-                            </div>
-                          </div>
-                          <div className="flex w-full flex-col items-end gap-1 border-t border-gray-100 pt-3 text-right sm:w-auto sm:flex-shrink-0 sm:border-0 sm:pt-0">
-                            <div className="text-base font-bold text-gray-800 sm:text-sm sm:font-semibold">
-                              R${" "}
-                              {parseFloat(order.valor_total || order.total || 0)
-                                .toFixed(2)
-                                .replace(".", ",")}
-                            </div>
-                            {operationalActionLabel && viewMode !== "arquivados" && (
-                              <button
-                                type="button"
-                                onClick={(event) =>
-                                  void handleOperationalRowAction(
-                                    order,
-                                    activeListGroup.key,
-                                    event,
-                                  )
-                                }
-                                disabled={operationalActionBusy}
-                                className="mt-2 inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-70 sm:ml-auto sm:min-h-0"
-                                style={{ backgroundColor: primaryColor }}
-                              >
-                                {operationalActionBusy ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : activeListGroup.key === "falta_imprimir" ? (
-                                  <Printer className="h-3.5 w-3.5" />
-                                ) : activeListGroup.key === "cancelamentos" ? (
-                                  <AlertTriangle className="h-3.5 w-3.5" />
-                                ) : activeListGroup.key === "entregues_aguardando_pagamento" ? (
-                                  <CreditCard className="h-3.5 w-3.5" />
-                                ) : activeListGroup.key === "nao_entregues" ? (
-                                  <RotateCcw className="h-3.5 w-3.5" />
-                                ) : (
-                                  <CheckCircle2 className="h-3.5 w-3.5" />
-                                )}
-                                {operationalActionLabel}
-                              </button>
-                            )}
-                            {operationalActionLabel !== "Ver detalhes" && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleSelectOrder(order);
-                                }}
-                                className="inline-flex min-h-11 items-center gap-1 rounded-lg border px-3 text-xs font-semibold hover:bg-gray-50 sm:ml-auto sm:mt-1 sm:min-h-0 sm:border-0 sm:px-0 sm:font-normal sm:hover:underline"
-                                style={{ color: PRIMARY }}
-                              >
-                                <Eye className="w-3 h-3" /> Detalhes
-                              </button>
-                            )}
-                            {viewMode !== "arquivados" &&
-                              canQuickArchiveOrder(order) && (
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    void toggleArchivedOrder(order);
-                                  }}
-                                  disabled={archivingOrderId === order.id}
-                                  className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-gray-200 px-3 text-xs font-semibold text-gray-600 hover:bg-gray-50 hover:text-gray-900 disabled:cursor-wait disabled:opacity-70 sm:ml-auto sm:mt-1 sm:min-h-0 sm:border-0 sm:px-0 sm:hover:underline"
-                                >
-                                  {archivingOrderId === order.id ? (
-                                    <Loader2 className="h-3 w-3 animate-spin" />
-                                  ) : (
-                                    <Archive className="h-3 w-3" />
-                                  )}
-                                  Arquivar
-                                </button>
-                              )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+<OrderListRows
+                      activeListGroup={activeListGroup}
+                      archivingOrderId={archivingOrderId}
+                      assignedOrderIds={assignedOrderIds}
+                      averageDeliveryTimeMinutes={averageDeliveryTimeMinutes}
+                      currentTimeMs={currentTimeMs}
+                      deliveryByOrderId={deliveryByOrderId}
+                      getDeliveryFailureReason={getDeliveryFailureReason}
+                      getOperationalRowActionLabel={getOperationalRowActionLabel}
+                      handleOperationalRowAction={handleOperationalRowAction}
+                      handleOrderCardClick={handleOrderCardClick}
+                      handleOrderCardDoubleClick={handleOrderCardDoubleClick}
+                      handleSelectOrder={handleSelectOrder}
+                      handleUnassignCourier={handleUnassignCourier}
+                      primaryColor={primaryColor}
+                      resolvingCancellationOrderId={resolvingCancellationOrderId}
+                      selected={selected}
+                      selectedOrderIds={selectedOrderIds}
+                      selectedPayments={selectedPayments}
+                      toggleArchivedOrder={toggleArchivedOrder}
+                      toggleOrderSelection={toggleOrderSelection}
+                      unassigningDeliveryId={unassigningDeliveryId}
+                      updatingStatusOrderId={updatingStatusOrderId}
+                      viewMode={viewMode}
+                    />
                   </div>
                 </section>
               )}
@@ -5829,21 +4748,23 @@ export function OrdersScreen() {
       </div>
 
       {deliveryModalOrders && (
-        <DeliveryAssignmentModal
-          orders={deliveryModalOrders}
-          confirmStep={confirmStep}
-          couriers={couriers}
-          routeDriverId={routeDriverId}
-          openRoutes={openRoutes}
-          selectedRouteId={selectedRouteId}
-          loadingOpenRoutes={loadingOpenRoutes}
-          confirmingRoute={confirmingRoute}
-          onClose={resetDeliveryModal}
-          onDriverChange={handleDriverChange}
-          onSelectRoute={setSelectedRouteId}
-          onConfirmStepChange={setConfirmStep}
-          onConfirm={handleConfirmDeliveryAssignment}
-        />
+        <OrderModalBoundary>
+          <DeliveryAssignmentModal
+            orders={deliveryModalOrders}
+            confirmStep={confirmStep}
+            couriers={couriers}
+            routeDriverId={routeDriverId}
+            openRoutes={openRoutes}
+            selectedRouteId={selectedRouteId}
+            loadingOpenRoutes={loadingOpenRoutes}
+            confirmingRoute={confirmingRoute}
+            onClose={resetDeliveryModal}
+            onDriverChange={handleDriverChange}
+            onSelectRoute={setSelectedRouteId}
+            onConfirmStepChange={setConfirmStep}
+            onConfirm={handleConfirmDeliveryAssignment}
+          />
+        </OrderModalBoundary>
       )}
 
       {forceFinalizeCandidate && (
@@ -5917,13 +4838,15 @@ export function OrdersScreen() {
       )}
 
       {checklistOrder && (
-        <OrderItemsChecklistModal
-          order={checklistOrder}
-          items={checklistItems}
-          loading={checklistLoading}
-          error={checklistError}
-          onClose={() => setChecklistOrder(null)}
-        />
+        <OrderModalBoundary>
+          <OrderItemsChecklistModal
+            order={checklistOrder}
+            items={checklistItems}
+            loading={checklistLoading}
+            error={checklistError}
+            onClose={() => setChecklistOrder(null)}
+          />
+        </OrderModalBoundary>
       )}
 
       {refundModalOpen && selected && (
@@ -6107,683 +5030,75 @@ export function OrdersScreen() {
       {/* ── DETAIL PANEL ───────────────────────────────── */}
       {selected && (
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white lg:border-l lg:border-gray-200">
-          {/* Header */}
-          <div className="sticky top-0 z-10 flex items-start gap-2 border-b border-gray-100 bg-white px-3 py-2.5 sm:items-center sm:gap-3 sm:px-5 sm:py-3.5">
-            <button
-              onClick={() => setSelected(null)}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 lg:hidden"
-              aria-label="Voltar para a lista de pedidos"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <div className="min-w-0 flex-1 pt-0.5 sm:pt-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-gray-900 font-semibold">
-                  Pedido {selected.numero_pedido || selected.id}
-                </h2>
-                {getDailyTicketNumber(selected) && (
-                  <span className="rounded-md border border-slate-300 bg-slate-50 px-2 py-0.5 font-mono text-sm font-black text-slate-900">
-                    Comanda {getDailyTicketNumber(selected)}
-                  </span>
-                )}
-                <span
-                  className="px-2 py-0.5 rounded-full text-xs font-medium"
-                  style={{
-                    backgroundColor: (
-                      statusColor[selected.status] ||
-                      statusColor["Recebido"] || { bg: "#eee", text: "#666" }
-                    ).bg,
-                    color: (
-                      statusColor[selected.status] ||
-                      statusColor["Recebido"] || { bg: "#eee", text: "#666" }
-                    ).text,
-                  }}
-                >
-                  {getStatusLabel(selected.status)}
-                </span>
-              </div>
-              <div className="text-xs text-gray-400 mt-0.5">
-                {formatOrderDateTime(
-                  selected.realizado_em ||
-                    selected.criado_em ||
-                    selected.created_at ||
-                    new Date(),
-                )}{" "}
-                ·{" "}
-                {getOrderTypeLabel(selected)}
-              </div>
-              {selected.agendado_para && (
-                <div className="text-xs text-amber-700 mt-1">
-                  Entrega agendada para{" "}
-                  {formatOrderDateTime(selected.agendado_para)}
-                </div>
-              )}
-            </div>
-            {!selectedIsSalao && <button
-              onClick={() => handlePrintComanda(selectedForPrint)}
-              disabled={Boolean(selectedAdminPixCharge && selectedAdminPixCharge.estado !== "aprovado")}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-sm text-gray-600 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3 sm:py-1.5"
-              title="Imprimir comanda"
-            >
-              <Printer className="w-4 h-4" />
-              <span className="hidden sm:inline text-xs">Imprimir</span>
-            </button>}
-            {!selectedIsSalao && <button
-              onClick={() => openItemsChecklist(selected)}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-sm text-gray-600 transition-colors hover:bg-gray-50 sm:h-auto sm:w-auto sm:gap-1.5 sm:px-3 sm:py-1.5"
-              title="Ver produtos"
-            >
-              <Package className="w-4 h-4" />
-              <span className="hidden sm:inline text-xs">Ver produtos</span>
-            </button>}
-            <button
-              onClick={() => setSelected(null)}
-              className="hidden lg:block text-gray-400 hover:text-gray-600"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
+          <OrderDetailsHeader
+            getStatusLabel={getStatusLabel}
+            handlePrintComanda={handlePrintComanda}
+            onClose={() => setSelected(null)}
+            openItemsChecklist={openItemsChecklist}
+            selected={selected}
+            selectedAdminPixCharge={selectedAdminPixCharge}
+            selectedForPrint={selectedForPrint}
+            selectedIsSalao={selectedIsSalao}
+          />
 
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3 sm:space-y-5 sm:p-5">
-            {/* Timeline */}
-            {!selectedIsSalao && <div className="rounded-xl bg-gray-50 p-3 sm:p-4">
-              <div className="flex items-start gap-1 overflow-x-auto pb-1">
-                {(() => {
-                  const baseFlow =
-                    String(
-                      selected.tipo_pedido || selected.type || "",
-                    ).toLowerCase() === "retirada"
-                      ? statusFlow.filter(
-                          (status) => status !== "Saiu para Entrega",
-                        )
-                      : statusFlow;
-
-                  return selected.status === "nao_entregue"
-                    ? baseFlow.map((status) =>
-                        status === "Entregue" ? "Não entregue" : status,
-                      )
-                    : baseFlow;
-                })().map((s, i, visibleStatusFlow) => {
-                  const isFailedStep =
-                    selected.status === "nao_entregue" && s === "Não entregue";
-                  const currentDisplay = isFailedStep
-                    ? "Não entregue"
-                    : getStatusLabel(selected.status);
-                  const currentFlowIndex =
-                    visibleStatusFlow.indexOf(currentDisplay);
-                  const curIdx = currentFlowIndex >= 0 ? currentFlowIndex : 0;
-                  const isPaymentPendingConfirmationStep =
-                    s === "Confirmado" && selectedPaymentKeepsConfirmationPending;
-                  const done =
-                    isFailedStep || isPaymentPendingConfirmationStep ? false : i <= curIdx;
-                  const connectorDone =
-                    i < curIdx && !isPaymentPendingConfirmationStep;
-                  const connectorFailed =
-                    selected.status === "nao_entregue" &&
-                    visibleStatusFlow[i + 1] === "Não entregue";
-                  return (
-                    <div
-                      key={s}
-                      className="flex items-start gap-1 flex-shrink-0"
-                    >
-                      <div className="flex w-14 flex-col items-center">
-                        <div
-                          className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
-                          style={{
-                            backgroundColor: isFailedStep
-                              ? "#dc2626"
-                              : isPaymentPendingConfirmationStep
-                                ? "#f59e0b"
-                              : done
-                                ? PRIMARY
-                                : "#e5e7eb",
-                          }}
-                        >
-                          {isFailedStep ? (
-                            <CircleX className="w-3.5 h-3.5 text-white" />
-                          ) : done ? (
-                            <CheckCircle2 className="w-3.5 h-3.5 text-white" />
-                          ) : isPaymentPendingConfirmationStep ? (
-                            <div className="w-2 h-2 rounded-full bg-white" />
-                          ) : (
-                            <div className="w-2 h-2 rounded-full bg-gray-400" />
-                          )}
-                        </div>
-                        <span
-                          className={`mt-1 min-h-[22px] max-w-14 text-center text-[9px] leading-tight ${isFailedStep ? "font-semibold text-red-700" : "text-gray-500"}`}
-                        >
-                          {s}
-                        </span>
-                      </div>
-                      {i < visibleStatusFlow.length - 1 && (
-                        <div
-                          className="mt-3 h-0.5 w-6 flex-shrink-0"
-                          style={{
-                            backgroundColor: connectorDone
-                              ? connectorFailed
-                                ? "#dc2626"
-                                : PRIMARY
-                              : "#e5e7eb",
-                          }}
-                        />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>}
-
-            {selectedAdminPixCharge && (
-              <AdminPixChargePanel
-                initialCharge={selectedAdminPixCharge}
-                customerName={selected?.cliente?.nome || selected?.customer}
-                onChange={setSelectedAdminPixCharge}
-              />
-            )}
-
-            {!selectedIsSalao && selected.status === "nao_entregue" && (
-              <div className="rounded-xl border border-red-200 bg-red-50 p-4">
-                <h4 className="mb-1 text-sm font-semibold text-red-800">
-                  Pedido não entregue
-                </h4>
-                <p className="text-sm text-red-700">
-                  Problema relatado pelo entregador
-                  {getDeliveryFailureReason(selected)
-                    ? `: ${getDeliveryFailureReason(selected)}`
-                    : "."}
-                </p>
-                <p className="mt-2 text-sm font-medium text-red-800">
-                  Entre em contato com o cliente pelo WhatsApp para combinar os
-                  próximos passos.
-                </p>
-                {selectedCustomerWhatsappUrl ? (
-                  <a
-                    href={selectedCustomerWhatsappUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-green-700 sm:w-auto"
-                  >
-                    <MessageCircle className="h-4 w-4" />
-                    Abrir WhatsApp do cliente
-                  </a>
-                ) : (
-                  <div className="mt-3 rounded-lg border border-red-200 bg-white/70 px-3 py-2 text-sm font-medium text-red-800">
-                    Cliente sem telefone cadastrado.
-                  </div>
-                )}
-                <button
-                  onClick={(event) => void handleRetryDelivery(selected, event)}
-                  disabled={selectedOrderUpdating}
-                  aria-busy={selectedStatusUpdating}
-                  className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-wait disabled:opacity-70 sm:w-auto"
-                >
-                  {selectedStatusUpdating ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Atualizando...
-                    </>
-                  ) : (
-                    <>
-                      <RotateCcw className="h-4 w-4" />
-                      Tentar entrega novamente
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
-
-            {/* Customer info */}
-            {!selectedIsSalao && <div className="bg-white border border-gray-200 rounded-xl p-4">
-              <h4 className="text-gray-700 font-semibold mb-3 flex items-center gap-2">
-                <User className="w-4 h-4" style={{ color: PRIMARY }} /> Dados do
-                Cliente
-              </h4>
-              <div className="space-y-2">
-                <div className="text-sm font-medium text-gray-800">
-                  {selected.cliente?.nome || selected.customer || "Sem nome"}
-                </div>
-                <div className="flex items-center gap-2 text-sm text-gray-500">
-                  <Phone className="w-3.5 h-3.5" />
-                  {getOrderCustomerPhone(selected) || "Sem telefone"}
-                </div>
-                {selected.cpf_na_nota && (
-                  <div className="text-sm text-gray-500">
-                    <span className="font-medium text-gray-700">
-                      CPF na nota:
-                    </span>{" "}
-                    {selected.cpf_na_nota_cpf || "Informado"}
-                  </div>
-                )}
-                {(selected.tipo_pedido || selected.type || "").toLowerCase() ===
-                  "entrega" && (
-                  <>
-                    <div className="flex items-start gap-2 text-sm text-gray-500">
-                      <MapPin className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-                      <span>{getOrderAddress(selected)}</span>
-                    </div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span
-                        className="text-xs px-2 py-0.5 rounded-full font-medium"
-                        style={{ backgroundColor: "#e0e7ff", color: "#3730a3" }}
-                      >
-                        Bairro: {getOrderNeighborhood(selected)}
-                      </span>
-                    </div>
-                    {selectedCanEditAdminDeliveryAddress && (
-                      <button
-                        type="button"
-                        onClick={() => openAddressEditModal(selected)}
-                        className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50"
-                      >
-                        <MapPin className="h-3.5 w-3.5" />
-                        Editar endereço
-                      </button>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>}
-
-            {/* Items */}
-            <div className="bg-white border border-gray-200 rounded-xl p-4">
-              <h4 className="text-gray-700 font-semibold mb-3 flex items-center gap-2">
-                <Package className="w-4 h-4" style={{ color: PRIMARY }} /> Itens
-                do Pedido
-              </h4>
-              <div className="space-y-2.5">
-                {selectedItemsLoading && (
-                  <p className="text-sm text-gray-500">
-                    Carregando produtos...
-                  </p>
-                )}
-                {!selectedItemsLoading && selectedItems.length === 0 && (
-                  <p className="text-sm text-gray-500">
-                    Nenhum produto encontrado para este pedido.
-                  </p>
-                )}
-                {!selectedItemsLoading &&
-                  selectedItems.map((item: any, idx: number) => {
-                    const configurationLines = getOrderItemConfigurationLines(item);
-
-                    return (
-                      <div
-                        key={item.id || idx}
-                        className="flex items-start justify-between gap-4"
-                      >
-                        <div className="min-w-0">
-                          <div className="text-sm text-gray-700">
-                            {getOrderItemQuantity(item)}x {getOrderItemName(item)}
-                          </div>
-                          {configurationLines.length > 0 && (
-                            <div className="mt-1 space-y-0.5 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-2">
-                              {configurationLines.map((line, lineIndex) => (
-                                <div key={`${item.id || idx}-configuration-${lineIndex}`} className="break-words text-xs text-slate-600">
-                                  {line}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          {(item.observacoes || item.obs) && (
-                            <div className="text-xs text-gray-400 italic mt-0.5">
-                              {item.observacoes || item.obs}
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex shrink-0 flex-col items-end gap-2">
-                          <div className="text-sm font-medium text-gray-700">
-                            R${" "}
-                            {getOrderItemTotal(item).toFixed(2).replace(".", ",")}
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => setAdminEditItemTarget({ order: selected, item })}
-                              disabled={!selectedCanAdminAddItems || selectedOrderUpdating || !item.id || !item.produto_loja_id || adminRemovingItemId === item.id}
-                              className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-blue-100 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50 sm:h-8 sm:w-8"
-                              title="Editar produto"
-                              aria-label={`Editar ${getOrderItemName(item)}`}
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void removeOrderItemFromSelectedOrder(item)}
-                              disabled={!selectedCanAdminAddItems || selectedOrderUpdating || !item.id || adminRemovingItemId === item.id}
-                              className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50 sm:h-8 sm:w-8"
-                              title="Excluir produto"
-                              aria-label={`Excluir ${getOrderItemName(item)}`}
-                            >
-                              {adminRemovingItemId === item.id ? (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              ) : (
-                                <Trash2 className="h-3.5 w-3.5" />
-                              )}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-              {!selectedIsSalao && <div className="border-t border-gray-100 mt-3 pt-3 space-y-1.5">
-                <div className="flex justify-between text-sm text-gray-500">
-                  <span>Subtotal</span>
-                  <span>
-                    R${" "}
-                    {parseFloat(selected.subtotal || selected.total || 0)
-                      .toFixed(2)
-                      .replace(".", ",")}
-                  </span>
-                </div>
-                {(selected.tipo_pedido || selected.type || "").toLowerCase() ===
-                "entrega" ? (
-                  <div className="flex justify-between text-sm text-gray-500">
-                    <span>Taxa de entrega</span>
-                    <span>
-                      R${" "}
-                      {parseFloat(
-                        selected.taxa_entrega ??
-                          storePrintData?.taxa_entrega_padrao ??
-                          0,
-                      )
-                        .toFixed(2)
-                        .replace(".", ",")}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="flex justify-between text-sm text-gray-500">
-                    <span>{selectedIsSalao ? "Consumo no salão" : "Retirada na loja"}</span>
-                    <span className="text-green-600">Grátis</span>
-                  </div>
-                )}
-                {parseFloat(selected.desconto || 0) > 0 && (
-                  <div className="flex justify-between text-sm text-gray-500">
-                    <span>Desconto</span>
-                    <span className="text-green-600">
-                      -R${" "}
-                      {parseFloat(selected.desconto || 0)
-                        .toFixed(2)
-                        .replace(".", ",")}
-                    </span>
-                  </div>
-                )}
-                {parseFloat(selected.acrescimo || 0) > 0 && (
-                  <div className="flex justify-between text-sm text-gray-500">
-                    <span>Acréscimo</span>
-                    <span className="text-amber-600">
-                      +R${" "}
-                      {parseFloat(selected.acrescimo || 0)
-                        .toFixed(2)
-                        .replace(".", ",")}
-                    </span>
-                  </div>
-                )}
-                <div className="flex justify-between font-semibold text-gray-800">
-                  <span>Total</span>
-                  <span>
-                    R${" "}
-                    {parseFloat(selected.valor_total || selected.total || 0)
-                      .toFixed(2)
-                      .replace(".", ",")}
-                  </span>
-                </div>
-              </div>}
-            </div>
-
-            {/* Payment */}
-            {selectedIsFiado && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-                <h4 className="text-sm font-semibold text-amber-900">
-                  Pedido fiado
-                </h4>
-                <p className="mt-1 text-sm text-amber-800">
-                  A conta e os recebimentos deste pedido são gerenciados no
-                  módulo Fiados.
-                </p>
-                <div className="mt-3 flex items-center justify-between rounded-lg border border-amber-200 bg-white/70 px-3 py-2 text-sm">
-                  <span className="font-semibold text-amber-900">Valor em fiado</span>
-                  <span className="font-bold text-amber-950">{formatCurrency(selectedFiadoTotal)}</span>
-                </div>
-                {selectedPaymentStatus !== "NÃ£o informado" && (
-                  <div className={`mt-2 text-xs font-semibold ${selectedPaymentStatusClass}`}>
-                    {selectedPaymentStatusLabel}
-                  </div>
-                )}
-              </div>
-            )}
-            {!selectedIsFiado && <div className="bg-white border border-gray-200 rounded-xl p-4">
-              <h4 className="text-gray-700 font-semibold mb-2 flex items-center gap-2">
-                <CreditCard className="w-4 h-4" style={{ color: PRIMARY }} />{" "}
-                Pagamento
-              </h4>
-              <div className="text-sm text-gray-600">
-                {selectedPaymentMethod}
-              </div>
-              {selectedPaymentStatus !== "Não informado" && (
-                <div
-                  className={`mt-1 text-xs font-medium ${selectedPaymentStatusClass}`}
-                >
-                  {selectedIsPaid ? "✓ " : ""}
-                  {selectedPaymentStatusLabel}
-                </div>
-              )}
-              {selectedPayments.length > 1 && (
-                <div className="mt-3 space-y-2 border-t border-gray-100 pt-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-                    Pagamentos registrados
-                  </div>
-                  {(() => {
-                    const renderedGroups = new Set<string>();
-
-                    return selectedPayments.map((payment) => {
-                      const splitGroupId = getPaymentSplitGroupId(payment);
-                      if (splitGroupId) {
-                        if (renderedGroups.has(splitGroupId)) return null;
-                        renderedGroups.add(splitGroupId);
-                        const groupPayments = selectedPayments.filter((item) => getPaymentSplitGroupId(item) === splitGroupId);
-                        const isSelectedCurrent = groupPayments.some((item) => item?.id === selectedPayment?.id);
-                        const isCurrent = isSelectedCurrent || groupPayments.every(isCurrentPaymentRecord);
-                        const totalSplit = groupPayments.reduce((sum, item) => sum + parseCurrencyNumber(item.valor), 0);
-
-                        return (
-                          <div
-                            key={splitGroupId}
-                            className={`rounded-lg border px-3 py-2 text-xs transition-opacity ${
-                              isCurrent
-                                ? "border-blue-200 bg-blue-50 opacity-100 shadow-sm"
-                                : "border-gray-100 bg-gray-50 opacity-50"
-                            }`}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="min-w-0">
-                                <span className="font-semibold text-gray-700">Pagamento dividido</span>
-                                {isCurrent && (
-                                  <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
-                                    Atual
-                                  </span>
-                                )}
-                              </div>
-                              <span className="font-semibold text-gray-800">{formatCurrency(totalSplit)}</span>
-                            </div>
-                            <div className="mt-2 space-y-1">
-                              {groupPayments.map((item) => (
-                                <div key={item.id} className="flex items-center justify-between gap-2 text-gray-600">
-                                  <span>{getOrderPaymentMethod({ pagamento: item }, item)}</span>
-                                  <span className="font-semibold text-gray-700">{formatCurrency(item.valor)}</span>
-                                </div>
-                              ))}
-                            </div>
-                            <div className="mt-1 flex items-center justify-between gap-2 text-gray-500">
-                              <span className="capitalize">{String(groupPayments[0]?.status || "").replace(/_/g, " ")}</span>
-                              {groupPayments[0]?.pago_em && <span>{formatBrasiliaDate(groupPayments[0].pago_em)}</span>}
-                            </div>
-                          </div>
-                        );
-                      }
-
-                      const isComplement = payment?.metadata?.tipo === "pagamento_complementar";
-                      const isSelectedCurrent = payment?.id === selectedPayment?.id;
-                      const isCurrent = isSelectedCurrent || isCurrentPaymentRecord(payment);
-                      return (
-                        <div
-                          key={payment.id}
-                          className={`rounded-lg border px-3 py-2 text-xs transition-opacity ${
-                            isCurrent
-                              ? "border-blue-100 bg-blue-50 opacity-100"
-                              : "border-gray-100 bg-gray-50 opacity-50"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="min-w-0">
-                              <span className="font-semibold text-gray-700">
-                                {isComplement ? "Complemento" : "Original"} - {getOrderPaymentMethod({ pagamento: payment }, payment)}
-                              </span>
-                              {isSelectedCurrent && (
-                                <span className="ml-2 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
-                                  Atual
-                                </span>
-                              )}
-                            </div>
-                            <span className="font-semibold text-gray-800">{formatCurrency(payment.valor)}</span>
-                          </div>
-                          <div className="mt-1 flex items-center justify-between gap-2 text-gray-500">
-                            <span className="capitalize">{String(payment.status || "").replace(/_/g, " ")}</span>
-                            {payment.pago_em && <span>{formatBrasiliaDate(payment.pago_em)}</span>}
-                          </div>
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-              )}
-              {!selectedIsPaid && (
-                <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  {selectedIsPendingCash
-                    ? selectedIsCardOnDelivery
-                      ? "Pagamento em cartão pendente de recebimento."
-                      : "Pagamento pendente de recebimento pelo caixa."
-                    : "Pagamento pendente"}
-                </div>
-              )}
-              {selectedIsPendingCash && (
-                <button
-                  type="button"
-                  onClick={confirmCashPayment}
-                  disabled={!selectedPayment?.id}
-                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-green-700 px-3 py-2 text-xs font-semibold text-white hover:bg-green-800 disabled:cursor-wait disabled:opacity-70"
-                >
-                  Marcar pagamento como recebido
-                </button>
-              )}
-              {selectedCanChangePendingPayment && (
-                <button
-                  type="button"
-                  onClick={() => setPendingPaymentMethodOrder(selected)}
-                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-blue-200 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50"
-                >
-                  <CreditCard className="h-3.5 w-3.5" />
-                  Alterar forma de pagamento
-                </button>
-              )}
-              {selectedCashChangeInfo && (
-                <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-                    {selectedIsCardOnDelivery ? "Cobrança" : "Troco"}
-                  </div>
-                  <div className="mt-0.5 text-sm font-semibold text-gray-700">
-                    {selectedCashChangeInfo}
-                  </div>
-                  {selectedCashChangeStatusLabel && (
-                    <div
-                      className={`mt-1 text-xs font-semibold ${
-                        selectedCashChangeStatusLabel === "Troco repassado"
-                          ? "text-green-600"
-                          : "text-red-600"
-                      }`}
-                    >
-                      {selectedCashChangeStatusLabel}
-                    </div>
-                  )}
-                </div>
-              )}
-              {selectedNeedsCashChange && (
-                <label className="mt-3 flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs font-semibold text-green-800">
-                  <input
-                    type="checkbox"
-                    checked={selectedCashChangePaidToCourier}
-                    disabled={
-                      !selectedPayment?.id ||
-                      updatingCashChangePaymentId === selectedPayment.id
-                    }
-                    onChange={(event) =>
-                      void updateCashChangePaidToCourier(event.target.checked)
-                    }
-                    className="mt-0.5 h-4 w-4 rounded border-green-300"
-                  />
-                  <span>
-                    Troco pago ao entregador
-                    {updatingCashChangePaymentId === selectedPayment?.id && (
-                      <span className="ml-2 font-medium text-green-700">
-                        Atualizando...
-                      </span>
-                    )}
-                  </span>
-                </label>
-              )}
-              {selectedRefunds.length > 0 && (
-                <div className="mt-3 border-t border-gray-100 pt-3">
-                  <div className="mb-2 flex items-center justify-between text-xs font-semibold text-gray-500">
-                    <span>Reembolsos</span>
-                    <span>{formatCurrency(selectedRefundedAmount)}</span>
-                  </div>
-                  <div className="space-y-2">
-                    {selectedRefunds.map((refund) => {
-                      const metadata = refund.metadata || {};
-                      const missingItems = Array.isArray(
-                        metadata.itens_faltantes,
-                      )
-                        ? metadata.itens_faltantes
-                        : [];
-                      return (
-                        <div
-                          key={refund.id}
-                          className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2"
-                        >
-                          <div className="flex items-center justify-between gap-2 text-xs">
-                            <span className="font-semibold text-blue-900">
-                              {formatCurrency(refund.valor)}
-                            </span>
-                            <span className="capitalize text-blue-700">
-                              {String(refund.status || "").replace(/_/g, " ")}
-                            </span>
-                          </div>
-                          <p className="mt-1 text-xs text-blue-800">
-                            {refund.motivo ||
-                              (metadata.tipo === "produto_em_falta"
-                                ? "Produto em falta"
-                                : "Reembolso")}
-                          </p>
-                          {missingItems.length > 0 && (
-                            <p className="mt-1 text-[11px] text-blue-700">
-                              {missingItems
-                                .map(
-                                  (item: any) =>
-                                    `${item.quantidade_faltante}x ${item.nome_produto}`,
-                                )
-                                .join(", ")}
-                            </p>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="mt-2 text-[11px] text-gray-500">
-                    Saldo disponível: {formatCurrency(selectedRefundableAmount)}
-                  </div>
-                </div>
-              )}
-            </div>}
-
+<OrderDetailsTimeline
+              getDeliveryFailureReason={getDeliveryFailureReason}
+              getStatusLabel={getStatusLabel}
+              handleRetryDelivery={handleRetryDelivery}
+              selected={selected}
+              selectedAdminPixCharge={selectedAdminPixCharge}
+              selectedCustomerWhatsappUrl={selectedCustomerWhatsappUrl}
+              selectedIsSalao={selectedIsSalao}
+              selectedOrderUpdating={selectedOrderUpdating}
+              selectedPaymentKeepsConfirmationPending={selectedPaymentKeepsConfirmationPending}
+              selectedStatusUpdating={selectedStatusUpdating}
+              setSelectedAdminPixCharge={setSelectedAdminPixCharge}
+            />
+<OrderCustomerDetailsCard
+              openAddressEditModal={openAddressEditModal}
+              selected={selected}
+              selectedCanEditAdminDeliveryAddress={selectedCanEditAdminDeliveryAddress}
+              selectedIsSalao={selectedIsSalao}
+            />
+<OrderItemsCard
+              adminRemovingItemId={adminRemovingItemId}
+              removeOrderItemFromSelectedOrder={removeOrderItemFromSelectedOrder}
+              selected={selected}
+              selectedCanAdminAddItems={selectedCanAdminAddItems}
+              selectedIsSalao={selectedIsSalao}
+              selectedItems={selectedItems}
+              selectedItemsLoading={selectedItemsLoading}
+              selectedOrderUpdating={selectedOrderUpdating}
+              setAdminEditItemTarget={setAdminEditItemTarget}
+              storePrintData={storePrintData}
+            />
+<OrderPaymentCard
+              confirmCashPayment={confirmCashPayment}
+              selected={selected}
+              selectedCanChangePendingPayment={selectedCanChangePendingPayment}
+              selectedCashChangeInfo={selectedCashChangeInfo}
+              selectedCashChangePaidToCourier={selectedCashChangePaidToCourier}
+              selectedCashChangeStatusLabel={selectedCashChangeStatusLabel}
+              selectedFiadoTotal={selectedFiadoTotal}
+              selectedIsCardOnDelivery={selectedIsCardOnDelivery}
+              selectedIsFiado={selectedIsFiado}
+              selectedIsPaid={selectedIsPaid}
+              selectedIsPendingCash={selectedIsPendingCash}
+              selectedNeedsCashChange={selectedNeedsCashChange}
+              selectedPayment={selectedPayment}
+              selectedPaymentMethod={selectedPaymentMethod}
+              selectedPaymentStatus={selectedPaymentStatus}
+              selectedPaymentStatusClass={selectedPaymentStatusClass}
+              selectedPaymentStatusLabel={selectedPaymentStatusLabel}
+              selectedPayments={selectedPayments}
+              selectedRefundableAmount={selectedRefundableAmount}
+              selectedRefundedAmount={selectedRefundedAmount}
+              selectedRefunds={selectedRefunds}
+              setPendingPaymentMethodOrder={setPendingPaymentMethodOrder}
+              updateCashChangePaidToCourier={updateCashChangePaidToCourier}
+              updatingCashChangePaymentId={updatingCashChangePaymentId}
+            />
             {/* Delivery Person Assignment */}
             {!selectedIsSalao && selectedCancellationPending && (
               <div className="rounded-xl border border-red-200 bg-red-50 p-4">
@@ -6864,185 +5179,45 @@ export function OrdersScreen() {
               </div>
             )}
 
-            {/* Actions */}
-            <div className="space-y-2">
-              {!selectedIsSalao && <>
-              {!selectedCanProceed &&
-                getStatusLabel(selected.status) !== "Entregue" &&
-                getStatusLabel(selected.status) !== "Cancelado" &&
-                getStatusLabel(selected.status) !== "Não entregue" && (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                    O pedido só pode avançar após a aprovação do pagamento.
-                  </div>
-                )}
-              {selectedPickupNeedsCashConfirmation && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                  Confirme o recebimento do pagamento antes de finalizar a
-                  retirada.
-                </div>
-              )}
-              {adminCannotDispatchDelivery && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                  Pedido pronto. A saída para entrega deve ser iniciada pelo
-                  entregador.
-                </div>
-              )}
-              {adminCannotConfirmDelivery && (
-                <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
-                  A entrega deve ser confirmada pelo entregador com a chave do
-                  cliente.
-                </div>
-              )}
-              </>}
-              {selectedCanForceFinalize && (
-                <button
-                  onClick={(event) =>
-                    openForceFinalizeConfirm(selected, event)
-                  }
-                  disabled={selectedOrderUpdating}
-                  aria-busy={selectedForceFinalizing}
-                  className="w-full py-2.5 rounded-lg bg-red-600 text-white text-sm font-medium transition-colors hover:bg-red-700 disabled:cursor-wait disabled:opacity-70 flex items-center justify-center gap-2"
-                >
-                  {selectedForceFinalizing ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Finalizando...
-                    </>
-                  ) : (
-                    <>
-                      <AlertTriangle className="w-4 h-4" />
-                      Pular etapas e finalizar
-                    </>
-                  )}
-                </button>
-              )}
-              <button
-                onClick={() => handlePrintComanda(selectedForPrint)}
-                className="w-full py-2.5 rounded-lg text-gray-700 text-sm font-medium border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
-              >
-                <Printer className="w-4 h-4" /> Imprimir Comanda
-              </button>
-              <button
-                onClick={() => setAdminAddItemsOrder(selected)}
-                disabled={!selectedCanAdminAddItems || selectedOrderUpdating}
-                className="w-full py-2.5 rounded-lg text-blue-700 text-sm font-medium border border-blue-200 hover:bg-blue-50 transition-colors disabled:cursor-not-allowed disabled:opacity-60 flex items-center justify-center gap-2"
-              >
-                <Plus className="w-4 h-4" /> Adicionar produtos
-              </button>
-              {selectedIsDelivery && (
-                <button
-                  onClick={() => setDeliveryToPickupOrder(selected)}
-                  disabled={selectedOrderUpdating}
-                  className="w-full py-2.5 rounded-lg text-emerald-700 text-sm font-medium border border-emerald-200 hover:bg-emerald-50 transition-colors disabled:cursor-not-allowed disabled:opacity-60 flex items-center justify-center gap-2"
-                >
-                  <Store className="w-4 h-4" /> Alterar para retirada
-                </button>
-              )}
-              {!selectedIsSalao && <button
-                onClick={() => openItemsChecklist(selected)}
-                className="w-full py-2.5 rounded-lg text-gray-700 text-sm font-medium border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
-              >
-                <Package className="w-4 h-4" /> Ver produtos
-              </button>}
-              {!selectedIsSalao && !selectedIsFiado && <button
-                onClick={openRefundModal}
-                disabled={!selectedCanRefund || selectedOrderUpdating}
-                className="w-full py-2.5 rounded-lg text-blue-700 text-sm font-medium border border-blue-200 hover:bg-blue-50 transition-colors disabled:cursor-not-allowed disabled:opacity-60 flex items-center justify-center gap-2"
-              >
-                <RotateCcw className="w-4 h-4" /> Reembolsar
-              </button>}
-              <button
-                onClick={() => toggleArchivedOrder(selected)}
-                disabled={selectedOrderUpdating}
-                aria-busy={selectedArchiving}
-                className="w-full py-2.5 rounded-lg text-gray-700 text-sm font-medium border border-gray-200 hover:bg-gray-50 transition-colors disabled:cursor-wait disabled:opacity-70 flex items-center justify-center gap-2"
-              >
-                {selectedArchiving ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Atualizando...
-                  </>
-                ) : (
-                  <>
-                    {selected.arquivado ? (
-                      <RefreshCw className="w-4 h-4" />
-                    ) : (
-                      <Archive className="w-4 h-4" />
-                    )}
-                    {selected.arquivado
-                      ? "Restaurar pedido"
-                      : "Arquivar pedido"}
-                  </>
-                )}
-              </button>
-              {getStatusLabel(selected.status) !== "Cancelado" &&
-                getStatusLabel(selected.status) !== "Entregue" &&
-                !selectedCancellationPending && (
-                  <button
-                    onClick={() =>
-                      void requestOrderCancellation(selected.id)
-                    }
-                    disabled={selectedOrderUpdating}
-                    aria-busy={selectedCancelling}
-                    className="w-full py-2.5 rounded-lg text-red-600 text-sm font-medium border border-red-200 hover:bg-red-50 transition-colors disabled:cursor-wait disabled:opacity-70 flex items-center justify-center gap-2"
-                  >
-                    {selectedCancelling ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Cancelando...
-                      </>
-                    ) : (
-                      "Cancelar Pedido"
-                    )}
-                  </button>
-                )}
-              {!selectedIsSalao && <button className="w-full py-2.5 rounded-lg text-gray-600 text-sm font-medium border border-gray-200 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2">
-                <Phone className="w-4 h-4" /> Entrar em Contato
-              </button>}
-            </div>
+            <OrderDetailsActions
+              adminCannotConfirmDelivery={adminCannotConfirmDelivery}
+              adminCannotDispatchDelivery={adminCannotDispatchDelivery}
+              getStatusLabel={getStatusLabel}
+              handlePrintComanda={handlePrintComanda}
+              openForceFinalizeConfirm={openForceFinalizeConfirm}
+              openItemsChecklist={openItemsChecklist}
+              openRefundModal={openRefundModal}
+              requestOrderCancellation={requestOrderCancellation}
+              selected={selected}
+              selectedArchiving={selectedArchiving}
+              selectedCancellationPending={selectedCancellationPending}
+              selectedCanAdminAddItems={selectedCanAdminAddItems}
+              selectedCanForceFinalize={selectedCanForceFinalize}
+              selectedCanProceed={selectedCanProceed}
+              selectedCanRefund={selectedCanRefund}
+              selectedCancelling={selectedCancelling}
+              selectedForceFinalizing={selectedForceFinalizing}
+              selectedForPrint={selectedForPrint}
+              selectedIsDelivery={selectedIsDelivery}
+              selectedIsFiado={selectedIsFiado}
+              selectedIsSalao={selectedIsSalao}
+              selectedOrderUpdating={selectedOrderUpdating}
+              selectedPickupNeedsCashConfirmation={selectedPickupNeedsCashConfirmation}
+              setAdminAddItemsOrder={setAdminAddItemsOrder}
+              setDeliveryToPickupOrder={setDeliveryToPickupOrder}
+              toggleArchivedOrder={toggleArchivedOrder}
+            />
           </div>
-          {(selectedStickyActionLabel || selectedStickyWaitingLabel) && (
-            <div className="z-20 shrink-0 border-t border-gray-200 bg-white/95 p-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur sm:px-5 sm:py-4">
-              {selectedStickyActionLabel ? (
-                <div className="flex items-center gap-3">
-                  <div className="hidden min-w-0 flex-1 sm:block">
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-                      Próxima ação
-                    </div>
-                    <div className="truncate text-sm font-medium text-gray-700">
-                      {selectedStickyActionLabel}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={(event) => void handleSelectedStickyAction(event)}
-                    disabled={selectedOrderUpdating}
-                    aria-busy={selectedStatusUpdating || selectedCancellationResolving}
-                    className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-70 sm:w-auto sm:min-w-56"
-                    style={{
-                      backgroundColor: selectedCancellationPending
-                        ? "#b91c1c"
-                        : primaryColor,
-                    }}
-                  >
-                    {selectedOrderUpdating ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : selectedCancellationPending ? (
-                      <AlertTriangle className="h-4 w-4" />
-                    ) : (
-                      <CheckCircle2 className="h-4 w-4" />
-                    )}
-                    {selectedOrderUpdating ? "Atualizando..." : selectedStickyActionLabel}
-                  </button>
-                </div>
-              ) : (
-                <div className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-800">
-                  <AlertTriangle className="h-4 w-4 shrink-0" />
-                  {selectedStickyWaitingLabel}
-                </div>
-              )}
-            </div>
-          )}
+          <OrderDetailsStickyAction
+            handleSelectedStickyAction={handleSelectedStickyAction}
+            primaryColor={primaryColor}
+            selectedCancellationPending={selectedCancellationPending}
+            selectedCancellationResolving={selectedCancellationResolving}
+            selectedOrderUpdating={selectedOrderUpdating}
+            selectedStatusUpdating={selectedStatusUpdating}
+            selectedStickyActionLabel={selectedStickyActionLabel}
+            selectedStickyWaitingLabel={selectedStickyWaitingLabel}
+          />
         </div>
       )}
       {cancellationReviewOrder && (

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Outlet, useNavigate, useLocation, Navigate } from 'react-router';
 import {
   LayoutDashboard, ShoppingCart, Package,  Grid3X3, Tag, Image, Users, Truck, User,
@@ -8,9 +8,41 @@ import {
 import api from '@/shared/lib/api';
 import logo from '@/assets/logo.png';
 import { CREATE_ORDER_SHORTCUT_PARAM } from '@/features/orders/constants';
-import { ADMIN_COLLAPSE_SIDEBAR_EVENT } from '@/shared/constants/uiEvents';
+import { ADMIN_COLLAPSE_SIDEBAR_EVENT, ADMIN_STORE_THEME_UPDATED_EVENT } from '@/shared/constants/uiEvents';
 
 const PRIMARY = '#122a4c';
+
+const normalizeBrandColor = (value: unknown) => {
+  const color = String(value || '').trim();
+  return /^#[0-9a-f]{6}$/i.test(color) ? color : PRIMARY;
+};
+
+const getSidebarPalette = (backgroundColor: string) => {
+  const red = Number.parseInt(backgroundColor.slice(1, 3), 16);
+  const green = Number.parseInt(backgroundColor.slice(3, 5), 16);
+  const blue = Number.parseInt(backgroundColor.slice(5, 7), 16);
+  const toLinear = (channel: number) => {
+    const normalized = channel / 255;
+    return normalized <= 0.04045
+      ? normalized / 12.92
+      : ((normalized + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance = 0.2126 * toLinear(red) + 0.7152 * toLinear(green) + 0.0722 * toLinear(blue);
+  const foregroundChannels = luminance > 0.179 ? '15,23,42' : '255,255,255';
+  const overlayChannels = luminance > 0.179 ? '15,23,42' : '255,255,255';
+
+  return {
+    foreground: `rgb(${foregroundChannels})`,
+    muted: `rgba(${foregroundChannels},0.65)`,
+    subtle: `rgba(${foregroundChannels},0.42)`,
+    faint: `rgba(${foregroundChannels},0.32)`,
+    border: `rgba(${overlayChannels},0.12)`,
+    hover: `rgba(${overlayChannels},0.08)`,
+    active: `rgba(${overlayChannels},0.15)`,
+    panel: `rgba(${overlayChannels},0.08)`,
+    avatar: `rgba(${overlayChannels},0.18)`,
+  };
+};
 
 const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', slug: 'dashboard' },
@@ -117,6 +149,7 @@ export function AdminLayout() {
     }
   });
   const [storeName, setStoreName] = useState('Carregando...');
+  const [sidebarColor, setSidebarColor] = useState(PRIMARY);
   const [enabledStoreModules, setEnabledStoreModules] = useState<Set<string> | null>(null);
   const [menuImportEnabled, setMenuImportEnabled] = useState<boolean | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -162,19 +195,36 @@ export function AdminLayout() {
       window.removeEventListener(ADMIN_COLLAPSE_SIDEBAR_EVENT, handleCollapseSidebar);
     };
   }, []);
+
+  useEffect(() => {
+    const handleStoreThemeUpdated = (event: Event) => {
+      const primaryColor = (event as CustomEvent<{ primaryColor?: string }>).detail?.primaryColor;
+      setSidebarColor(normalizeBrandColor(primaryColor));
+    };
+
+    window.addEventListener(ADMIN_STORE_THEME_UPDATED_EVENT, handleStoreThemeUpdated);
+    return () => window.removeEventListener(ADMIN_STORE_THEME_UPDATED_EVENT, handleStoreThemeUpdated);
+  }, []);
   
   useEffect(() => {
     if (user?.loja_id) {
       Promise.allSettled([
         api.get(`/lojas/${user.loja_id}`),
+        api.get(`/lojas/${user.loja_id}/configuracoes`),
         api.get(`/salao/lojas/${user.loja_id}/modulos`),
         api.get('/importacoes-cardapio/disponibilidade'),
-      ]).then(([storeResult, modulesResult, menuImportResult]) => {
+      ]).then(([storeResult, configResult, modulesResult, menuImportResult]) => {
         if (storeResult.status === 'fulfilled' && storeResult.value.data?.success) {
           setStoreName(storeResult.value.data.data.nome);
         } else {
           setStoreName('Minha Loja');
         }
+
+        const rawConfig = configResult.status === 'fulfilled'
+          ? (configResult.value.data?.data ?? configResult.value.data)
+          : null;
+        const storeConfig = Array.isArray(rawConfig) ? rawConfig[0] : rawConfig;
+        setSidebarColor(normalizeBrandColor(storeConfig?.cor_primaria));
 
         const modules = modulesResult.status === 'fulfilled'
           ? (modulesResult.value.data?.data ?? modulesResult.value.data)
@@ -191,6 +241,7 @@ export function AdminLayout() {
       });
     } else {
       setStoreName('Admin Master');
+      setSidebarColor(PRIMARY);
       setEnabledStoreModules(new Set());
       setMenuImportEnabled(false);
     }
@@ -317,6 +368,19 @@ export function AdminLayout() {
     navigate(firstAvailableRoute, { replace: true });
     setSidebarOpen(false);
   };
+  const sidebarPalette = getSidebarPalette(sidebarColor);
+  const sidebarStyles = {
+    backgroundColor: sidebarColor,
+    '--sidebar-foreground': sidebarPalette.foreground,
+    '--sidebar-muted': sidebarPalette.muted,
+    '--sidebar-subtle': sidebarPalette.subtle,
+    '--sidebar-faint': sidebarPalette.faint,
+    '--sidebar-border': sidebarPalette.border,
+    '--sidebar-hover': sidebarPalette.hover,
+    '--sidebar-active': sidebarPalette.active,
+    '--sidebar-panel': sidebarPalette.panel,
+    '--sidebar-avatar': sidebarPalette.avatar,
+  } as CSSProperties;
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
@@ -332,20 +396,20 @@ export function AdminLayout() {
       <aside
         className={`fixed inset-y-0 left-0 z-[210] flex w-64 flex-col transition-[transform,width] duration-300 ease-in-out ${sidebarCollapsed ? 'lg:w-20' : 'lg:w-64'}
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:static lg:z-auto`}
-        style={{ backgroundColor: PRIMARY }}
+        style={sidebarStyles}
       >
         {/* Logo */}
-        <div className={`flex items-center gap-3 border-b border-white/10 px-5 py-5 ${sidebarCollapsed ? 'lg:flex-col lg:justify-center lg:px-3 lg:py-4' : ''}`}>
+        <div className={`flex items-center gap-3 border-b border-[var(--sidebar-border)] px-5 py-5 ${sidebarCollapsed ? 'lg:flex-col lg:justify-center lg:px-3 lg:py-4' : ''}`}>
           <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center">
             <img src={logo} alt="" className="h-11 w-11 object-contain drop-shadow-sm" />
           </div>
           <div className={sidebarCollapsed ? 'lg:hidden' : ''}>
-            <div className="text-white font-semibold text-sm leading-tight truncate max-w-[140px]">{storeName}</div>
-            <div className="text-white/50 text-xs">Entregaí Admin</div>
+            <div className="max-w-[140px] truncate text-sm font-semibold leading-tight text-[var(--sidebar-foreground)]">{storeName}</div>
+            <div className="text-xs text-[var(--sidebar-muted)]">Entregaí Admin</div>
           </div>
           <button
             type="button"
-            className={`ml-auto hidden h-8 w-8 items-center justify-center rounded-lg text-white/60 transition-colors hover:bg-white/10 hover:text-white ${sidebarCollapsed ? 'lg:ml-0 lg:flex' : 'lg:flex'}`}
+            className={`ml-auto hidden h-8 w-8 items-center justify-center rounded-lg text-[var(--sidebar-muted)] transition-colors hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-foreground)] ${sidebarCollapsed ? 'lg:ml-0 lg:flex' : 'lg:flex'}`}
             onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
             title={sidebarCollapsed ? 'Expandir menu' : 'Recolher menu'}
             aria-label={sidebarCollapsed ? 'Expandir menu' : 'Recolher menu'}
@@ -353,7 +417,7 @@ export function AdminLayout() {
             {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
           </button>
           <button
-            className="ml-auto lg:hidden text-white/60 hover:text-white"
+            className="ml-auto text-[var(--sidebar-muted)] hover:text-[var(--sidebar-foreground)] lg:hidden"
             onClick={() => setSidebarOpen(false)}
             aria-label="Fechar menu"
           >
@@ -365,7 +429,7 @@ export function AdminLayout() {
         <nav className={`flex-1 overflow-y-auto px-3 py-3 ${sidebarCollapsed ? 'lg:px-2' : ''}`}>
           {visibleNavGroups.map((group, groupIndex) => (
             <section key={group.title} className={groupIndex === 0 ? '' : 'mt-4'}>
-              <h2 className={`px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-white/35 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>
+              <h2 className={`px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--sidebar-faint)] ${sidebarCollapsed ? 'lg:hidden' : ''}`}>
                 {group.title}
               </h2>
               <div className="space-y-0.5">
@@ -379,10 +443,10 @@ export function AdminLayout() {
                       title={sidebarCollapsed ? item.label : undefined}
                       aria-label={sidebarCollapsed ? item.label : undefined}
                       style={{
-                        backgroundColor: active ? 'rgba(255,255,255,0.15)' : 'transparent',
-                        color: active ? 'white' : 'rgba(255,255,255,0.65)',
+                        backgroundColor: active ? 'var(--sidebar-active)' : 'transparent',
+                        color: active ? 'var(--sidebar-foreground)' : 'var(--sidebar-muted)',
                       }}
-                      onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255,255,255,0.08)'; }}
+                      onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--sidebar-hover)'; }}
                       onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; }}
                     >
                       <item.icon className="h-4 w-4 flex-shrink-0" />
@@ -397,7 +461,7 @@ export function AdminLayout() {
 
           {user?.perfil === 'superadmin' && (
             <>
-              <div className={`px-3 pb-1.5 pt-4 text-[10px] font-semibold uppercase tracking-wider text-white/35 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>Master</div>
+              <div className={`px-3 pb-1.5 pt-4 text-[10px] font-semibold uppercase tracking-wider text-[var(--sidebar-faint)] ${sidebarCollapsed ? 'lg:hidden' : ''}`}>Master</div>
               {superAdminItems.map((item) => {
                 const active = isActive(item.path);
                 return (
@@ -408,10 +472,10 @@ export function AdminLayout() {
                     title={sidebarCollapsed ? item.label : undefined}
                     aria-label={sidebarCollapsed ? item.label : undefined}
                     style={{
-                      backgroundColor: active ? 'rgba(255,255,255,0.15)' : 'transparent',
-                      color: active ? 'white' : 'rgba(255,255,255,0.65)',
+                      backgroundColor: active ? 'var(--sidebar-active)' : 'transparent',
+                      color: active ? 'var(--sidebar-foreground)' : 'var(--sidebar-muted)',
                     }}
-                    onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(255,255,255,0.08)'; }}
+                    onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--sidebar-hover)'; }}
                     onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; }}
                   >
                     <item.icon className="w-4 h-4 flex-shrink-0" />
@@ -425,18 +489,18 @@ export function AdminLayout() {
         </nav>
 
         {/* User */}
-        <div className={`border-t border-white/10 p-3 ${sidebarCollapsed ? 'lg:px-2' : ''}`}>
-          <div className={`flex items-center gap-3 rounded-lg px-3 py-2.5 ${sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''}`} style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}>
-            <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white text-xs font-semibold flex-shrink-0">
+        <div className={`border-t border-[var(--sidebar-border)] p-3 ${sidebarCollapsed ? 'lg:px-2' : ''}`}>
+          <div className={`flex items-center gap-3 rounded-lg bg-[var(--sidebar-panel)] px-3 py-2.5 ${sidebarCollapsed ? 'lg:justify-center lg:px-0' : ''}`}>
+            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[var(--sidebar-avatar)] text-xs font-semibold text-[var(--sidebar-foreground)]">
               <span className={sidebarCollapsed ? 'lg:hidden' : ''}>AM</span>
               <User className={`hidden h-4 w-4 ${sidebarCollapsed ? 'lg:block' : ''}`} />
             </div>
             <div className={`flex-1 min-w-0 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>
-              <div className="text-white text-xs font-medium truncate">{user?.nome || 'Usuário'}</div>
-              <div className="text-white/50 text-xs truncate">{user?.perfil || 'Administrador'}</div>
+              <div className="truncate text-xs font-medium text-[var(--sidebar-foreground)]">{user?.nome || 'Usuário'}</div>
+              <div className="truncate text-xs text-[var(--sidebar-muted)]">{user?.perfil || 'Administrador'}</div>
             </div>
             <button
-              className={`text-white/40 transition-colors hover:text-white ${sidebarCollapsed ? 'lg:hidden' : ''}`}
+              className={`text-[var(--sidebar-subtle)] transition-colors hover:text-[var(--sidebar-foreground)] ${sidebarCollapsed ? 'lg:hidden' : ''}`}
               onClick={() => void handleLogout()}
               title="Sair"
             >

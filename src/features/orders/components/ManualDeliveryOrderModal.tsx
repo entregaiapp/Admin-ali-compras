@@ -368,6 +368,26 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
   );
 
   useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+
+      event.preventDefault();
+      if (editingOption) {
+        setEditingOption(null);
+        return;
+      }
+      if (configuring) {
+        setConfiguring(null);
+        return;
+      }
+      onClose();
+    };
+
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [configuring, editingOption, onClose]);
+
+  useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedProductSearch(productSearch.trim()), 300);
     return () => window.clearTimeout(timer);
   }, [productSearch]);
@@ -906,8 +926,17 @@ export function ManualDeliveryOrderModal({ lojaId, primaryColor = "#2563eb", fia
               <h2 className="text-xl font-bold text-slate-900">Novo pedido delivery</h2>
               <p className="text-sm text-slate-500">Pedido feito pelo atendimento da loja</p>
             </div>
-            <button onClick={onClose} className="rounded-full p-2 text-slate-500 hover:bg-slate-100">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex flex-col items-center gap-0.5 rounded-lg px-2 py-1 text-slate-500 hover:bg-slate-100"
+              title="Fechar — tecla Esc"
+              aria-label="Fechar modal de criação do pedido — tecla Esc"
+            >
               <X className="h-5 w-5" />
+              <kbd className="font-sans text-[8px] font-semibold uppercase leading-none tracking-wide text-slate-400">
+                Esc
+              </kbd>
             </button>
           </div>
           <div className="mt-5 grid gap-2" style={{ gridTemplateColumns: `repeat(${activeSteps.length}, minmax(0, 1fr))` }}>
